@@ -1,0 +1,10 @@
+theorem Hello_World() {
+  assert(
+    "Hello World can be proven"
+  ) &&
+
+  proof Hello_World() {
+    let message = "Hello World";
+    assert(message == "Hello World");
+  }
+}
