@@ -37,8 +37,11 @@ function parseFormalNotation(text) {
 function parseFL(text) {
     var _a;
     const lines = text.split('\n').filter(line => line.trim());
+    const usedNames = new Set(); // Track used names
     let output = '';
     output += `
+    const usedNames = new Set();  // Track at runtime
+
     const assert = (condition) => {
       if (typeof condition === 'string') {
         console.log('Assert:', condition);
@@ -49,6 +52,11 @@ function parseFL(text) {
     };
 
     const theorem = (name, fn) => {
+      const lowerName = name.toLowerCase();
+      if (usedNames.has(lowerName)) {
+        throw new Error(\`Duplicate name: \${name} (case insensitive)\`);
+      }
+      usedNames.add(lowerName);
       console.log('Proving theorem:', name);
       return fn();
     };
@@ -62,10 +70,20 @@ function parseFL(text) {
     let inProof = false;
     let currentTheorem = '';
     for (const line of lines) {
-        if (line.includes('theorem')) {
-            inTheorem = true;
-            currentTheorem = ((_a = line.match(/theorem\s+(\w+)/)) === null || _a === void 0 ? void 0 : _a[1]) || '';
-            output += `theorem("${currentTheorem}", () => {\n`;
+        if (line.includes('theorem') || line.includes('definition')) {
+            const name = (_a = line.match(/(?:theorem|definition)\s+(\w+)/)) === null || _a === void 0 ? void 0 : _a[1];
+            if (name) {
+                const lowerName = name.toLowerCase();
+                if (usedNames.has(lowerName)) {
+                    throw new Error(`Duplicate name: ${name} (case insensitive)`);
+                }
+                usedNames.add(lowerName);
+            }
+            if (line.includes('theorem')) {
+                inTheorem = true;
+                currentTheorem = name || '';
+                output += `theorem("${currentTheorem}", () => {\n`;
+            }
             continue;
         }
         if (line.includes('proof')) {

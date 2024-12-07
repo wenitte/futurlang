@@ -41,10 +41,12 @@ export function parseFormalNotation(text: string): Proof {
 
 export function parseFL(text: string): string {
   const lines = text.split('\n').filter(line => line.trim())
-  const usedNames = new Set<string>()//Track used names
+  const usedNames = new Set<string>()  // Track used names
   let output = ''
 
   output += `
+    const usedNames = new Set();  // Track at runtime
+
     const assert = (condition) => {
       if (typeof condition === 'string') {
         console.log('Assert:', condition);
@@ -55,6 +57,11 @@ export function parseFL(text: string): string {
     };
 
     const theorem = (name, fn) => {
+      const lowerName = name.toLowerCase();
+      if (usedNames.has(lowerName)) {
+        throw new Error(\`Duplicate name: \${name} (case insensitive)\`);
+      }
+      usedNames.add(lowerName);
       console.log('Proving theorem:', name);
       return fn();
     };
@@ -79,16 +86,14 @@ export function parseFL(text: string): string {
         }
         usedNames.add(lowerName)
       }
-    }
-  
-    for (const line of lines) {
-      if (line.includes('theorem') || line.includes('definition')) {
-        const name = line.match(/(?:theorem|definition)\s+(\w+)/)?.[1]
-        if (name && usedNames.has(name)) {
-          throw new Error(`Duplicate name: ${name}`)
-        }
-        usedNames.add(name)
+
+      if (line.includes('theorem')) {
+        inTheorem = true
+        currentTheorem = name || ''
+        output += `theorem("${currentTheorem}", () => {\n`
       }
+      continue
+    }
 
     if (line.includes('proof')) {
       inProof = true
