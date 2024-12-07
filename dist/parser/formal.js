@@ -72,9 +72,13 @@ function parseFL(text) {
             inProof = true;
             continue;
         }
-        if (line.includes('assert')) {
-            output += `  ${line}\n`;
-            continue;
+        if (line.includes('assert') && line.includes('==')) {
+            const match = line.match(/assert\((\w+)\s*==\s*(.+)\);/);
+            if (match) {
+                const [_, varName, value] = match;
+                output += `  assert(global["${varName}"] == ${value})\n`;
+                continue;
+            }
         }
         if (line.includes('let')) {
             const match = line.match(/let\s+(\w+)\s*=\s*(.+?);/);

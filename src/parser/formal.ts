@@ -41,6 +41,7 @@ export function parseFormalNotation(text: string): Proof {
 
 export function parseFL(text: string): string {
   const lines = text.split('\n').filter(line => line.trim())
+  const usedNames = new Set<string>()//Track used names
   let output = ''
 
   output += `
@@ -69,21 +70,38 @@ export function parseFL(text: string): string {
   let currentTheorem = ''
 
   for (const line of lines) {
-    if (line.includes('theorem')) {
-      inTheorem = true
-      currentTheorem = line.match(/theorem\s+(\w+)/)?.[1] || ''
-      output += `theorem("${currentTheorem}", () => {\n`
-      continue
+    if (line.includes('theorem') || line.includes('definition')) {
+      const name = line.match(/(?:theorem|definition)\s+(\w+)/)?.[1]
+      if (name) {
+        const lowerName = name.toLowerCase()
+        if (usedNames.has(lowerName)) {
+          throw new Error(`Duplicate name: ${name} (case insensitive)`)
+        }
+        usedNames.add(lowerName)
+      }
     }
+  
+    for (const line of lines) {
+      if (line.includes('theorem') || line.includes('definition')) {
+        const name = line.match(/(?:theorem|definition)\s+(\w+)/)?.[1]
+        if (name && usedNames.has(name)) {
+          throw new Error(`Duplicate name: ${name}`)
+        }
+        usedNames.add(name)
+      }
 
     if (line.includes('proof')) {
       inProof = true
       continue
     }
 
-    if (line.includes('assert')) {
-      output += `  ${line}\n`
-      continue
+    if (line.includes('assert') && line.includes('==')) {
+      const match = line.match(/assert\((\w+)\s*==\s*(.+)\);/)
+      if (match) {
+        const [_, varName, value] = match
+        output += `  assert(global["${varName}"] == ${value})\n`
+        continue
+      }
     }
 
     if (line.includes('let')) {
