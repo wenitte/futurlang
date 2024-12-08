@@ -1,92 +1,206 @@
-// src/parsing/parser.ts
+import { ParsedLine, Token } from './lexer'; 
+import { ASTNode, TheoremDeclarationNode, DefinitionDeclarationNode, ProofDeclarationNode, LemmaDeclarationNode, AssertNode, LetNode, RawNode, AndNode } from './ast';
+import { parseLogicExpression } from './exprParser';
 
-import { ParsedLine } from './lexer';
-import { ASTNode, TheoremNode, DefinitionNode, ProofNode, AssertNode, LetNode, RawNode } from './ast';
+export function parseLinesToAST(lines: ParsedLine[]): ASTNode {
+  console.log("Starting to parse lines...");
 
-export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
-  const ast: ASTNode[] = [];
-  const stack: (TheoremNode | DefinitionNode | ProofNode)[] = [];
+  let currentExpression: ASTNode | null = null;
+  let index = 0;
 
-  for (const line of lines) {
+  function parseBlock(): { nodes: ASTNode[], endIndex: number } {
+    let nodes: ASTNode[] = [];
+    let blockExpression: ASTNode | null = null;
+    let i = index + 1;  // Start after the opening line
+    let braceCount = 1;
+    let blockContent = '';
+
+    while (i < lines.length && braceCount > 0) {
+      const line = lines[i];
+      
+      // Count braces
+      for (const token of line.tokens) {
+        if (token.value === '{') braceCount++;
+        if (token.value === '}') braceCount--;
+      }
+
+      // Don't process the closing brace line
+      if (braceCount === 0) break;
+
+      // For declarations, use the preserved body content if available
+      const preservedContent = lines[index]?.bodyContent ?? '';
+      if (preservedContent) {
+        blockContent = preservedContent;
+        break;
+      } else {
+        let expr = parseStatement(line);
+        if (expr) {
+          if (blockExpression === null) {
+            blockExpression = expr;
+          } else {
+            blockExpression = {
+              type: 'And',
+              left: blockExpression,
+              right: expr
+            } as AndNode;
+          }
+        }
+      }
+
+      i++;
+    }
+
+    // If we have preserved body content, use it instead of parsed nodes
+    if (blockContent) {
+      return {
+        nodes: [{
+          type: 'Raw',
+          content: blockContent
+        } as RawNode],
+        endIndex: i
+      };
+    }
+
+    return { 
+      nodes: blockExpression ? [blockExpression] : [], 
+      endIndex: i 
+    };
+  }
+
+  function parseStatement(line: ParsedLine): ASTNode | null {
     switch (line.type) {
-      case 'theorem': {
-        const theoremNode: TheoremNode = { type: 'Theorem', name: line.name!, body: [] };
-        stack.push(theoremNode);
-        break;
-      }
+      case 'TheoremDeclaration':
+      case 'DefinitionDeclaration':
+      case 'ProofDeclaration':
+      case 'LemmaDeclaration': {
+        const declarationName = line.name || '';
+        console.log(`Found ${line.type}: ${declarationName}`);
 
-      case 'definition': {
-        const defNode: DefinitionNode = { type: 'Definition', name: line.name!, body: [] };
-        stack.push(defNode);
-        break;
-      }
+        const { nodes, endIndex } = parseBlock();
+        index = endIndex;  // Update outer index
 
-      case 'proof': {
-        const proofNode: ProofNode = { type: 'Proof', body: [] };
-        stack.push(proofNode);
+        const body = nodes.length === 1 ? nodes[0] : 
+                    nodes.length > 1 ? nodes.reduce((acc, curr) => ({
+                      type: 'And',
+                      left: acc,
+                      right: curr
+                    } as AndNode)) :
+                    { type: 'Raw', content: '' } as RawNode;
+
+        switch (line.type) {
+          case 'TheoremDeclaration':
+            return {
+              type: 'TheoremDeclaration',
+              name: declarationName,
+              body
+            } as TheoremDeclarationNode;
+          case 'DefinitionDeclaration':
+            return {
+              type: 'DefinitionDeclaration',
+              name: declarationName,
+              body
+            } as DefinitionDeclarationNode;
+          case 'ProofDeclaration':
+            return {
+              type: 'ProofDeclaration',
+              name: declarationName,
+              body
+            } as ProofDeclarationNode;
+          case 'LemmaDeclaration':
+            return {
+              type: 'LemmaDeclaration',
+              name: declarationName,
+              body
+            } as LemmaDeclarationNode;
+        }
         break;
       }
 
       case 'assert': {
-        // Match conditions like assert(x == y) or assert(condition)
-        const conditionMatch = line.content.match(/assert\((.*?)\);?/);
-        const condition = conditionMatch ? conditionMatch[1] : line.content;
+        let condition = line.content;
+        if (condition.startsWith('assert(') && condition.endsWith(')')) {
+          condition = condition.slice(7, -1).trim();
+        }
 
-        const assertNode: AssertNode = { type: 'Assert', condition };
-        getCurrentBlock(stack).body.push(assertNode);
-        break;
+        // If it's a string literal, keep it as is
+        if (condition.startsWith('"') && condition.endsWith('"')) {
+          return {
+            type: 'Assert',
+            condition
+          } as AssertNode;
+        }
+
+        // Try to parse as logic expression
+        try {
+          parseLogicExpression(condition);
+          return {
+            type: 'Assert',
+            condition
+          } as AssertNode;
+        } catch (e) {
+          console.error("Failed to parse assert condition:", condition);
+          return {
+            type: 'Assert',
+            condition: `"${condition}"`
+          } as AssertNode;
+        }
       }
 
       case 'let': {
-        // Match let variable = value;
-        const letMatch = line.content.match(/let\s+(\w+)\s*=\s*(.+?);/);
-        if (letMatch) {
-          const varName = letMatch[1];
-          const value = letMatch[2];
-          const letNode: LetNode = { type: 'Let', varName, value };
-          getCurrentBlock(stack).body.push(letNode);
-        } else {
-          // If it doesn't match the pattern, treat as raw
-          const rawNode: RawNode = { type: 'Raw', content: line.content };
-          getCurrentBlock(stack).body.push(rawNode);
+        const match = line.content.match(/let\s+(\w+)\s*=\s*(.+?);/);
+        if (match) {
+          return {
+            type: 'Let',
+            varName: match[1],
+            value: match[2].trim()
+          } as LetNode;
         }
-        break;
+        return {
+          type: 'Raw',
+          content: line.content
+        } as RawNode;
       }
 
       case 'raw': {
-        const rawNode: RawNode = { type: 'Raw', content: line.content };
-        getCurrentBlock(stack).body.push(rawNode);
-        break;
+        if (line.content === '&&') {
+          return null;  // Skip && tokens as they're handled by combination logic
+        }
+        if (!line.content.trim()) {
+          return null;  // Skip empty lines
+        }
+        return {
+          type: 'Raw',
+          content: line.content
+        } as RawNode;
       }
 
-      case 'blockEnd': {
-        // Closing a theorem, definition, or proof block
-        const finishedBlock = stack.pop();
-        if (!finishedBlock) {
-          throw new Error('Unmatched closing brace');
-        }
-        if (stack.length === 0) {
-          // Top-level block finished
-          ast.push(finishedBlock);
-        } else {
-          // Nested block finished (if you have nesting)
-          getCurrentBlock(stack).body.push(finishedBlock);
-        }
-        break;
-      }
+      default:
+        return null;
     }
   }
 
-  if (stack.length > 0) {
-    throw new Error('Some blocks not closed properly');
+  while (index < lines.length) {
+    const line = lines[index];
+    const expr = parseStatement(line);
+
+    if (expr !== null) {
+      if (currentExpression === null) {
+        currentExpression = expr;
+      } else {
+        currentExpression = {
+          type: 'And',
+          left: currentExpression,
+          right: expr
+        } as AndNode;
+      }
+    }
+
+    index++;
   }
 
-  return ast;
-}
-
-function getCurrentBlock(stack: (TheoremNode | DefinitionNode | ProofNode)[]): (TheoremNode | DefinitionNode | ProofNode) {
-  if (stack.length === 0) {
-    throw new Error('No current block to add to');
+  if (currentExpression === null) {
+    throw new Error("No top level expression");
   }
-  return stack[stack.length - 1];
+
+  return currentExpression;
 }

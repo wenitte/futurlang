@@ -1,6 +1,8 @@
+"use strict";
 // src/codegen/runtime.ts
-
-export const runtimePreamble = `
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.runtimePreamble = void 0;
+exports.runtimePreamble = `
 const usedNames = new Set();  // Track at runtime
 
 const assert = (condition) => {
