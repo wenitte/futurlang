@@ -1,0 +1,3 @@
+theorem MinimalTest() {
+  assert((∀ x ∈ X: P(x)));
+}

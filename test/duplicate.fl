@@ -1,7 +1,7 @@
 theorem Hello_World() {
-  assert("Test 1")
+  assert("Test 1");
 }
 
 theorem HELLO_WORLD() {
-  assert("Test 2")
+  assert("Test 2");
 }
