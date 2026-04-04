@@ -1,0 +1,57 @@
+// connectives.fl — test all logical connectives
+
+theorem Conjunction() {
+  let p = true;
+  let q = true;
+  assert(p && q);
+}
+
+theorem Disjunction() {
+  let p = false;
+  let q = true;
+  assert(p || q);
+}
+
+theorem Implication() {
+  // false → anything is true (vacuous truth)
+  let p = false;
+  let q = false;
+  assert(p -> q);
+}
+
+theorem Biconditional() {
+  let p = true;
+  let q = true;
+  assert(p <-> q);
+}
+
+theorem Negation() {
+  let p = false;
+  assert(!p);
+}
+
+theorem CompoundExpr() {
+  let p = true;
+  let q = false;
+  let r = true;
+  // (p ∨ q) ∧ r
+  assert((p || q) && r);
+}
+
+theorem DeMorgans() {
+  let p = false;
+  let q = false;
+  // ¬(p ∨ q) ↔ (¬p ∧ ¬q)
+  assert(not(p || q) <-> (!p && !q));
+}
+
+theorem ModusPonens() {
+  let p = true;
+  let q = true;
+  // p ∧ (p → q) → q
+  assert((p && (p -> q)) -> q);
+}
+
+theorem StringClaim() {
+  assert("FuturLang supports logical connectives");
+}

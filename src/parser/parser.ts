@@ -1,76 +1,82 @@
-// src/parsing/parser.ts
+// src/parser/parser.ts
+//
+// Converts a flat list of ParsedLines into a statement-level AST.
+// Multi-line assert(...) blocks are joined before expression-parsing.
 
 import { ParsedLine } from './lexer';
-import { ASTNode, TheoremNode, DefinitionNode, ProofNode, AssertNode, LetNode, RawNode } from './ast';
+import { parseExpr } from './expr';
+import {
+  ASTNode, TheoremNode, DefinitionNode, ProofNode,
+  AssertNode, LetNode, RawNode,
+} from './ast';
+
+type BlockNode = TheoremNode | DefinitionNode | ProofNode;
 
 export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
   const ast: ASTNode[] = [];
-  const stack: (TheoremNode | DefinitionNode | ProofNode)[] = [];
+  const stack: BlockNode[] = [];
 
   for (const line of lines) {
     switch (line.type) {
       case 'theorem': {
-        const theoremNode: TheoremNode = { type: 'Theorem', name: line.name!, body: [] };
-        stack.push(theoremNode);
+        const node: TheoremNode = { type: 'Theorem', name: line.name!, body: [] };
+        stack.push(node);
         break;
       }
-
       case 'definition': {
-        const defNode: DefinitionNode = { type: 'Definition', name: line.name!, body: [] };
-        stack.push(defNode);
+        const node: DefinitionNode = { type: 'Definition', name: line.name!, body: [] };
+        stack.push(node);
         break;
       }
-
+      case 'lemma': {
+        // Lemma reuses DefinitionNode shape for now
+        const node: DefinitionNode = { type: 'Definition', name: `lemma_${line.name!}`, body: [] };
+        stack.push(node);
+        break;
+      }
       case 'proof': {
-        const proofNode: ProofNode = { type: 'Proof', body: [] };
-        stack.push(proofNode);
+        const node: ProofNode = { type: 'Proof', body: [] };
+        stack.push(node);
         break;
       }
 
       case 'assert': {
-        // Match conditions like assert(x == y) or assert(condition)
-        const conditionMatch = line.content.match(/assert\((.*?)\);?/);
-        const condition = conditionMatch ? conditionMatch[1] : line.content;
-
-        const assertNode: AssertNode = { type: 'Assert', condition };
-        getCurrentBlock(stack).body.push(assertNode);
+        const exprSrc = extractAssertBody(line.content);
+        const expr    = parseExpr(exprSrc);
+        const node: AssertNode = { type: 'Assert', expr };
+        getCurrentBlock(stack).body.push(node);
         break;
       }
 
       case 'let': {
-        // Match let variable = value;
-        const letMatch = line.content.match(/let\s+(\w+)\s*=\s*(.+?);/);
-        if (letMatch) {
-          const varName = letMatch[1];
-          const value = letMatch[2];
-          const letNode: LetNode = { type: 'Let', varName, value };
-          getCurrentBlock(stack).body.push(letNode);
+        const m = line.content.match(/^let\s+(\w+)\s*=\s*(.+?);?\s*$/);
+        if (m) {
+          const node: LetNode = { type: 'Let', varName: m[1], value: m[2] };
+          getCurrentBlock(stack).body.push(node);
         } else {
-          // If it doesn't match the pattern, treat as raw
-          const rawNode: RawNode = { type: 'Raw', content: line.content };
-          getCurrentBlock(stack).body.push(rawNode);
+          getCurrentBlock(stack).body.push({ type: 'Raw', content: line.content });
         }
         break;
       }
 
       case 'raw': {
-        const rawNode: RawNode = { type: 'Raw', content: line.content };
-        getCurrentBlock(stack).body.push(rawNode);
+        const node: RawNode = { type: 'Raw', content: line.content };
+        // If we're inside a block, attach; otherwise top-level raw
+        if (stack.length > 0) {
+          getCurrentBlock(stack).body.push(node);
+        } else {
+          ast.push(node);
+        }
         break;
       }
 
       case 'blockEnd': {
-        // Closing a theorem, definition, or proof block
-        const finishedBlock = stack.pop();
-        if (!finishedBlock) {
-          throw new Error('Unmatched closing brace');
-        }
+        const finished = stack.pop();
+        if (!finished) throw new Error('Unmatched closing brace }');
         if (stack.length === 0) {
-          // Top-level block finished
-          ast.push(finishedBlock);
+          ast.push(finished);
         } else {
-          // Nested block finished (if you have nesting)
-          getCurrentBlock(stack).body.push(finishedBlock);
+          getCurrentBlock(stack).body.push(finished);
         }
         break;
       }
@@ -78,15 +84,29 @@ export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
   }
 
   if (stack.length > 0) {
-    throw new Error('Some blocks not closed properly');
+    throw new Error(`Unclosed block: ${stack[stack.length - 1].type}`);
   }
 
   return ast;
 }
 
-function getCurrentBlock(stack: (TheoremNode | DefinitionNode | ProofNode)[]): (TheoremNode | DefinitionNode | ProofNode) {
-  if (stack.length === 0) {
-    throw new Error('No current block to add to');
-  }
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function getCurrentBlock(stack: BlockNode[]): BlockNode {
+  if (stack.length === 0) throw new Error('No current block');
   return stack[stack.length - 1];
 }
+
+/**
+ * Extract the expression inside assert(...).
+ * Handles multi-line content that has already been joined.
+ */
+function extractAssertBody(content: string): string {
+  // Strip leading "assert" keyword, optional whitespace, then balanced parens
+  const m = content.match(/^assert\s*\(([\s\S]*)\)\s*;?\s*$/);
+  if (m) return m[1].trim();
+  // Fallback: return everything after "assert"
+  return content.replace(/^assert\s*/, '').trim();
+}
+
+

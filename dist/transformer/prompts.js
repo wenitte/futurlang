@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -40,27 +31,25 @@ exports.mathExtension = `For mathematical proofs:
    - Construction: {procedure, verification}
 4. Number and indent steps to show dependencies
 5. Link conclusion back to original claim`;
-function translateToFuturLang(text_1) {
-    return __awaiter(this, arguments, void 0, function* (text, isMathProof = false) {
-        const promptText = isMathProof
-            ? `${exports.basePrompt}\n${exports.mathExtension}`
-            : exports.basePrompt;
-        const prompt = `${promptText}\n\nTransform this statement:\n${text}`;
-        const response = yield anthropic.messages.create({
-            model: "claude-3-sonnet-20240229",
-            max_tokens: 1024,
-            system: exports.systemPrompt,
-            messages: [
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ]
-        });
-        const content = response.content[0];
-        if ('text' in content) {
-            return content.text;
-        }
-        throw new Error('Unexpected response type from API');
+async function translateToFuturLang(text, isMathProof = false) {
+    const promptText = isMathProof
+        ? `${exports.basePrompt}\n${exports.mathExtension}`
+        : exports.basePrompt;
+    const prompt = `${promptText}\n\nTransform this statement:\n${text}`;
+    const response = await anthropic.messages.create({
+        model: "claude-3-sonnet-20240229",
+        max_tokens: 1024,
+        system: exports.systemPrompt,
+        messages: [
+            {
+                role: "user",
+                content: prompt
+            }
+        ]
     });
+    const content = response.content[0];
+    if ('text' in content) {
+        return content.text;
+    }
+    throw new Error('Unexpected response type from API');
 }
