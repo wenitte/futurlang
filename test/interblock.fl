@@ -1,0 +1,20 @@
+// Test inter-block connectives: the whole file is one expression
+
+definition double(n) {
+  assert("double is defined")
+} →
+
+lemma DoubleIsPositive() {
+  assert("if n > 0 then double(n) > 0")
+} →
+
+theorem ProgramHoldsAsOneExpr() {
+  assert("theorem connected to proof via iff")
+} ↔
+
+proof ProgramHoldsAsOneExpr() {
+  let p = true;
+  let q = true;
+  assert(p && q);
+  assert("proof body is a single sequential expression")
+}
