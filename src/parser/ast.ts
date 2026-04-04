@@ -31,7 +31,6 @@ export interface NotNode {
   operand: ExprNode;
 }
 
-/** A leaf expression: a condition string (may include ==, !=, etc.) */
 export interface AtomNode {
   type: 'Atom';
   condition: string;
@@ -41,44 +40,93 @@ export type ExprNode = AndNode | OrNode | ImpliesNode | IffNode | NotNode | Atom
 
 // ── Statement-level AST nodes ───────────────────────────────────────────────
 
+// Inter-block connective: what follows a closing }
+export type BlockConnective = '→' | '∧' | '↔' | null; // null = last block, no connective
+
 export interface TheoremNode {
   type: 'Theorem';
   name: string;
   body: ASTNode[];
+  connective: BlockConnective; // connective to the NEXT block
 }
 
 export interface DefinitionNode {
   type: 'Definition';
   name: string;
   body: ASTNode[];
+  connective: BlockConnective;
+}
+
+export interface StructNode {
+  type: 'Struct';
+  name: string;
+  fields: string[];           // raw field lines, for now
+  connective: BlockConnective;
 }
 
 export interface ProofNode {
   type: 'Proof';
+  name: string;
   body: ASTNode[];
+  connective: BlockConnective;
+}
+
+export interface LemmaNode {
+  type: 'Lemma';
+  name: string;
+  body: ASTNode[];
+  connective: BlockConnective;
 }
 
 export interface AssertNode {
   type: 'Assert';
-  /** Parsed expression tree (may be compound via connectives) */
   expr: ExprNode;
+  connective: BlockConnective; // for assert(...) → inside proof bodies
 }
 
-export interface LetNode {
-  type: 'Let';
+export interface AssumeNode {
+  type: 'Assume';
+  expr: ExprNode;
+  connective: BlockConnective;
+}
+
+export interface ConcludeNode {
+  type: 'Conclude';
+  expr: ExprNode;
+  connective: BlockConnective;
+}
+
+export interface ApplyNode {
+  type: 'Apply';
+  target: string;
+  connective: BlockConnective;
+}
+
+export interface SetVarNode {
+  type: 'SetVar';
   varName: string;
-  value: string;
+  varType: string | null;   // e.g. 'ℝ', 'ℕ', null if untyped
+  value: string | null;     // may be absent for typed declarations
+  connective: BlockConnective;
 }
 
 export interface RawNode {
   type: 'Raw';
   content: string;
+  connective: BlockConnective;
 }
 
 export type ASTNode =
   | TheoremNode
   | DefinitionNode
+  | StructNode
   | ProofNode
+  | LemmaNode
   | AssertNode
-  | LetNode
+  | AssumeNode
+  | ConcludeNode
+  | ApplyNode
+  | SetVarNode
   | RawNode;
+
+// The top-level program is a single chained expression built from these nodes.
