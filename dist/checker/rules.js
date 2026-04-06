@@ -10,6 +10,7 @@ exports.checkLemmaApplication = checkLemmaApplication;
 exports.checkTheoremProofPairing = checkTheoremProofPairing;
 exports.checkInduction = checkInduction;
 exports.checkImpliesIntro = checkImpliesIntro;
+const propositions_1 = require("./propositions");
 // ── Rule: ASSUMPTION ──────────────────────────────────────────────────────────
 // assume(P) is always valid — it introduces P into the context.
 // The only constraint: assume must come before any step that uses P.
@@ -179,11 +180,11 @@ function checkImpliesIntro(antecedent, consequent, antecedentAssumed, consequent
 }
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isEstablished(claim, ctx) {
-    const normalized = normalizeClaim(claim);
-    return ctx.established.some(c => normalizeClaim(c.content) === normalized);
+    const normalized = (0, propositions_1.normalizeProp)(claim);
+    return ctx.established.some(c => (0, propositions_1.normalizeProp)(c.content) === normalized);
 }
 function normalizeClaim(s) {
-    return s.trim().toLowerCase().replace(/\s+/g, ' ');
+    return (0, propositions_1.normalizeProp)(s);
 }
 function normalizeName(s) {
     return s.toLowerCase().replace(/[^a-z0-9]/g, '');

@@ -14,6 +14,10 @@ import {
   checkAssumption, checkContradiction, checkLemmaApplication,
   checkTheoremProofPairing, checkInduction, checkAndIntro,
 } from './rules';
+import {
+  exprToProp, sameProp, splitConjunction as splitGoalConjunction,
+  splitImplication, splitIff,
+} from './propositions';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -96,6 +100,8 @@ function findPairs(nodes: ASTNode[]): TheoremProofPair[] {
 
 function checkPair(thm: TheoremNode, proof: ProofNode, globalLemmas: Map<string, ClaimSet>): ProofReport {
   const diagnostics: Diagnostic[] = [];
+  const theoremGoalExpr = thm.body.find((n): n is AssertNode => n.type === 'Assert')?.expr ?? null;
+  const theoremGoal = theoremGoalExpr ? exprToProp(theoremGoalExpr) : null;
 
   // Check the pairing itself
   const thmAsserts  = thm.body.filter(n => n.type === 'Assert');
@@ -114,14 +120,33 @@ function checkPair(thm: TheoremNode, proof: ProofNode, globalLemmas: Map<string,
   const method = detectProofMethod(proof.body);
 
   // Check the proof body
-  const proofReport = checkProofBlock(proof.name, proof.body, globalLemmas, method);
+  const proofReport = checkProofBlock(proof.name, proof.body, globalLemmas, method, theoremGoal);
   diagnostics.push(...proofReport.diagnostics);
+
+  if (theoremGoalExpr) {
+    if (!isCheckableGoal(theoremGoalExpr)) {
+      diagnostics.push({
+        severity: 'info',
+        message: `Goal '${theoremGoal}' is outside the current checker subset; use 'fl verify' for semantic verification`,
+        rule: 'THEOREM_PROOF',
+      });
+    } else if (!goalSatisfied(theoremGoalExpr, proofReport, proof.body)) {
+      diagnostics.push({
+        severity: 'error',
+        message: `Proof '${proof.name}' does not establish theorem goal '${theoremGoal}'`,
+        hint: theoremGoalHint(theoremGoalExpr),
+        rule: 'THEOREM_PROOF',
+      });
+    }
+  }
 
   return {
     name: thm.name,
-    valid: pairingCheck.valid && proofReport.valid,
+    valid: pairingCheck.valid && proofReport.valid && !diagnostics.some(d => d.severity === 'error'),
     method,
     stepCount: proof.body.length,
+    goal: theoremGoal,
+    derivedConclusion: proofReport.derivedConclusion,
     diagnostics,
     metrics: proofReport.metrics,
   };
@@ -133,7 +158,8 @@ function checkProofBlock(
   name: string,
   body: ASTNode[],
   globalLemmas: Map<string, ClaimSet>,
-  method: ProofMethod
+  method: ProofMethod,
+  goal: string | null = null
 ): ProofReport {
   const diagnostics: Diagnostic[] = [];
   const ctx: ProofContext = {
@@ -142,6 +168,7 @@ function checkProofBlock(
     lemmas: new Map(globalLemmas),
     method,
     inContradiction: false,
+    goal,
   };
 
   let step = 0;
@@ -222,8 +249,14 @@ function checkProofBlock(
       case 'Apply': {
         const n = node as ApplyNode;
         const result = checkLemmaApplication(n.target, ctx);
-        // Apply adds the lemma's conclusion to context
-        ctx.established.push({ content: `applied(${n.target})`, source: 'lemma_application', step });
+        const lemma = ctx.lemmas.get(normalizeName(n.target));
+        if (lemma && lemma.conclusions.length > 0) {
+          for (const conclusion of lemma.conclusions) {
+            ctx.established.push({ content: conclusion, source: 'lemma_application', step });
+          }
+        } else {
+          ctx.established.push({ content: `applied(${n.target})`, source: 'lemma_application', step });
+        }
         if (!result.valid) {
           diagnostics.push({ severity: 'warning', message: result.message, step, rule: result.rule });
         }
@@ -262,10 +295,11 @@ function checkProofBlock(
       case 'Lemma': {
         // Inline lemma — recurse
         const n = node as LemmaNode;
-        const innerReport = checkProofBlock(n.name, n.body, ctx.lemmas, 'unknown');
+        const lemmaGoalExpr = n.body.find((child): child is AssertNode => child.type === 'Assert')?.expr ?? null;
+        const innerReport = checkProofBlock(n.name, n.body, ctx.lemmas, 'unknown', lemmaGoalExpr ? exprToProp(lemmaGoalExpr) : null);
         ctx.lemmas.set(normalizeName(n.name), {
           hypotheses: [],
-          conclusions: innerReport.diagnostics.filter(d => d.severity !== 'error').map(d => d.message),
+          conclusions: innerReport.derivedConclusion ? [innerReport.derivedConclusion] : [],
         });
         diagnostics.push(...innerReport.diagnostics.map(d => ({ ...d, message: `[${n.name}] ${d.message}` })));
         ctx.established.push({ content: `lemma(${n.name})`, source: 'lemma_application', step });
@@ -295,12 +329,15 @@ function checkProofBlock(
   }
 
   const valid = !diagnostics.some(d => d.severity === 'error');
+  const derivedConclusion = findDerivedConclusion(ctx.established);
 
   return {
     name,
     valid,
     method,
     stepCount: step,
+    goal: ctx.goal,
+    derivedConclusion,
     diagnostics,
     metrics: {
       assumptionCount,
@@ -331,7 +368,8 @@ function collectLemmaNames(nodes: ASTNode[], map: Map<string, ClaimSet>) {
   for (const node of nodes) {
     if (node.type === 'Lemma' || node.type === 'Theorem') {
       const key = normalizeName(node.name);
-      map.set(key, { hypotheses: [], conclusions: ['proven'] });
+      const statement = node.body.find((child): child is AssertNode => child.type === 'Assert');
+      map.set(key, { hypotheses: [], conclusions: statement ? [exprToProp(statement.expr)] : [] });
     }
     if (node.type === 'Definition') {
       const key = normalizeName(node.name);
@@ -341,15 +379,7 @@ function collectLemmaNames(nodes: ASTNode[], map: Map<string, ClaimSet>) {
 }
 
 function exprToString(expr: ExprNode): string {
-  switch (expr.type) {
-    case 'Atom':    return expr.condition;
-    case 'And':     return `${exprToString(expr.left)} ∧ ${exprToString(expr.right)}`;
-    case 'Or':      return `${exprToString(expr.left)} ∨ ${exprToString(expr.right)}`;
-    case 'Implies': return `${exprToString(expr.left)} → ${exprToString(expr.right)}`;
-    case 'Iff':     return `${exprToString(expr.left)} ↔ ${exprToString(expr.right)}`;
-    case 'Not':     return `¬${exprToString(expr.operand)}`;
-    default: return '';
-  }
+  return exprToProp(expr);
 }
 
 function nodeToString(node: ASTNode): string {
@@ -368,10 +398,7 @@ function isConjunction(expr: ExprNode): boolean {
 }
 
 function splitConjunction(expr: ExprNode): [string, string] {
-  if (expr.type === 'And') {
-    return [exprToString(expr.left), exprToString(expr.right)];
-  }
-  return ['', ''];
+  return splitGoalConjunction(expr) ?? ['', ''];
 }
 
 function normalizeName(s: string): string {
@@ -394,4 +421,88 @@ function computeScore(reports: ProofReport[], paired: number, total: number): nu
   ).length / Math.max(reports.length, 1);
   score += richRatio * 20;
   return Math.round(score);
+}
+
+function goalSatisfied(goalExpr: ExprNode, report: ProofReport, body: ASTNode[]): boolean {
+  const established = report.derivedConclusion;
+  if (!established) return false;
+  const goal = exprToProp(goalExpr);
+  if (sameProp(established, goal)) return true;
+
+  const implication = splitImplication(goalExpr);
+  if (implication) {
+    const [antecedent, consequent] = implication;
+    const sawAssumption = body.some(
+      node => node.type === 'Assume' && sameProp(exprToString((node as AssumeNode).expr), antecedent)
+    );
+    return sawAssumption && sameProp(established, consequent);
+  }
+
+  const conjunction = splitGoalConjunction(goalExpr);
+  if (conjunction) {
+    const [left, right] = conjunction;
+    const establishedClaims = collectEstablishedClaims(body);
+    return establishedClaims.some(claim => sameProp(claim, left))
+      && establishedClaims.some(claim => sameProp(claim, right));
+  }
+
+  const iff = splitIff(goalExpr);
+  if (iff) {
+    const [left, right] = iff;
+    const establishedClaims = collectEstablishedClaims(body);
+    return establishedClaims.some(claim => sameProp(claim, `${left} → ${right}`))
+      && establishedClaims.some(claim => sameProp(claim, `${right} → ${left}`));
+  }
+
+  return false;
+}
+
+function collectEstablishedClaims(body: ASTNode[]): string[] {
+  const claims: string[] = [];
+  for (const node of body) {
+    if (node.type === 'Assert') claims.push(exprToString(node.expr));
+    if (node.type === 'Assume') claims.push(exprToString(node.expr));
+    if (node.type === 'Conclude') claims.push(exprToString(node.expr));
+  }
+  return claims;
+}
+
+function findDerivedConclusion(established: Claim[]): string | null {
+  for (let i = established.length - 1; i >= 0; i--) {
+    const claim = established[i];
+    if (claim.source === 'conclusion' || claim.source === 'assertion' || claim.source === 'lemma_application') {
+      return claim.content;
+    }
+  }
+  return null;
+}
+
+function theoremGoalHint(goalExpr: ExprNode): string {
+  const implication = splitImplication(goalExpr);
+  if (implication) {
+    const [antecedent, consequent] = implication;
+    return `For a simple demo proof, start with assume(${antecedent}) and finish by concluding ${consequent}.`;
+  }
+  const conjunction = splitGoalConjunction(goalExpr);
+  if (conjunction) {
+    const [left, right] = conjunction;
+    return `Establish both '${left}' and '${right}', then conclude the conjunction or leave both as derived steps.`;
+  }
+  return 'Finish the proof with conclude(<theorem claim>) or an equivalent final asserted result.';
+}
+
+function isCheckableGoal(expr: ExprNode): boolean {
+  switch (expr.type) {
+    case 'Atom':
+      return expr.atomKind !== 'opaque';
+    case 'And':
+    case 'Or':
+    case 'Implies':
+    case 'Iff':
+      return isCheckableGoal(expr.left) && isCheckableGoal(expr.right);
+    case 'Not':
+      return isCheckableGoal(expr.operand);
+    default:
+      return false;
+  }
 }

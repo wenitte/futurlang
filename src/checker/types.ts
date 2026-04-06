@@ -38,6 +38,8 @@ export interface ProofContext {
   method: ProofMethod;
   // Are we inside a contradiction block (negated assumption in scope)?
   inContradiction: boolean;
+  // The current goal proposition, when checking a theorem/proof pair.
+  goal: string | null;
 }
 
 export interface Claim {
@@ -82,6 +84,8 @@ export interface ProofReport {
   valid: boolean;
   method: ProofMethod;
   stepCount: number;
+  goal: string | null;
+  derivedConclusion: string | null;
   diagnostics: Diagnostic[];
   // Structural metrics useful as training signal
   metrics: {

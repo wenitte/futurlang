@@ -62,8 +62,9 @@ function parseLinesToAST(lines) {
                     expr = (0, expr_1.parseExpr)(body);
                 }
                 catch {
-                    // Complex mathematical content — treat as an opaque asserted claim
-                    expr = { type: 'Atom', condition: `"${body.replace(/"/g, '\\"')}"` };
+                    // Preserve unsupported claims for non-JS backends, but do not
+                    // silently turn them into provable string assertions.
+                    expr = { type: 'Atom', condition: body, atomKind: 'opaque' };
                 }
                 const node = { type: 'Assert', expr, connective: line.connective };
                 pushOrTop(stack, ast, node);
@@ -76,7 +77,7 @@ function parseLinesToAST(lines) {
                     expr = (0, expr_1.parseExpr)(body);
                 }
                 catch {
-                    expr = { type: 'Atom', condition: `"${body.replace(/"/g, '\\"')}"` };
+                    expr = { type: 'Atom', condition: body, atomKind: 'opaque' };
                 }
                 const node = { type: 'Assume', expr, connective: line.connective };
                 pushOrTop(stack, ast, node);
@@ -89,7 +90,7 @@ function parseLinesToAST(lines) {
                     expr = (0, expr_1.parseExpr)(body);
                 }
                 catch {
-                    expr = { type: 'Atom', condition: `"${body.replace(/"/g, '\\"')}"` };
+                    expr = { type: 'Atom', condition: body, atomKind: 'opaque' };
                 }
                 const node = { type: 'Conclude', expr, connective: line.connective };
                 pushOrTop(stack, ast, node);

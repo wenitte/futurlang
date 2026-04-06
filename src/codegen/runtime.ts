@@ -20,6 +20,10 @@ function atom(v, label) {
   return { kind: 'atom', value, label: label ?? String(v) };
 }
 
+function unsupportedExpr(label, reason) {
+  throw new Error(reason + ': ' + label);
+}
+
 // ── Connectives ───────────────────────────────────────────────────────────────
 function and(a, b) {
   const lv = _resolve(a), rv = _resolve(b);

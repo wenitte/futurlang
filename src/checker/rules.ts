@@ -2,6 +2,7 @@
 // Natural deduction inference rules — each returns a CheckResult
 
 import { ProofContext, Claim, CheckResult, InferenceRule } from './types';
+import { normalizeProp } from './propositions';
 
 // ── Rule: ASSUMPTION ──────────────────────────────────────────────────────────
 // assume(P) is always valid — it introduces P into the context.
@@ -202,12 +203,12 @@ export function checkImpliesIntro(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isEstablished(claim: string, ctx: ProofContext): boolean {
-  const normalized = normalizeClaim(claim);
-  return ctx.established.some(c => normalizeClaim(c.content) === normalized);
+  const normalized = normalizeProp(claim);
+  return ctx.established.some(c => normalizeProp(c.content) === normalized);
 }
 
 function normalizeClaim(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return normalizeProp(s);
 }
 
 function normalizeName(s: string): string {

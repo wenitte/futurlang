@@ -8,6 +8,7 @@ import { parseLinesToAST } from './parser/parser';
 import { checkFile } from './checker/checker';
 import { setup, isSetupComplete } from './lean/setup';
 import { verify } from './lean/verifier';
+import { createReactApp } from './react/transpiler';
 
 const args = process.argv.slice(2);
 
@@ -32,6 +33,13 @@ async function main() {
     const file = args[1];
     if (!file) { console.error('Usage: fl verify <file.fl>'); process.exit(1); }
     runVerify(file); return;
+  }
+
+  if (command === 'web') {
+    const file = args[1];
+    const outDir = args[2] ?? 'generated/futurlang-webapp';
+    if (!file) { console.error('Usage: fl web <file.fl> [out-dir]'); process.exit(1); }
+    runWeb(file, outDir); return;
   }
 
   // Default: evaluate
@@ -111,6 +119,14 @@ function runVerify(file: string) {
   }
 }
 
+function runWeb(file: string, outDir: string) {
+  if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
+  const source = fs.readFileSync(file, 'utf8');
+  const ast = parseLinesToAST(lexFL(source));
+  createReactApp(ast, outDir);
+  console.log(`Generated React app in ${outDir}`);
+}
+
 function printUsage() {
   console.log(`
 FuturLang — formal proof language
@@ -119,6 +135,7 @@ Usage:
   fl <file.fl>           Evaluate a proof program
   fl check <file.fl>     Check proof structure (natural deduction)
   fl verify <file.fl>    Verify proof against Lean 4 / Mathlib
+  fl web <file.fl>       Generate a React app from the program truth chain
   fl setup               Install verification backend (one-time, ~4GB)
 `);
 }

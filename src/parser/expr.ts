@@ -125,7 +125,7 @@ class ExprParser {
   }
 
   parse(): ExprNode {
-    if (this.peek().kind === 'EOF') return { type: 'Atom', condition: 'true' };
+    if (this.peek().kind === 'EOF') return { type: 'Atom', condition: 'true', atomKind: 'expression' };
     const node = this.parseIff();
     if (this.peek().kind !== 'EOF')
       throw new Error(`Unexpected token after expression: "${this.peek().value}"`);
@@ -188,7 +188,13 @@ class ExprParser {
 
     if (t.kind === 'ATOM') {
       this.consume();
-      return { type: 'Atom', condition: t.value.trim() } as AtomNode;
+      const condition = t.value.trim();
+      const atomKind =
+        (condition.startsWith('"') && condition.endsWith('"')) ||
+        (condition.startsWith("'") && condition.endsWith("'"))
+          ? 'string'
+          : 'expression';
+      return { type: 'Atom', condition, atomKind } as AtomNode;
     }
 
     throw new Error(`Unexpected token: "${t.value}" (${t.kind})`);

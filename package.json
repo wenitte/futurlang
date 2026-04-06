@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "node fl.js test/hello.fl && node fl.js test/connectives.fl && node fl.js test/lagranges_theorem.fl"
+    "test": "npm run build && node dist/tests/run.js && node fl.js test/hello.fl && node fl.js test/connectives.fl && node fl.js check test/lagranges_theorem.fl"
   },
   "keywords": [],
   "author": "",

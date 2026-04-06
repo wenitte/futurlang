@@ -123,8 +123,12 @@ function generateAtom(node: AtomNode): string {
   const c   = node.condition.trim();
   const lbl = JSON.stringify(c);
 
+  if (node.atomKind === 'opaque') {
+    return `unsupportedExpr(${lbl}, "JS evaluator only supports the strict logical subset. Use 'fl verify' for advanced mathematical claims.")`;
+  }
+
   // Already a string literal
-  if ((c.startsWith('"') && c.endsWith('"')) || (c.startsWith("'") && c.endsWith("'"))) {
+  if (node.atomKind === 'string') {
     return `atom(true, ${lbl})`;
   }
   if (c === 'true')  return `atom(true,  "true")`;
@@ -135,7 +139,7 @@ function generateAtom(node: AtomNode): string {
   // Also catch |X| cardinality, [G:H] index notation, set-builder {x | ...}
   const MATH_NOTATION = /\|[^|]|\bmod\b|divides|\{.*\|/;
   if (MATH_CHARS.test(c) || MATH_NOTATION.test(c)) {
-    return `atom(true, ${lbl})`;
+    return `unsupportedExpr(${lbl}, "Unsupported mathematical notation in JS evaluator. Use 'fl verify' for Lean-backed verification.")`;
   }
 
   // Relational JS expression

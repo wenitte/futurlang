@@ -2,7 +2,7 @@
 const fs   = require('fs');
 const args = process.argv.slice(2);
 
-const ROUTED_COMMANDS = ['setup', 'verify', 'check'];
+const ROUTED_COMMANDS = ['setup', 'verify', 'check', 'web'];
 
 if (args.length === 0 || ROUTED_COMMANDS.includes(args[0])) {
   require('./dist/cli');
