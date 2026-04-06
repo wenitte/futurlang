@@ -1,0 +1,11 @@
+theorem ExistsInElim() {
+  given(∃ x ∈ A, x ∈ B) →
+  assert(q)
+} ↔
+
+proof ExistsInElim() {
+  setVar(a) →
+  assume(a ∈ A) →
+  assume(a ∈ B) →
+  conclude(q)
+}

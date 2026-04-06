@@ -1,0 +1,9 @@
+theorem ExistsInIntro() {
+  given(a ∈ A) →
+  given(a ∈ B) →
+  assert(∃ x ∈ A, x ∈ B)
+} ↔
+
+proof ExistsInIntro() {
+  conclude(∃ x ∈ A, x ∈ B)
+}

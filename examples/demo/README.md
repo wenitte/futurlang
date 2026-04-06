@@ -13,17 +13,21 @@ All examples in this directory obey the core FuturLang rule that the source itse
 5. `subset-transitivity.fl`
 6. `equality-substitution.fl`
 7. `union-intro.fl`
-8. `intersection-left.fl`
-9. `intersection-intro.fl`
-10. `intersection-right.fl`
-11. `mi-order-identity.fl`
-12. `conjunction-intro.fl`
-13. `conjunction-elim.fl`
-14. `modus-ponens.fl`
-15. `right-projection.fl`
-16. `multi-premise-chain.fl`
-17. `lemma-apply.fl`
-18. `contradiction-demo.fl`
+8. `forall-in-elim.fl`
+9. `forall-in-intro.fl`
+10. `exists-in-intro.fl`
+11. `exists-in-elim.fl`
+12. `intersection-left.fl`
+13. `intersection-intro.fl`
+14. `intersection-right.fl`
+15. `mi-order-identity.fl`
+16. `conjunction-intro.fl`
+17. `conjunction-elim.fl`
+18. `modus-ponens.fl`
+19. `right-projection.fl`
+20. `multi-premise-chain.fl`
+21. `lemma-apply.fl`
+22. `contradiction-demo.fl`
 
 ## Demo commands
 
@@ -35,6 +39,10 @@ fl check examples/demo/subset-chain.fl
 fl check examples/demo/subset-transitivity.fl
 fl check examples/demo/equality-substitution.fl
 fl check examples/demo/union-intro.fl
+fl check examples/demo/forall-in-elim.fl
+fl check examples/demo/forall-in-intro.fl
+fl check examples/demo/exists-in-intro.fl
+fl check examples/demo/exists-in-elim.fl
 fl check examples/demo/intersection-left.fl
 fl check examples/demo/intersection-intro.fl
 fl check examples/demo/intersection-right.fl
@@ -61,6 +69,14 @@ These examples stay inside the current fast checker subset, so they are the righ
 `equality-substitution.fl` shows equality-driven transport across membership claims: `x = y` plus `x ∈ A` yields `y ∈ A`.
 
 `union-intro.fl` shows kernel-checked union membership introduction: from `x ∈ A`, the checker derives `x ∈ A ∪ B`.
+
+`forall-in-elim.fl` shows bounded universal elimination: from `∀ x ∈ A, x ∈ B` and `a ∈ A`, the checker derives `a ∈ B`.
+
+`forall-in-intro.fl` shows the current narrow witness-scope introduction rule for bounded universals: after `setVar(a)` and `assume(a ∈ A)`, the proof first derives `a ∈ B` and then concludes `∀ x ∈ A, x ∈ B`.
+
+`exists-in-intro.fl` shows bounded existential introduction: from `a ∈ A` and `a ∈ B`, the checker derives `∃ x ∈ A, x ∈ B`.
+
+`exists-in-elim.fl` shows the current narrow witness-scope existential elimination rule: after `setVar(a)`, the proof explicitly assumes `a ∈ A` and `a ∈ B`, then discharges a conclusion that does not mention `a`.
 
 `intersection-left.fl` shows set-style conjunction elimination with Unicode membership notation: from `(x ∈ A) ∧ (x ∈ B)`, the checker derives `x ∈ A`.
 

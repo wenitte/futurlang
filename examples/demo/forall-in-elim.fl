@@ -1,0 +1,9 @@
+theorem ForallInElim() {
+  given(∀ x ∈ A, x ∈ B) →
+  given(a ∈ A) →
+  assert(a ∈ B)
+} ↔
+
+proof ForallInElim() {
+  conclude(a ∈ B)
+}

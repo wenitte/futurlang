@@ -1,0 +1,10 @@
+theorem ForallInIntro() {
+  assert(∀ x ∈ A, x ∈ B)
+} ↔
+
+proof ForallInIntro() {
+  setVar(a) →
+  assume(a ∈ A) →
+  assert(a ∈ B) →
+  conclude(∀ x ∈ A, x ∈ B)
+}
