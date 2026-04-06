@@ -18,6 +18,11 @@ export type InferenceRule =
   | 'AND_INTRO'         // have P, have Q, conclude P ∧ Q
   | 'AND_ELIM'          // have P ∧ Q, conclude P (or Q)
   | 'SUBSET_ELIM'       // have x ∈ A, have A ⊆ B, conclude x ∈ B
+  | 'SUBSET_TRANS'      // have A ⊆ B, have B ⊆ C, conclude A ⊆ C
+  | 'EQUALITY_SUBST'    // have x = y and x ∈ A, conclude y ∈ A
+  | 'UNION_INTRO'       // have x ∈ A, conclude x ∈ A ∪ B
+  | 'INTERSECTION_INTRO'// have x ∈ A and x ∈ B, conclude x ∈ A ∩ B
+  | 'INTERSECTION_ELIM' // have x ∈ A ∩ B, conclude x ∈ A or x ∈ B
   | 'OR_INTRO'          // have P, conclude P ∨ Q
   | 'IFF_INTRO'         // prove P → Q and Q → P, conclude P ↔ Q
   // Proof methods

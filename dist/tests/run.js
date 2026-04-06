@@ -42,6 +42,7 @@ const lexer_1 = require("../parser/lexer");
 const expr_1 = require("../parser/expr");
 const parser_1 = require("../parser/parser");
 const checker_1 = require("../checker/checker");
+const propositions_1 = require("../checker/propositions");
 const formal_1 = require("../parser/formal");
 const transpiler_1 = require("../lean/transpiler");
 const transpiler_2 = require("../react/transpiler");
@@ -71,6 +72,14 @@ runTest('parseExpr accepts MI-style implication and biconditional symbols', () =
     assert_1.strict.equal(iffExpr.type, 'Iff');
     const subsetExpr = (0, expr_1.parseExpr)('(x ∈ A) ⇒ (A ⊆ B)');
     assert_1.strict.equal(subsetExpr.type, 'Implies');
+});
+runTest('parseExpr normalizes word equivalents for set notation and bounded quantifiers', () => {
+    const unionExpr = (0, expr_1.parseExpr)('(x in A) implies (x in A union B)');
+    assert_1.strict.equal((0, propositions_1.exprToProp)(unionExpr), 'x ∈ A → x ∈ A ∪ B');
+    const quantified = (0, expr_1.parseExpr)('forall x in A, exists y in B');
+    assert_1.strict.equal(quantified.type, 'Atom');
+    assert_1.strict.equal(quantified.atomKind, 'expression');
+    assert_1.strict.equal(quantified.condition, '∀ x ∈ A, ∃ y ∈ B');
 });
 runTest('parser preserves malformed expressions as opaque atoms', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -143,6 +152,21 @@ proof QuantifiedIdentity() {
     const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
     assert_1.strict.match(messages, /outside the current parser\/checker subset/i);
     assert_1.strict.match(messages, /opaque symbolic claim/i);
+});
+runTest('checker diagnoses bounded quantifiers as parsed but outside the kernel subset', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem BoundedQuantifierDemo() {
+  assert(forall x in A, x in A)
+} ↔
+
+proof BoundedQuantifierDemo() {
+  assert(forall x in A, x in A)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => `${d.message}\n${d.hint ?? ''}`)).join('\n');
+    assert_1.strict.match(messages, /FORALL_IN/);
+    assert_1.strict.match(messages, /fl verify/);
 });
 runTest('checker accepts conjunction goals when both parts are established', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -264,6 +288,89 @@ proof SubsetChain() {
     assert_1.strict.equal(theoremReport.proofSteps[1].rule, 'SUBSET_ELIM');
     assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ C');
     assert_1.strict.equal(theoremReport.derivations.filter(node => node.rule === 'SUBSET_ELIM').length, 2);
+});
+runTest('checker validates subset transitivity', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem SubsetTransitivity() {
+  given(A subset B) →
+  given(B subset C) →
+  assert(A subset C)
+} ↔
+
+proof SubsetTransitivity() {
+  conclude(A subset C)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SUBSET_TRANS');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'A ⊆ C');
+});
+runTest('checker validates equality substitution on membership claims', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem EqualitySubstitution() {
+  given(x = y) →
+  given(x in A) →
+  assert(y in A)
+} ↔
+
+proof EqualitySubstitution() {
+  conclude(y in A)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'EQUALITY_SUBST');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'y ∈ A');
+});
+runTest('checker validates union introduction from word-form notation', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UnionIntro() {
+  given(x in A) →
+  assert(x in A union B)
+} ↔
+
+proof UnionIntro() {
+  conclude(x in A union B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    assert_1.strict.equal(report.reports[0].proofSteps[0].rule, 'UNION_INTRO');
+    assert_1.strict.equal(report.reports[0].derivedConclusion, 'x ∈ A ∪ B');
+});
+runTest('checker validates intersection introduction and elimination', () => {
+    const introAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IntersectionIntro() {
+  given(x in A) →
+  given(x in B) →
+  assert(x in A intersection B)
+} ↔
+
+proof IntersectionIntro() {
+  conclude(x in A intersection B)
+}
+`));
+    const introReport = (0, checker_1.checkFile)(introAst);
+    assert_1.strict.equal(introReport.valid, true);
+    assert_1.strict.equal(introReport.reports[0].proofSteps[0].rule, 'INTERSECTION_INTRO');
+    assert_1.strict.equal(introReport.reports[0].derivedConclusion, 'x ∈ A ∩ B');
+    const elimAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IntersectionRight() {
+  given(x in A intersection B) →
+  assert(x in B)
+} ↔
+
+proof IntersectionRight() {
+  conclude(x in B)
+}
+`));
+    const elimReport = (0, checker_1.checkFile)(elimAst);
+    assert_1.strict.equal(elimReport.valid, true);
+    assert_1.strict.equal(elimReport.reports[0].proofSteps[0].rule, 'INTERSECTION_ELIM');
+    assert_1.strict.equal(elimReport.reports[0].derivedConclusion, 'x ∈ B');
 });
 runTest('checker enforces lemma hypotheses before apply', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`

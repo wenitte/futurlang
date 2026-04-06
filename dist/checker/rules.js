@@ -7,6 +7,11 @@ exports.checkModusPonens = checkModusPonens;
 exports.checkAndIntro = checkAndIntro;
 exports.checkAndElim = checkAndElim;
 exports.checkSubsetElim = checkSubsetElim;
+exports.checkSubsetTrans = checkSubsetTrans;
+exports.checkEqualitySubst = checkEqualitySubst;
+exports.checkUnionIntro = checkUnionIntro;
+exports.checkIntersectionIntro = checkIntersectionIntro;
+exports.checkIntersectionElim = checkIntersectionElim;
 exports.checkContradiction = checkContradiction;
 exports.checkLemmaApplication = checkLemmaApplication;
 exports.checkTheoremProofPairing = checkTheoremProofPairing;
@@ -89,6 +94,84 @@ function checkSubsetElim(elementMembership, subsetClaim, target, ctx) {
         rule: 'SUBSET_ELIM',
         message: `Cannot use subset elimination: '${subsetClaim}' not yet established`,
         hint: `Establish '${subsetClaim}' before deriving '${target}'`,
+    };
+}
+function checkSubsetTrans(leftSubset, rightSubset, target, ctx) {
+    const hasLeft = isEstablished(leftSubset, ctx);
+    const hasRight = isEstablished(rightSubset, ctx);
+    if (hasLeft && hasRight) {
+        return { valid: true, rule: 'SUBSET_TRANS', message: `Subset transitivity: ${leftSubset}, ${rightSubset} ⊢ ${target}` };
+    }
+    if (!hasLeft) {
+        return {
+            valid: false,
+            rule: 'SUBSET_TRANS',
+            message: `Cannot use subset transitivity: '${leftSubset}' not yet established`,
+            hint: `Establish '${leftSubset}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'SUBSET_TRANS',
+        message: `Cannot use subset transitivity: '${rightSubset}' not yet established`,
+        hint: `Establish '${rightSubset}' before deriving '${target}'`,
+    };
+}
+function checkEqualitySubst(equalityClaim, membershipClaim, target, ctx) {
+    const hasEquality = isEstablished(equalityClaim, ctx);
+    const hasMembership = isEstablished(membershipClaim, ctx);
+    if (hasEquality && hasMembership) {
+        return { valid: true, rule: 'EQUALITY_SUBST', message: `Equality substitution: ${equalityClaim}, ${membershipClaim} ⊢ ${target}` };
+    }
+    if (!hasEquality) {
+        return {
+            valid: false,
+            rule: 'EQUALITY_SUBST',
+            message: `Cannot use equality substitution: '${equalityClaim}' not yet established`,
+            hint: `Establish '${equalityClaim}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'EQUALITY_SUBST',
+        message: `Cannot use equality substitution: '${membershipClaim}' not yet established`,
+        hint: `Establish '${membershipClaim}' before deriving '${target}'`,
+    };
+}
+function checkUnionIntro(membershipClaim, target, ctx) {
+    if (isEstablished(membershipClaim, ctx)) {
+        return { valid: true, rule: 'UNION_INTRO', message: `Union introduction: ${membershipClaim} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'UNION_INTRO',
+        message: `Cannot use union introduction: '${membershipClaim}' not yet established`,
+        hint: `Establish '${membershipClaim}' before deriving '${target}'`,
+    };
+}
+function checkIntersectionIntro(leftMembership, rightMembership, target, ctx) {
+    const hasLeft = isEstablished(leftMembership, ctx);
+    const hasRight = isEstablished(rightMembership, ctx);
+    if (hasLeft && hasRight) {
+        return { valid: true, rule: 'INTERSECTION_INTRO', message: `Intersection introduction: ${leftMembership}, ${rightMembership} ⊢ ${target}` };
+    }
+    const missing = hasLeft ? rightMembership : leftMembership;
+    return {
+        valid: false,
+        rule: 'INTERSECTION_INTRO',
+        message: `Cannot use intersection introduction: '${missing}' not yet established`,
+        hint: `Establish '${missing}' before deriving '${target}'`,
+    };
+}
+function checkIntersectionElim(intersectionClaim, target, ctx) {
+    if (isEstablished(intersectionClaim, ctx)) {
+        return { valid: true, rule: 'INTERSECTION_ELIM', message: `Intersection elimination: ${intersectionClaim} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'INTERSECTION_ELIM',
+        message: `Cannot use intersection elimination: '${intersectionClaim}' not yet established`,
+        hint: `Establish '${intersectionClaim}' before deriving '${target}'`,
     };
 }
 // ── Rule: CONTRADICTION ───────────────────────────────────────────────────────

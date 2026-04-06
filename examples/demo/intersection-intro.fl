@@ -1,0 +1,9 @@
+theorem IntersectionIntro() {
+  given(x ∈ A) →
+  given(x ∈ B) →
+  assert(x ∈ A ∩ B)
+} ↔
+
+proof IntersectionIntro() {
+  conclude(x ∈ A ∩ B)
+}

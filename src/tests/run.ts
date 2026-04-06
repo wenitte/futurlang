@@ -7,6 +7,7 @@ import { lexFL } from '../parser/lexer';
 import { parseExpr } from '../parser/expr';
 import { parseLinesToAST } from '../parser/parser';
 import { checkFile } from '../checker/checker';
+import { exprToProp } from '../checker/propositions';
 import { parseFL } from '../parser/formal';
 import { transpileToLean } from '../lean/transpiler';
 import { createReactApp } from '../react/transpiler';
@@ -39,6 +40,16 @@ runTest('parseExpr accepts MI-style implication and biconditional symbols', () =
   assert.equal(iffExpr.type, 'Iff');
   const subsetExpr = parseExpr('(x ∈ A) ⇒ (A ⊆ B)');
   assert.equal(subsetExpr.type, 'Implies');
+});
+
+runTest('parseExpr normalizes word equivalents for set notation and bounded quantifiers', () => {
+  const unionExpr = parseExpr('(x in A) implies (x in A union B)');
+  assert.equal(exprToProp(unionExpr), 'x ∈ A → x ∈ A ∪ B');
+
+  const quantified = parseExpr('forall x in A, exists y in B');
+  assert.equal(quantified.type, 'Atom');
+  assert.equal(quantified.atomKind, 'expression');
+  assert.equal(quantified.condition, '∀ x ∈ A, ∃ y ∈ B');
 });
 
 runTest('parser preserves malformed expressions as opaque atoms', () => {
@@ -115,6 +126,22 @@ proof QuantifiedIdentity() {
   const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
   assert.match(messages, /outside the current parser\/checker subset/i);
   assert.match(messages, /opaque symbolic claim/i);
+});
+
+runTest('checker diagnoses bounded quantifiers as parsed but outside the kernel subset', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem BoundedQuantifierDemo() {
+  assert(forall x in A, x in A)
+} ↔
+
+proof BoundedQuantifierDemo() {
+  assert(forall x in A, x in A)
+}
+`));
+  const report = checkFile(ast);
+  const messages = report.reports.flatMap(r => r.diagnostics.map(d => `${d.message}\n${d.hint ?? ''}`)).join('\n');
+  assert.match(messages, /FORALL_IN/);
+  assert.match(messages, /fl verify/);
 });
 
 runTest('checker accepts conjunction goals when both parts are established', () => {
@@ -242,6 +269,94 @@ proof SubsetChain() {
   assert.equal(theoremReport.proofSteps[1].rule, 'SUBSET_ELIM');
   assert.equal(theoremReport.derivedConclusion, 'x ∈ C');
   assert.equal(theoremReport.derivations.filter(node => node.rule === 'SUBSET_ELIM').length, 2);
+});
+
+runTest('checker validates subset transitivity', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem SubsetTransitivity() {
+  given(A subset B) →
+  given(B subset C) →
+  assert(A subset C)
+} ↔
+
+proof SubsetTransitivity() {
+  conclude(A subset C)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[0].rule, 'SUBSET_TRANS');
+  assert.equal(theoremReport.derivedConclusion, 'A ⊆ C');
+});
+
+runTest('checker validates equality substitution on membership claims', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem EqualitySubstitution() {
+  given(x = y) →
+  given(x in A) →
+  assert(y in A)
+} ↔
+
+proof EqualitySubstitution() {
+  conclude(y in A)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[0].rule, 'EQUALITY_SUBST');
+  assert.equal(theoremReport.derivedConclusion, 'y ∈ A');
+});
+
+runTest('checker validates union introduction from word-form notation', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem UnionIntro() {
+  given(x in A) →
+  assert(x in A union B)
+} ↔
+
+proof UnionIntro() {
+  conclude(x in A union B)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  assert.equal(report.reports[0].proofSteps[0].rule, 'UNION_INTRO');
+  assert.equal(report.reports[0].derivedConclusion, 'x ∈ A ∪ B');
+});
+
+runTest('checker validates intersection introduction and elimination', () => {
+  const introAst = parseLinesToAST(lexFL(`
+theorem IntersectionIntro() {
+  given(x in A) →
+  given(x in B) →
+  assert(x in A intersection B)
+} ↔
+
+proof IntersectionIntro() {
+  conclude(x in A intersection B)
+}
+`));
+  const introReport = checkFile(introAst);
+  assert.equal(introReport.valid, true);
+  assert.equal(introReport.reports[0].proofSteps[0].rule, 'INTERSECTION_INTRO');
+  assert.equal(introReport.reports[0].derivedConclusion, 'x ∈ A ∩ B');
+
+  const elimAst = parseLinesToAST(lexFL(`
+theorem IntersectionRight() {
+  given(x in A intersection B) →
+  assert(x in B)
+} ↔
+
+proof IntersectionRight() {
+  conclude(x in B)
+}
+`));
+  const elimReport = checkFile(elimAst);
+  assert.equal(elimReport.valid, true);
+  assert.equal(elimReport.reports[0].proofSteps[0].rule, 'INTERSECTION_ELIM');
+  assert.equal(elimReport.reports[0].derivedConclusion, 'x ∈ B');
 });
 
 runTest('checker enforces lemma hypotheses before apply', () => {

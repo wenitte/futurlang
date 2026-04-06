@@ -17,11 +17,21 @@
 - simple conjunction demos are accepted when both sides are established
 - set-theoretic subset transport is validated in the current kernel subset:
   from `x ∈ A` and `A ⊆ B`, the checker can derive `x ∈ B`
+- subset transitivity is validated in the current kernel subset:
+  from `A ⊆ B` and `B ⊆ C`, the checker can derive `A ⊆ C`
+- equality substitution is validated for membership claims:
+  from `x = y` and `x ∈ A`, the checker can derive `y ∈ A`
+- union membership introduction is validated:
+  from `x ∈ A`, the checker can derive `x ∈ A ∪ B`
+- intersection membership introduction and elimination are validated:
+  from `x ∈ A` and `x ∈ B`, the checker can derive `x ∈ A ∩ B`
+  from `x ∈ A ∩ B`, the checker can derive either component membership
 - chained set-membership transport proofs are accepted when each step is justified by prior membership and subset facts
 - lemma application checks required hypotheses before adding lemma conclusions
 - `apply(...)` traces show both consumed lemma hypotheses and imported conclusions
 - simple contradiction demos are accepted when the proof explicitly enters contradiction mode, records `contradiction()`, and then discharges the goal
 - omitted top-level connectives are rejected before proof checking starts
+- parsed-but-unsupported notation now says which kernel rule is missing and tells you when to use `fl verify`
 
 ## What It Does Not Guarantee Yet
 
@@ -29,7 +39,7 @@
 - dependent typing
 - definitional equality
 - normalization
-- rich binder elaboration
+- rich binder elaboration, including kernel-checked `∀x ∈ A` and `∃x ∈ A`
 - complete lemma application semantics
 - a trusted contradiction kernel
 

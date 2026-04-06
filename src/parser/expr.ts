@@ -15,6 +15,48 @@ import {
   ExprNode, AtomNode, AndNode, OrNode, ImpliesNode, IffNode, NotNode,
 } from './ast';
 
+const WORD_NORMALIZATIONS: Array<[RegExp, string]> = [
+  [/\bfor\s+all\b/gi, '∀'],
+  [/\bforall\b/gi, '∀'],
+  [/\bthere\s+exists\b/gi, '∃'],
+  [/\bexists\b/gi, '∃'],
+  [/\bnot\s+in\b/gi, '∉'],
+  [/\bnotin\b/gi, '∉'],
+  [/\bstrictsubset\b/gi, '⊂'],
+  [/\bpropersubset\b/gi, '⊂'],
+  [/\bsubseteq\b/gi, '⊆'],
+  [/\bsubset\b/gi, '⊆'],
+  [/\bintersection\b/gi, '∩'],
+  [/\bintersect\b/gi, '∩'],
+  [/\bunion\b/gi, '∪'],
+  [/\bneq\b/gi, '≠'],
+  [/\bnot\s*=\b/gi, '≠'],
+  [/\bNat\b/g, 'ℕ'],
+  [/\bnat\b/g, 'ℕ'],
+  [/\bInt\b/g, 'ℤ'],
+  [/\bint\b/g, 'ℤ'],
+  [/\bRat\b/g, 'ℚ'],
+  [/\brat\b/g, 'ℚ'],
+  [/\bReal\b/g, 'ℝ'],
+  [/\breal\b/g, 'ℝ'],
+  [/\b(in)\b/gi, '∈'],
+];
+
+function normalizeSurfaceSyntax(src: string): string {
+  const segments = src.split(/(".*?"|'.*?')/g);
+  return segments.map((segment, index) => {
+    if (index % 2 === 1) return segment;
+    let value = segment;
+    for (const [pattern, replacement] of WORD_NORMALIZATIONS) {
+      value = value.replace(pattern, replacement);
+    }
+    value = value.replace(/!=/g, '≠');
+    value = value.replace(/<=/g, '≤');
+    value = value.replace(/>=/g, '≥');
+    return value;
+  }).join('');
+}
+
 // ── Operator table ────────────────────────────────────────────────────────────
 
 type TokKind =
@@ -204,5 +246,5 @@ class ExprParser {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function parseExpr(src: string): ExprNode {
-  return new ExprParser(tokenise(src)).parse();
+  return new ExprParser(tokenise(normalizeSurfaceSyntax(src))).parse();
 }

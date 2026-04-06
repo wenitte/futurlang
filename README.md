@@ -119,8 +119,18 @@ The current surface now accepts more mathematician-friendly notation such as:
 
 - `⇒` and `⇔`
 - `∈`, `∉`, `⊆`, `⊂`
+- `∪`, `∩`
 - `≤`, `≥`, `≠`
 - `ℕ`, `ℤ`, `ℚ`, `ℝ`
+- bounded quantifier surface such as `∀x ∈ A, ...` and `∃x ∈ A, ...`
+
+Word-form aliases normalize to the same canonical surface during parsing. Examples:
+
+- `forall`, `exists`
+- `in`, `not in`
+- `subset`, `subseteq`, `strictsubset`
+- `union`, `intersection`
+- `Nat`, `Int`, `Rat`, `Real`
 
 These symbols already help the source feel closer to mathematical writing. The important boundary is still the same:
 
@@ -148,6 +158,13 @@ That proof is not just parsed nicely. In the current kernel subset, the checker 
 - `x ∈ A`
 - `A ⊆ B`
 - therefore `x ∈ B`
+
+The current kernel subset also validates:
+
+- subset transitivity: from `A ⊆ B` and `B ⊆ C`, derive `A ⊆ C`
+- equality substitution on membership claims: from `x = y` and `x ∈ A`, derive `y ∈ A`
+- union introduction: from `x ∈ A`, derive `x ∈ A ∪ B`
+- intersection introduction and elimination: from `x ∈ A` and `x ∈ B`, derive `x ∈ A ∩ B`; from `x ∈ A ∩ B`, derive either side
 
 ## What The Evaluator Supports
 
@@ -182,6 +199,7 @@ Advanced mathematical notation is no longer silently accepted by the JS backend.
 Examples that should go through `fl verify` instead of plain `fl`:
 
 - `∀(n: ℕ) ⇒ n = n`
+- `forall x in A, x in A`
 - `|G| divides |H|`
 - set-builder notation
 - richer algebraic or typed mathematical syntax
@@ -196,6 +214,9 @@ This is deliberate. If FuturLang cannot justify a claim in the strict evaluator,
 - assumptions and assertions
 - simple conjunction checks
 - kernel-checked set-membership transport along subset relations
+- kernel-checked subset transitivity
+- kernel-checked equality substitution on membership claims
+- kernel-checked union/intersection membership reasoning
 - simple contradiction discharge
 - contradiction and induction heuristics
 - proof richness metrics

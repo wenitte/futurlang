@@ -66,6 +66,47 @@ proof SubsetChain() {
 
 This shows that the current kernel subset can validate a small chained set-theoretic proof rather than only identity-style symbolic demos.
 
+## Subset Transitivity
+
+```fl
+theorem SubsetTransitivity() {
+  given(A ⊆ B) →
+  given(B ⊆ C) →
+  assert(A ⊆ C)
+} ↔
+
+proof SubsetTransitivity() {
+  conclude(A ⊆ C)
+}
+```
+
+## Equality Substitution
+
+```fl
+theorem EqualitySubstitution() {
+  given(x = y) →
+  given(x ∈ A) →
+  assert(y ∈ A)
+} ↔
+
+proof EqualitySubstitution() {
+  conclude(y ∈ A)
+}
+```
+
+## Union Introduction
+
+```fl
+theorem UnionIntro() {
+  given(x ∈ A) →
+  assert(x ∈ A ∪ B)
+} ↔
+
+proof UnionIntro() {
+  conclude(x ∈ A ∪ B)
+}
+```
+
 ## Intersection Left Projection
 
 ```fl
@@ -80,6 +121,20 @@ proof IntersectionLeft() {
 ```
 
 This is still conjunction elimination internally, but it reads like a set-theoretic fact because the propositions are membership claims written with Unicode notation.
+
+## Intersection Introduction
+
+```fl
+theorem IntersectionIntro() {
+  given(x ∈ A) →
+  given(x ∈ B) →
+  assert(x ∈ A ∩ B)
+} ↔
+
+proof IntersectionIntro() {
+  conclude(x ∈ A ∩ B)
+}
+```
 
 ## MI-Style Order Identity
 
@@ -220,6 +275,10 @@ The honest demo pitch is:
 For the current math-focused demo path, tighten that slightly:
 
 "FuturLang already validates a small kernel-backed subset of Unicode mathematical proofs, including implication, conjunction, and set-membership transport along subset relations, all written as a single visible truth chain."
+
+That can now be stated more precisely:
+
+"FuturLang already validates a small kernel-backed subset of Unicode and word-form mathematical proofs, including subset transport, subset transitivity, equality substitution on membership claims, and basic union/intersection membership reasoning, all written as a single visible truth chain."
 
 For wording during demos:
 

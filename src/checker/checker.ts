@@ -15,6 +15,8 @@ import {
   checkAssumption, checkContradiction, checkLemmaApplication,
   checkTheoremProofPairing, checkInduction, checkAndIntro,
   checkAndElim, checkImpliesIntro, checkModusPonens, checkSubsetElim,
+  checkSubsetTrans, checkEqualitySubst, checkUnionIntro,
+  checkIntersectionIntro, checkIntersectionElim,
 } from './rules';
 import {
   exprToProp, sameProp, splitConjunction as splitGoalConjunction,
@@ -134,6 +136,8 @@ function checkPair(thm: TheoremNode | LemmaNode, proof: ProofNode, globalLemmas:
   if (theoremGoalExpr) {
     const goalParseDiagnostic = parseFallbackDiagnostic(theoremGoalExpr, `Theorem goal '${theoremGoal}'`);
     if (goalParseDiagnostic) diagnostics.push(goalParseDiagnostic);
+    const goalKernelDiagnostic = kernelSubsetDiagnostic(theoremGoalExpr, `Goal '${theoremGoal}'`);
+    if (goalKernelDiagnostic) diagnostics.push(goalKernelDiagnostic);
     if (!isCheckableGoal(theoremGoalExpr)) {
       diagnostics.push({
         severity: 'info',
@@ -219,6 +223,8 @@ function checkProofBlock(
         const claim = exprToString(n.expr);
         const parseDiagnostic = parseFallbackDiagnostic(n.expr, `Step ${step} assumption '${claim}'`);
         if (parseDiagnostic) diagnostics.push(parseDiagnostic);
+        const kernelDiagnostic = kernelSubsetDiagnostic(n.expr, `Step ${step} assumption '${claim}'`, step);
+        if (kernelDiagnostic) diagnostics.push(kernelDiagnostic);
         const result = checkAssumption(claim);
         if (!result.valid) {
           diagnostics.push({ severity: 'error', message: result.message, step, rule: result.rule });
@@ -249,6 +255,8 @@ function checkProofBlock(
         const claim = exprToString(n.expr);
         const parseDiagnostic = parseFallbackDiagnostic(n.expr, `Step ${step} assertion '${claim}'`);
         if (parseDiagnostic) diagnostics.push(parseDiagnostic);
+        const kernelDiagnostic = kernelSubsetDiagnostic(n.expr, `Step ${step} assertion '${claim}'`, step);
+        if (kernelDiagnostic) diagnostics.push(kernelDiagnostic);
 
         // Check for sorry (explicit gap)
         if (claim.toLowerCase().includes('sorry')) {
@@ -325,6 +333,8 @@ function checkProofBlock(
         const claim = exprToString(n.expr);
         const parseDiagnostic = parseFallbackDiagnostic(n.expr, `Step ${step} conclusion '${claim}'`);
         if (parseDiagnostic) diagnostics.push(parseDiagnostic);
+        const kernelDiagnostic = kernelSubsetDiagnostic(n.expr, `Step ${step} conclusion '${claim}'`, step);
+        if (kernelDiagnostic) diagnostics.push(kernelDiagnostic);
         const contradictionDischarge = checkContradictionDischarge(claim, ctx);
         const derivation = isConjunction(n.expr)
           ? checkAndIntro(...splitConjunction(n.expr), ctx)
@@ -856,6 +866,16 @@ function validateDerivationNode(
       return validateAndElimNode(node, inputs, output);
     case 'SUBSET_ELIM':
       return validateSubsetElimNode(node, inputs, output);
+    case 'SUBSET_TRANS':
+      return validateSubsetTransNode(node, inputs, output);
+    case 'EQUALITY_SUBST':
+      return validateEqualitySubstNode(node, inputs, output);
+    case 'UNION_INTRO':
+      return validateUnionIntroNode(node, inputs, output);
+    case 'INTERSECTION_INTRO':
+      return validateIntersectionIntroNode(node, inputs, output);
+    case 'INTERSECTION_ELIM':
+      return validateIntersectionElimNode(node, inputs, output);
     case 'IMPLIES_INTRO':
       return validateImpliesIntroNode(node, inputs, output, goal);
     case 'CONTRADICTION':
@@ -940,6 +960,113 @@ function validateSubsetElimNode(node: DerivationNode, inputs: ProofObject[], out
   return null;
 }
 
+function validateSubsetTransNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 2) {
+    return { severity: 'error', message: `SUBSET_TRANS '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+  }
+  const left = parseSubsetProp(inputs[0].claim);
+  const right = parseSubsetProp(inputs[1].claim);
+  const target = parseSubsetProp(output.claim);
+  if (!left || !right || !target) {
+    return { severity: 'error', message: `SUBSET_TRANS '${node.id}' has malformed subset inputs`, step: node.step, rule: node.rule };
+  }
+  const valid = (
+    sameProp(left.right, right.left)
+    && sameProp(target.left, left.left)
+    && sameProp(target.right, right.right)
+  ) || (
+    sameProp(right.right, left.left)
+    && sameProp(target.left, right.left)
+    && sameProp(target.right, left.right)
+  );
+  if (!valid) {
+    return { severity: 'error', message: `SUBSET_TRANS '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateEqualitySubstNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 2) {
+    return { severity: 'error', message: `EQUALITY_SUBST '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+  }
+  const equality = inputs.find(input => parseEqualityProp(input.claim));
+  const membership = inputs.find(input => parseMembershipProp(input.claim));
+  if (!equality || !membership) {
+    return { severity: 'error', message: `EQUALITY_SUBST '${node.id}' must reference equality and membership inputs`, step: node.step, rule: node.rule };
+  }
+  if (!supportsEqualitySubstitution(equality.claim, membership.claim, output.claim)) {
+    return { severity: 'error', message: `EQUALITY_SUBST '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateUnionIntroNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 1) {
+    return { severity: 'error', message: `UNION_INTRO '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+  }
+  const outputParts = parseMembershipProp(output.claim);
+  const inputParts = parseMembershipProp(inputs[0].claim);
+  if (!outputParts || !inputParts) {
+    return { severity: 'error', message: `UNION_INTRO '${node.id}' has malformed membership inputs`, step: node.step, rule: node.rule };
+  }
+  const union = parseBinarySetProp(outputParts.set, '∪');
+  if (!union) {
+    return { severity: 'error', message: `UNION_INTRO '${node.id}' must produce union membership`, step: node.step, rule: node.rule };
+  }
+  if (!sameProp(outputParts.element, inputParts.element) ||
+      !(sameProp(inputParts.set, union[0]) || sameProp(inputParts.set, union[1]))) {
+    return { severity: 'error', message: `UNION_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateIntersectionIntroNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 2) {
+    return { severity: 'error', message: `INTERSECTION_INTRO '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+  }
+  const outputParts = parseMembershipProp(output.claim);
+  if (!outputParts) {
+    return { severity: 'error', message: `INTERSECTION_INTRO '${node.id}' must produce membership`, step: node.step, rule: node.rule };
+  }
+  const intersection = parseBinarySetProp(outputParts.set, '∩');
+  if (!intersection) {
+    return { severity: 'error', message: `INTERSECTION_INTRO '${node.id}' must produce intersection membership`, step: node.step, rule: node.rule };
+  }
+  const memberships = inputs.map(input => parseMembershipProp(input.claim));
+  if (memberships.some(item => !item)) {
+    return { severity: 'error', message: `INTERSECTION_INTRO '${node.id}' has malformed membership inputs`, step: node.step, rule: node.rule };
+  }
+  const [left, right] = memberships as Array<{ element: string; set: string }>;
+  const okay = sameProp(left.element, outputParts.element)
+    && sameProp(right.element, outputParts.element)
+    && ((sameProp(left.set, intersection[0]) && sameProp(right.set, intersection[1]))
+      || (sameProp(left.set, intersection[1]) && sameProp(right.set, intersection[0])));
+  if (!okay) {
+    return { severity: 'error', message: `INTERSECTION_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateIntersectionElimNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 1) {
+    return { severity: 'error', message: `INTERSECTION_ELIM '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+  }
+  const inputParts = parseMembershipProp(inputs[0].claim);
+  const outputParts = parseMembershipProp(output.claim);
+  if (!inputParts || !outputParts) {
+    return { severity: 'error', message: `INTERSECTION_ELIM '${node.id}' has malformed membership inputs`, step: node.step, rule: node.rule };
+  }
+  const intersection = parseBinarySetProp(inputParts.set, '∩');
+  if (!intersection) {
+    return { severity: 'error', message: `INTERSECTION_ELIM '${node.id}' must consume intersection membership`, step: node.step, rule: node.rule };
+  }
+  if (!sameProp(inputParts.element, outputParts.element) ||
+      !(sameProp(outputParts.set, intersection[0]) || sameProp(outputParts.set, intersection[1]))) {
+    return { severity: 'error', message: `INTERSECTION_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
 function validateImpliesIntroNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject, goal: string | null): Diagnostic | null {
   if (inputs.length < 1) {
     return { severity: 'error', message: `IMPLIES_INTRO '${node.id}' requires proof inputs`, step: node.step, rule: node.rule };
@@ -1003,6 +1130,16 @@ function buildProofObjectInput(
       return buildAndElimProofObject(claim, source, step, ctx);
     case 'SUBSET_ELIM':
       return buildSubsetElimProofObject(claim, source, step, ctx);
+    case 'SUBSET_TRANS':
+      return buildSubsetTransProofObject(claim, source, step, ctx);
+    case 'EQUALITY_SUBST':
+      return buildEqualitySubstProofObject(claim, source, step, ctx);
+    case 'UNION_INTRO':
+      return buildUnionIntroProofObject(claim, source, step, ctx);
+    case 'INTERSECTION_INTRO':
+      return buildIntersectionIntroProofObject(claim, source, step, ctx);
+    case 'INTERSECTION_ELIM':
+      return buildIntersectionElimProofObject(claim, source, step, ctx);
     case 'IMPLIES_INTRO':
       return buildImpliesIntroProofObject(claim, source, step, ctx);
     case 'CONTRADICTION':
@@ -1079,6 +1216,66 @@ function buildSubsetElimProofObject(claim: string, source: 'assertion' | 'conclu
     source,
     step,
     rule: 'SUBSET_ELIM' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildSubsetTransProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findSubsetTransDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'SUBSET_TRANS' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildEqualitySubstProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findEqualitySubstDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'EQUALITY_SUBST' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildUnionIntroProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findUnionIntroDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'UNION_INTRO' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildIntersectionIntroProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findIntersectionIntroDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'INTERSECTION_INTRO' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildIntersectionElimProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findIntersectionElimDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'INTERSECTION_ELIM' as const,
     dependsOn: dependency?.claims ?? [],
     dependsOnIds: dependency?.ids ?? [],
   };
@@ -1185,6 +1382,106 @@ function findSubsetElimDependency(
     claims: [membershipCandidate.claim, subsetCandidate.claim],
     ids: uniqueIds([membershipCandidate.id, subsetCandidate.id]),
   };
+}
+
+function findSubsetTransDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  const target = parseSubsetProp(claim);
+  if (!target) return null;
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const first = ctx.proofObjects[i];
+    const left = parseSubsetProp(first.claim);
+    if (!left || !sameProp(left.left, target.left)) continue;
+    for (let j = ctx.proofObjects.length - 1; j >= 0; j--) {
+      const second = ctx.proofObjects[j];
+      const right = parseSubsetProp(second.claim);
+      if (!right) continue;
+      if (sameProp(left.right, right.left) && sameProp(right.right, target.right)) {
+        return {
+          claims: [first.claim, second.claim],
+          ids: uniqueIds([first.id, second.id]),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function findEqualitySubstDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const equality = ctx.proofObjects[i];
+    if (!parseEqualityProp(equality.claim)) continue;
+    for (let j = ctx.proofObjects.length - 1; j >= 0; j--) {
+      const membership = ctx.proofObjects[j];
+      if (!parseMembershipProp(membership.claim)) continue;
+      if (supportsEqualitySubstitution(equality.claim, membership.claim, claim)) {
+        return {
+          claims: [equality.claim, membership.claim],
+          ids: uniqueIds([equality.id, membership.id]),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function findUnionIntroDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  const output = parseMembershipProp(claim);
+  if (!output) return null;
+  const union = parseBinarySetProp(output.set, '∪');
+  if (!union) return null;
+  for (const candidateSet of union) {
+    const membershipClaim = `${output.element} ∈ ${candidateSet}`;
+    const object = findLatestProofObjectByClaim(ctx, membershipClaim);
+    if (object) {
+      return { claims: [membershipClaim], ids: [object.id] };
+    }
+  }
+  return null;
+}
+
+function findIntersectionIntroDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  const output = parseMembershipProp(claim);
+  if (!output) return null;
+  const intersection = parseBinarySetProp(output.set, '∩');
+  if (!intersection) return null;
+  const leftClaim = `${output.element} ∈ ${intersection[0]}`;
+  const rightClaim = `${output.element} ∈ ${intersection[1]}`;
+  const left = findLatestProofObjectByClaim(ctx, leftClaim);
+  const right = findLatestProofObjectByClaim(ctx, rightClaim);
+  if (!left || !right) return null;
+  return {
+    claims: [leftClaim, rightClaim],
+    ids: uniqueIds([left.id, right.id]),
+  };
+}
+
+function findIntersectionElimDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  const output = parseMembershipProp(claim);
+  if (!output) return null;
+  const candidate = findLatestProofObject(ctx, object => {
+    const membership = parseMembershipProp(object.claim);
+    if (!membership || !sameProp(membership.element, output.element)) return false;
+    const intersection = parseBinarySetProp(membership.set, '∩');
+    return intersection !== null
+      && (sameProp(output.set, intersection[0]) || sameProp(output.set, intersection[1]));
+  });
+  if (!candidate) return null;
+  return { claims: [candidate.claim], ids: [candidate.id] };
 }
 
 function findImplicationIntroDependency(
@@ -1322,6 +1619,16 @@ function minimumDependencyCount(rule: CheckResult['rule'], dependsOn: string[]):
       return 1;
     case 'SUBSET_ELIM':
       return uniqueProps(dependsOn).length;
+    case 'SUBSET_TRANS':
+      return uniqueProps(dependsOn).length;
+    case 'EQUALITY_SUBST':
+      return uniqueProps(dependsOn).length;
+    case 'UNION_INTRO':
+      return uniqueProps(dependsOn).length;
+    case 'INTERSECTION_INTRO':
+      return uniqueProps(dependsOn).length;
+    case 'INTERSECTION_ELIM':
+      return uniqueProps(dependsOn).length;
     case 'IMPLIES_INTRO':
       return uniqueProps(dependsOn).length;
     case 'CONTRADICTION':
@@ -1350,7 +1657,7 @@ function theoremGoalHint(goalExpr: ExprNode): string {
 function isCheckableGoal(expr: ExprNode): boolean {
   switch (expr.type) {
     case 'Atom':
-      return expr.atomKind !== 'opaque';
+      return expr.atomKind !== 'opaque' && isKernelCheckableAtom(expr.condition);
     case 'And':
     case 'Or':
     case 'Implies':
@@ -1379,15 +1686,15 @@ function parseFallbackDiagnostic(expr: ExprNode, label: string): Diagnostic | nu
 }
 
 function containsMathNotation(value: string): boolean {
-  return /[∀∃∈∉⊆⊂≤≥≠ℕℤℚℝ]/.test(value);
+  return /[∀∃∈∉⊆⊂≤≥≠ℕℤℚℝ∪∩]/.test(value);
 }
 
 function parserFallbackHint(value: string): string {
   if (/[∀∃]/.test(value)) {
-    return `This looks like quantified mathematics. Keep the MI-style notation if you want, but use 'fl verify' until quantifier semantics are part of the fast checker subset.`;
+    return `This looks like quantified mathematics. Keep the MI-style notation if you want, but use 'fl verify' until bounded quantifier rules are part of the fast checker subset.`;
   }
-  if (/[∈∉⊆⊂]/.test(value)) {
-    return `This looks like set-theoretic notation. The fast checker currently verifies only a small set-theoretic subset such as membership identities and subset transport; otherwise use 'fl verify'.`;
+  if (/[∈∉⊆⊂∪∩]/.test(value)) {
+    return `This looks like set-theoretic notation. The fast checker currently verifies only a small kernel subset of membership, subset, equality-substitution, and union/intersection membership rules; otherwise use 'fl verify'.`;
   }
   if (/:\s*[\wℕℤℚℝ]/.test(value) || /→|⇒/.test(value)) {
     return `This looks like typed or function-style mathematical notation. Keep the MI-style syntax if you want, but use 'fl verify' outside the fast checker subset.`;
@@ -1425,6 +1732,21 @@ function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null
   const subsetElim = checkSubsetDerivedClaim(claim, ctx);
   if (subsetElim?.valid) return subsetElim;
 
+  const subsetTrans = checkSubsetTransDerivedClaim(claim, ctx);
+  if (subsetTrans?.valid) return subsetTrans;
+
+  const equalitySubst = checkEqualitySubstDerivedClaim(claim, ctx);
+  if (equalitySubst?.valid) return equalitySubst;
+
+  const unionIntro = checkUnionIntroDerivedClaim(claim, ctx);
+  if (unionIntro?.valid) return unionIntro;
+
+  const intersectionIntro = checkIntersectionIntroDerivedClaim(claim, ctx);
+  if (intersectionIntro?.valid) return intersectionIntro;
+
+  const intersectionElim = checkIntersectionElimDerivedClaim(claim, ctx);
+  if (intersectionElim?.valid) return intersectionElim;
+
   if (ctx.goal && sameProp(ctx.goal, claim)) {
     return {
       valid: false as const,
@@ -1446,6 +1768,80 @@ function checkSubsetDerivedClaim(claim: string, ctx: ProofContext): CheckResult 
     const membershipClaim = `${output.element} ∈ ${subset.left}`;
     const result = checkSubsetElim(membershipClaim, item.content, claim, ctx);
     if (result.valid) return result;
+  }
+  return null;
+}
+
+function checkSubsetTransDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const target = parseSubsetProp(claim);
+  if (!target) return null;
+  for (const item of ctx.established) {
+    const left = parseSubsetProp(item.content);
+    if (!left || !sameProp(left.left, target.left)) continue;
+    for (const next of ctx.established) {
+      const right = parseSubsetProp(next.content);
+      if (!right) continue;
+      if (sameProp(left.right, right.left) && sameProp(right.right, target.right)) {
+        const result = checkSubsetTrans(item.content, next.content, claim, ctx);
+        if (result.valid) return result;
+      }
+    }
+  }
+  return null;
+}
+
+function checkEqualitySubstDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const output = parseMembershipProp(claim);
+  if (!output) return null;
+  for (const equalityItem of ctx.established) {
+    const equality = parseEqualityProp(equalityItem.content);
+    if (!equality) continue;
+    for (const membershipItem of ctx.established) {
+      if (supportsEqualitySubstitution(equalityItem.content, membershipItem.content, claim)) {
+        const result = checkEqualitySubst(equalityItem.content, membershipItem.content, claim, ctx);
+        if (result.valid) return result;
+      }
+    }
+  }
+  return null;
+}
+
+function checkUnionIntroDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const output = parseMembershipProp(claim);
+  if (!output) return null;
+  const union = parseBinarySetProp(output.set, '∪');
+  if (!union) return null;
+  for (const candidateSet of union) {
+    const membershipClaim = `${output.element} ∈ ${candidateSet}`;
+    const result = checkUnionIntro(membershipClaim, claim, ctx);
+    if (result.valid) return result;
+  }
+  return null;
+}
+
+function checkIntersectionIntroDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const output = parseMembershipProp(claim);
+  if (!output) return null;
+  const intersection = parseBinarySetProp(output.set, '∩');
+  if (!intersection) return null;
+  const leftClaim = `${output.element} ∈ ${intersection[0]}`;
+  const rightClaim = `${output.element} ∈ ${intersection[1]}`;
+  const result = checkIntersectionIntro(leftClaim, rightClaim, claim, ctx);
+  return result.valid ? result : null;
+}
+
+function checkIntersectionElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const output = parseMembershipProp(claim);
+  if (!output) return null;
+  for (const item of ctx.established) {
+    const membership = parseMembershipProp(item.content);
+    if (!membership || !sameProp(membership.element, output.element)) continue;
+    const intersection = parseBinarySetProp(membership.set, '∩');
+    if (!intersection) continue;
+    if (sameProp(output.set, intersection[0]) || sameProp(output.set, intersection[1])) {
+      const result = checkIntersectionElim(item.content, claim, ctx);
+      if (result.valid) return result;
+    }
   }
   return null;
 }
@@ -1507,13 +1903,24 @@ function parseSubsetProp(prop: string): { left: string; right: string } | null {
   return { left: stripParens(match[1].trim()), right: stripParens(match[3].trim()) };
 }
 
+function parseEqualityProp(prop: string): { left: string; right: string } | null {
+  if (/==/.test(prop)) return null;
+  const match = stripParens(prop).match(/^(.+?)\s*=\s*(.+)$/);
+  if (!match) return null;
+  return { left: stripParens(match[1].trim()), right: stripParens(match[2].trim()) };
+}
+
 function parseMembershipProp(prop: string): { element: string; set: string } | null {
   const match = stripParens(prop).match(/^(.+?)\s*(∈|∉)\s*(.+)$/);
   if (!match) return null;
   return { element: stripParens(match[1].trim()), set: stripParens(match[3].trim()) };
 }
 
-function splitTopLevel(prop: string, operator: '→' | '∧'): [string, string] | null {
+function parseBinarySetProp(prop: string, operator: '∪' | '∩'): [string, string] | null {
+  return splitTopLevel(stripParens(prop), operator);
+}
+
+function splitTopLevel(prop: string, operator: '→' | '∧' | '∪' | '∩'): [string, string] | null {
   let depth = 0;
   for (let i = 0; i < prop.length; i++) {
     const ch = prop[i];
@@ -1524,6 +1931,82 @@ function splitTopLevel(prop: string, operator: '→' | '∧'): [string, string] 
       const right = stripParens(prop.slice(i + operator.length).trim());
       if (left && right) return [left, right];
     }
+  }
+  return null;
+}
+
+function supportsEqualitySubstitution(equalityClaim: string, membershipClaim: string, target: string): boolean {
+  const equality = parseEqualityProp(equalityClaim);
+  const membership = parseMembershipProp(membershipClaim);
+  const output = parseMembershipProp(target);
+  if (!equality || !membership || !output) return false;
+
+  const equalityPairs: Array<[string, string]> = [
+    [equality.left, equality.right],
+    [equality.right, equality.left],
+  ];
+
+  return equalityPairs.some(([from, to]) => {
+    const elementSubst = sameProp(membership.element, from)
+      && sameProp(output.element, to)
+      && sameProp(membership.set, output.set);
+    const setSubst = sameProp(membership.set, from)
+      && sameProp(output.set, to)
+      && sameProp(membership.element, output.element);
+    return elementSubst || setSubst;
+  });
+}
+
+function isKernelCheckableAtom(value: string): boolean {
+  return kernelSubsetGap(value) === null;
+}
+
+function kernelSubsetDiagnostic(expr: ExprNode, label: string, step?: number): Diagnostic | null {
+  if (expr.type !== 'Atom' || expr.atomKind === 'opaque') return null;
+  const gap = kernelSubsetGap(expr.condition);
+  if (!gap) return null;
+  return {
+    severity: 'info',
+    message: `${label} needs kernel rule ${gap.rule}, which the fast checker does not implement yet.`,
+    step,
+    rule: 'STRUCTURAL',
+    hint: `Use 'fl verify' for semantic verification. ${gap.hint}`,
+  };
+}
+
+function kernelSubsetGap(value: string): { rule: string; hint: string } | null {
+  if (/∀\s*[^,]*∈/.test(value) || /^∀/.test(value)) {
+    return {
+      rule: 'FORALL_IN',
+      hint: 'Bounded universal quantifiers are parsed, but they are not kernel-checked in the fast checker subset.',
+    };
+  }
+  if (/∃\s*[^,]*∈/.test(value) || /^∃/.test(value)) {
+    return {
+      rule: 'EXISTS_IN',
+      hint: 'Bounded existential quantifiers are parsed, but they are not kernel-checked in the fast checker subset.',
+    };
+  }
+  const membership = parseMembershipProp(value);
+  if (membership) {
+    const union = parseBinarySetProp(membership.set, '∪');
+    if (union) return null;
+    const intersection = parseBinarySetProp(membership.set, '∩');
+    if (intersection) return null;
+    return null;
+  }
+  if (parseSubsetProp(value)) return null;
+  if (parseEqualityProp(value)) {
+    return {
+      rule: 'EQUALITY_REASONING',
+      hint: 'Direct equality claims can appear in source, but only membership substitution from an established equality is kernel-checked today.',
+    };
+  }
+  if (/[∪∩]/.test(value)) {
+    return {
+      rule: 'SET_OPERATOR_REASONING',
+      hint: 'Only membership introduction/elimination over unions and intersections is kernel-checked today.',
+    };
   }
   return null;
 }

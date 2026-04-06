@@ -10,15 +10,20 @@ All examples in this directory obey the core FuturLang rule that the source itse
 2. `mi-membership-identity.fl`
 3. `subset-transport.fl`
 4. `subset-chain.fl`
-5. `intersection-left.fl`
-6. `mi-order-identity.fl`
-7. `conjunction-intro.fl`
-8. `conjunction-elim.fl`
-9. `modus-ponens.fl`
-10. `right-projection.fl`
-11. `multi-premise-chain.fl`
-12. `lemma-apply.fl`
-13. `contradiction-demo.fl`
+5. `subset-transitivity.fl`
+6. `equality-substitution.fl`
+7. `union-intro.fl`
+8. `intersection-left.fl`
+9. `intersection-intro.fl`
+10. `intersection-right.fl`
+11. `mi-order-identity.fl`
+12. `conjunction-intro.fl`
+13. `conjunction-elim.fl`
+14. `modus-ponens.fl`
+15. `right-projection.fl`
+16. `multi-premise-chain.fl`
+17. `lemma-apply.fl`
+18. `contradiction-demo.fl`
 
 ## Demo commands
 
@@ -27,7 +32,12 @@ fl check examples/demo/identity.fl
 fl check examples/demo/mi-membership-identity.fl
 fl check examples/demo/subset-transport.fl
 fl check examples/demo/subset-chain.fl
+fl check examples/demo/subset-transitivity.fl
+fl check examples/demo/equality-substitution.fl
+fl check examples/demo/union-intro.fl
 fl check examples/demo/intersection-left.fl
+fl check examples/demo/intersection-intro.fl
+fl check examples/demo/intersection-right.fl
 fl check examples/demo/mi-order-identity.fl
 fl check examples/demo/conjunction-intro.fl
 fl check examples/demo/conjunction-elim.fl
@@ -46,7 +56,17 @@ These examples stay inside the current fast checker subset, so they are the righ
 
 `subset-chain.fl` shows two chained set-theoretic derivations in one proof: `x ∈ A`, `A ⊆ B`, `B ⊆ C` yields `x ∈ C` by first deriving `x ∈ B` and then `x ∈ C`.
 
+`subset-transitivity.fl` shows a second genuinely mathematical subset rule in the current kernel: `A ⊆ B`, `B ⊆ C` yields `A ⊆ C`.
+
+`equality-substitution.fl` shows equality-driven transport across membership claims: `x = y` plus `x ∈ A` yields `y ∈ A`.
+
+`union-intro.fl` shows kernel-checked union membership introduction: from `x ∈ A`, the checker derives `x ∈ A ∪ B`.
+
 `intersection-left.fl` shows set-style conjunction elimination with Unicode membership notation: from `(x ∈ A) ∧ (x ∈ B)`, the checker derives `x ∈ A`.
+
+`intersection-intro.fl` shows kernel-checked intersection membership introduction: from `x ∈ A` and `x ∈ B`, the checker derives `x ∈ A ∩ B`.
+
+`intersection-right.fl` shows kernel-checked intersection membership elimination in direct set notation: from `x ∈ A ∩ B`, the checker derives `x ∈ B`.
 
 The conjunction introduction demo now includes an explicit `conclude(p && q)` step so `fl check` can display `AND_INTRO` directly in the proof trace.
 
@@ -59,3 +79,5 @@ The conjunction introduction demo now includes an explicit `conclude(p && q)` st
 `lemma-apply.fl` demonstrates a chained lemma with a chained premise, followed by a theorem proof that satisfies the lemma hypothesis and uses `apply(...)`.
 
 `contradiction-demo.fl` shows the current contradiction subset: a proof enters contradiction mode with a negated local assumption, makes an explicit `contradiction()` step, and then discharges the goal with `conclude(...)`.
+
+The parser also accepts ASCII and word equivalents for the math-facing surface. For example, `x in A union B`, `A subset B`, and `forall x in A, ...` normalize to the same internal notation used by the Unicode demos.

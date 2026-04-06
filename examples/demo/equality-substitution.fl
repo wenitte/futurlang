@@ -1,0 +1,9 @@
+theorem EqualitySubstitution() {
+  given(x = y) →
+  given(x ∈ A) →
+  assert(y ∈ A)
+} ↔
+
+proof EqualitySubstitution() {
+  conclude(y ∈ A)
+}

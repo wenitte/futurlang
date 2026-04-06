@@ -12,6 +12,9 @@ The next trustworthy core should check derivations over:
 - implication introduction and elimination
 - conjunction introduction and elimination
 - set-membership transport along subset relations
+- subset transitivity
+- equality substitution on membership claims
+- union/intersection membership rules
 - theorem and lemma application
 
 ## Current State
@@ -64,6 +67,11 @@ That includes:
 - `AND_INTRO`
 - `AND_ELIM`
 - `SUBSET_ELIM`
+- `SUBSET_TRANS`
+- `EQUALITY_SUBST`
+- `UNION_INTRO`
+- `INTERSECTION_INTRO`
+- `INTERSECTION_ELIM`
 - `IMPLIES_INTRO`
 - `CONTRADICTION`
 - `BY_LEMMA` input resolution
@@ -77,6 +85,14 @@ For the current math-facing subset, `SUBSET_ELIM` is the clearest example of a g
 - output fact: a proof object for `x ∈ B`
 
 That rule is validated over explicit derivation-node inputs and output, not merely accepted as a structural trace label.
+
+The same internal proof-object model now covers a small cluster of additional set-style rules:
+
+- `SUBSET_TRANS`: `A ⊆ B`, `B ⊆ C` yields `A ⊆ C`
+- `EQUALITY_SUBST`: `x = y`, `x ∈ A` yields `y ∈ A`
+- `UNION_INTRO`: `x ∈ A` yields `x ∈ A ∪ B`
+- `INTERSECTION_INTRO`: `x ∈ A`, `x ∈ B` yields `x ∈ A ∩ B`
+- `INTERSECTION_ELIM`: `x ∈ A ∩ B` yields `x ∈ A` or `x ∈ B`
 
 `IMPLIES_INTRO` is now also self-sufficient in the internal model:
 
@@ -102,6 +118,7 @@ So this is not yet a trusted kernel, but it is a real move away from pure trace 
 The current checker is still not a trusted kernel for several reasons:
 
 - many mathematical statements outside the demo subset still fall back to structural acceptance
+- bounded quantifier surface like `∀x ∈ A` and `∃x ∈ A` is parsed, but still not kernel-checked
 - some proof meanings are still reconstructed from current context rather than carried explicitly in source
 - there is no dependent type theory underneath
 - there is no normalization or definitional equality engine

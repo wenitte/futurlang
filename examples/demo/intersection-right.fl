@@ -1,0 +1,8 @@
+theorem IntersectionRight() {
+  given(x ∈ A ∩ B) →
+  assert(x ∈ B)
+} ↔
+
+proof IntersectionRight() {
+  conclude(x ∈ B)
+}

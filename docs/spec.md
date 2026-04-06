@@ -77,9 +77,19 @@ Examples of notation that now parses cleanly in the current surface language:
 - logical implication with `⇒`
 - biconditional with `⇔`
 - membership and containment symbols such as `∈`, `∉`, `⊆`, `⊂`
+- union and intersection symbols such as `∪`, `∩`
 - set-oriented grouping such as `(x ∈ A) ∧ (x ∈ B)`
+- bounded quantifier surface such as `∀x ∈ A, ...` and `∃x ∈ A, ...`
 - order and comparison symbols such as `≤`, `≥`, `≠`
 - common mathematical alphabets such as `ℕ`, `ℤ`, `ℚ`, `ℝ`
+
+Word aliases normalize to the same internal surface:
+
+- `forall`, `exists`
+- `in`, `not in`
+- `subset`, `subseteq`, `strictsubset`
+- `union`, `intersection`
+- `Nat`, `Int`, `Rat`, `Real`
 
 Important boundary:
 
@@ -103,5 +113,14 @@ Today, FuturLang is strongest on simple propositional demos:
 - subset atoms such as `A ⊆ B`
 - subset transport of membership:
   from `x ∈ A` and `A ⊆ B`, derive `x ∈ B`
+- subset transitivity:
+  from `A ⊆ B` and `B ⊆ C`, derive `A ⊆ C`
+- equality substitution on membership:
+  from `x = y` and `x ∈ A`, derive `y ∈ A`
+- union membership introduction:
+  from `x ∈ A`, derive `x ∈ A ∪ B`
+- intersection membership introduction and elimination:
+  from `x ∈ A` and `x ∈ B`, derive `x ∈ A ∩ B`
+  from `x ∈ A ∩ B`, derive `x ∈ A` or `x ∈ B`
 
 Advanced mathematics is not treated as proven by the JS evaluator. It must go through `fl verify`.

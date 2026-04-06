@@ -1,0 +1,8 @@
+theorem UnionIntro() {
+  given(x ∈ A) →
+  assert(x ∈ A ∪ B)
+} ↔
+
+proof UnionIntro() {
+  conclude(x ∈ A ∪ B)
+}
