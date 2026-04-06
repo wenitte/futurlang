@@ -22,7 +22,8 @@ Visible chaining is a language law. FuturLang should not evolve toward hidden th
 FuturLang currently has three distinct execution modes:
 
 - `fl <file.fl>`
-  Runs the JavaScript evaluator for the strict supported subset. This is the fast path for boolean logic, simple variables, string claims, and proof-shaped control flow. Symbolic proof-style files may run in a limited symbolic mode, but `fl check` remains the primary command for theorem-prover demos.
+  Auto-detects proof-shaped programs. If the file contains theorem-prover constructs, `fl` runs theorem-prover check mode automatically; otherwise it runs the JavaScript evaluator for the strict executable subset.
+  Standalone theorem/declaration files are presented as declaration-only proof programs instead of as failed paired proofs.
 - `fl check <file.fl>`
   Runs the structural checker. This validates theorem/proof pairing and basic proof-shape rules without claiming full semantic verification.
 - `fl verify <file.fl>`
@@ -32,6 +33,7 @@ FuturLang currently has three distinct execution modes:
 
 The important boundary is intentional:
 
+- `fl` now defaults to checker behavior for proof-shaped programs
 - the JS evaluator is strict and fails closed on unsupported mathematical notation
 - the checker is structural, not fully semantic
 - the checker now records explicit derivation objects for the small supported subset, but this is still not a trusted kernel
@@ -109,6 +111,44 @@ Their roles are different:
 
 Missing connectives between adjacent top-level blocks are syntax errors. If two blocks are related, the relationship must be visible in source.
 
+## MI-Style Surface
+
+FuturLang is moving toward the repository-style MI syntax rather than Lean-style tactic syntax.
+
+The current surface now accepts more mathematician-friendly notation such as:
+
+- `⇒` and `⇔`
+- `∈`, `∉`, `⊆`, `⊂`
+- `≤`, `≥`, `≠`
+- `ℕ`, `ℤ`, `ℚ`, `ℝ`
+
+These symbols already help the source feel closer to mathematical writing. The important boundary is still the same:
+
+- the parser accepts more notation than the fast checker can semantically prove
+- when the parser/checker falls back to opaque symbolic claims, FuturLang now says so explicitly in checker output
+- the checker remains honest about its narrow supported subset
+- richer symbolic mathematics should go through `fl verify`
+
+The strongest current math demo path is small set-theoretic reasoning with Unicode notation. FuturLang can now kernel-check examples such as:
+
+```fl
+theorem SubsetTransport() {
+  given(x ∈ A) →
+  given(A ⊆ B) →
+  assert(x ∈ B)
+} ↔
+
+proof SubsetTransport() {
+  conclude(x ∈ B)
+}
+```
+
+That proof is not just parsed nicely. In the current kernel subset, the checker validates the mathematical rule:
+
+- `x ∈ A`
+- `A ⊆ B`
+- therefore `x ∈ B`
+
 ## What The Evaluator Supports
 
 The JS evaluator is intentionally narrow. It is designed for a strict executable subset such as:
@@ -155,6 +195,7 @@ This is deliberate. If FuturLang cannot justify a claim in the strict evaluator,
 - theorem/proof pairing
 - assumptions and assertions
 - simple conjunction checks
+- kernel-checked set-membership transport along subset relations
 - simple contradiction discharge
 - contradiction and induction heuristics
 - proof richness metrics
@@ -204,6 +245,8 @@ Additional documentation now lives in `docs/`:
 - `docs/roadmap.md`
 - `docs/demo-proofs.md`
 
+If you want the internal prover model rather than just the surface syntax, start with `docs/kernel.md`. That file explains base facts, proof objects, derivation nodes, and the current trust boundary.
+
 ## React Backend
 
 FuturLang now also has an experimental web backend:
@@ -226,6 +269,7 @@ The generated app:
 High-leverage next steps:
 
 - make simple proof demos excellent before expanding the surface area
+- expand MI-style mathematical notation and parser tolerance for mathematician demos
 - make the Lean backend authoritative for a narrow fully-supported subset
 - replace remaining `sorry`-driven proof steps with real translations
 - expand the proof language without weakening the “fail closed” rule

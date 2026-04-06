@@ -1,0 +1,9 @@
+theorem SubsetTransport() {
+  given(x ∈ A) →
+  given(A ⊆ B) →
+  assert(x ∈ B)
+} ↔
+
+proof SubsetTransport() {
+  conclude(x ∈ B)
+}

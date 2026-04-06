@@ -35,6 +35,7 @@ export interface AtomNode {
   type: 'Atom';
   condition: string;
   atomKind: 'expression' | 'string' | 'opaque';
+  parseError?: string;
 }
 
 export type ExprNode = AndNode | OrNode | ImpliesNode | IffNode | NotNode | AtomNode;

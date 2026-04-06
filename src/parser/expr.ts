@@ -3,8 +3,8 @@
 // Recursive-descent parser for FuturLang logical expressions.
 //
 // Precedence (lowest → highest):
-//   ↔  <->  iff       biconditional, right-assoc
-//   →  ->   implies   implication,   right-assoc
+//   ↔  ⇔  <->  iff    biconditional, right-assoc
+//   →  ⇒  ->  implies implication,   right-assoc
 //   ∨  ||   or        left-assoc
 //   ∧  &&   and       left-assoc
 //   ¬  !  not         prefix
@@ -26,8 +26,8 @@ interface Token { kind: TokKind; value: string; }
 
 // Ordered longest-match-first so <-> is tried before -> etc.
 const OP_TABLE: Array<[RegExp, TokKind]> = [
-  [/^(↔|<->|iff\b)/i,     'IFF'],
-  [/^(→|->|implies\b)/i,  'IMPLIES'],
+  [/^(↔|⇔|<->|iff\b)/i,     'IFF'],
+  [/^(→|⇒|->|implies\b)/i,  'IMPLIES'],
   [/^(∨|\|\||or\b)/i,     'OR'],
   [/^(∧|&&|and\b)/i,      'AND'],
   [/^(¬|!|not\b)/i,       'NOT'],

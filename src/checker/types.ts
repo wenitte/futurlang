@@ -17,6 +17,7 @@ export type InferenceRule =
   | 'IMPLIES_ELIM'      // have P → Q, have P, conclude Q  (modus ponens)
   | 'AND_INTRO'         // have P, have Q, conclude P ∧ Q
   | 'AND_ELIM'          // have P ∧ Q, conclude P (or Q)
+  | 'SUBSET_ELIM'       // have x ∈ A, have A ⊆ B, conclude x ∈ B
   | 'OR_INTRO'          // have P, conclude P ∨ Q
   | 'IFF_INTRO'         // prove P → Q and Q → P, conclude P ↔ Q
   // Proof methods
@@ -33,6 +34,8 @@ export interface ProofContext {
   established: Claim[];
   // Internal proof objects for established facts in this proof.
   proofObjects: ProofObject[];
+  // Internal derivation nodes connecting input proof objects to output proof objects.
+  derivations: DerivationNode[];
   // Variables in scope
   variables: Variable[];
   // Lemmas available (from earlier in the file or inline)
@@ -82,7 +85,16 @@ export interface ProofObject {
   source: ClaimSource;
   step: number;
   dependsOn: string[];
+  dependsOnIds: string[];
   imports?: string[];
+}
+
+export interface DerivationNode {
+  id: string;
+  step: number;
+  rule: InferenceRule;
+  inputIds: string[];
+  outputId: string;
 }
 
 // A diagnostic message from the checker
@@ -117,6 +129,9 @@ export interface ProofReport {
   derivedConclusion: string | null;
   proofSteps: ProofStepTrace[];
   proofObjects: ProofObject[];
+  derivations: DerivationNode[];
+  baseFactIds: string[];
+  derivedFactIds: string[];
   diagnostics: Diagnostic[];
   // Structural metrics useful as training signal
   metrics: {

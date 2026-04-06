@@ -162,8 +162,13 @@ function parseCallExpr(content, keyword) {
     try {
         return (0, expr_1.parseExpr)(body);
     }
-    catch {
-        return { type: 'Atom', condition: body, atomKind: 'opaque' };
+    catch (error) {
+        return {
+            type: 'Atom',
+            condition: body,
+            atomKind: 'opaque',
+            parseError: error instanceof Error ? error.message : 'Expression could not be parsed',
+        };
     }
 }
 function validateTopLevelConnectives(ast) {

@@ -15,6 +15,85 @@ proof Identity() {
 }
 ```
 
+## MI-Style Membership Identity
+
+```fl
+theorem MembershipIdentity() {
+  assert((x ∈ A) ⇒ (x ∈ A))
+} ↔
+
+proof MembershipIdentity() {
+  assume(x ∈ A) →
+  conclude(x ∈ A)
+}
+```
+
+## Set-Theoretic Subset Transport
+
+```fl
+theorem SubsetTransport() {
+  given(x ∈ A) →
+  given(A ⊆ B) →
+  assert(x ∈ B)
+} ↔
+
+proof SubsetTransport() {
+  conclude(x ∈ B)
+}
+```
+
+This is the first genuinely mathematical set-theory rule in the current kernel subset:
+
+- from `x ∈ A`
+- and `A ⊆ B`
+- the checker derives `x ∈ B`
+
+## Chained Set-Theoretic Transport
+
+```fl
+theorem SubsetChain() {
+  given(x ∈ A) →
+  given(A ⊆ B) →
+  given(B ⊆ C) →
+  assert(x ∈ C)
+} ↔
+
+proof SubsetChain() {
+  assert(x ∈ B) →
+  conclude(x ∈ C)
+}
+```
+
+This shows that the current kernel subset can validate a small chained set-theoretic proof rather than only identity-style symbolic demos.
+
+## Intersection Left Projection
+
+```fl
+theorem IntersectionLeft() {
+  given((x ∈ A) ∧ (x ∈ B)) →
+  assert(x ∈ A)
+} ↔
+
+proof IntersectionLeft() {
+  conclude(x ∈ A)
+}
+```
+
+This is still conjunction elimination internally, but it reads like a set-theoretic fact because the propositions are membership claims written with Unicode notation.
+
+## MI-Style Order Identity
+
+```fl
+theorem OrderIdentity() {
+  assert((x ≤ y) ⇒ (x ≤ y))
+} ↔
+
+proof OrderIdentity() {
+  assume(x ≤ y) →
+  conclude(x ≤ y)
+}
+```
+
 ## Conjunction
 
 ```fl
@@ -137,6 +216,10 @@ This is the current contradiction demo subset.
 The honest demo pitch is:
 
 "FuturLang already lets you write simple proof-shaped programs as a single truth chain, checks the goal against the proof for a small propositional subset, and routes advanced math toward Lean."
+
+For the current math-focused demo path, tighten that slightly:
+
+"FuturLang already validates a small kernel-backed subset of Unicode mathematical proofs, including implication, conjunction, and set-membership transport along subset relations, all written as a single visible truth chain."
 
 For wording during demos:
 

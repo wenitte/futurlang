@@ -7,18 +7,28 @@ All examples in this directory obey the core FuturLang rule that the source itse
 ## Recommended order
 
 1. `identity.fl`
-2. `conjunction-intro.fl`
-3. `conjunction-elim.fl`
-4. `modus-ponens.fl`
-5. `right-projection.fl`
-6. `multi-premise-chain.fl`
-7. `lemma-apply.fl`
-8. `contradiction-demo.fl`
+2. `mi-membership-identity.fl`
+3. `subset-transport.fl`
+4. `subset-chain.fl`
+5. `intersection-left.fl`
+6. `mi-order-identity.fl`
+7. `conjunction-intro.fl`
+8. `conjunction-elim.fl`
+9. `modus-ponens.fl`
+10. `right-projection.fl`
+11. `multi-premise-chain.fl`
+12. `lemma-apply.fl`
+13. `contradiction-demo.fl`
 
 ## Demo commands
 
 ```bash
 fl check examples/demo/identity.fl
+fl check examples/demo/mi-membership-identity.fl
+fl check examples/demo/subset-transport.fl
+fl check examples/demo/subset-chain.fl
+fl check examples/demo/intersection-left.fl
+fl check examples/demo/mi-order-identity.fl
 fl check examples/demo/conjunction-intro.fl
 fl check examples/demo/conjunction-elim.fl
 fl check examples/demo/modus-ponens.fl
@@ -29,6 +39,14 @@ fl check examples/demo/contradiction-demo.fl
 ```
 
 These examples stay inside the current fast checker subset, so they are the right files to use for short live demos.
+
+`mi-membership-identity.fl` and `mi-order-identity.fl` show mathematician-friendly notation like `∈`, `≤`, and `⇒` while staying inside the current honest checker subset.
+
+`subset-transport.fl` is the first real set-theoretic kernel demo: the checker validates `x ∈ A` plus `A ⊆ B` and derives `x ∈ B` via `SUBSET_ELIM`.
+
+`subset-chain.fl` shows two chained set-theoretic derivations in one proof: `x ∈ A`, `A ⊆ B`, `B ⊆ C` yields `x ∈ C` by first deriving `x ∈ B` and then `x ∈ C`.
+
+`intersection-left.fl` shows set-style conjunction elimination with Unicode membership notation: from `(x ∈ A) ∧ (x ∈ B)`, the checker derives `x ∈ A`.
 
 The conjunction introduction demo now includes an explicit `conclude(p && q)` step so `fl check` can display `AND_INTRO` directly in the proof trace.
 

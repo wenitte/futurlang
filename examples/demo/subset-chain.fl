@@ -1,0 +1,11 @@
+theorem SubsetChain() {
+  given(x ∈ A) →
+  given(A ⊆ B) →
+  given(B ⊆ C) →
+  assert(x ∈ C)
+} ↔
+
+proof SubsetChain() {
+  assert(x ∈ B) →
+  conclude(x ∈ C)
+}

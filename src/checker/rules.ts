@@ -69,6 +69,30 @@ export function checkAndElim(target: string, conjunction: string, ctx: ProofCont
   return { valid: true, rule: 'AND_ELIM', message: `Conjunction elimination: ${conjunction} ⊢ ${target}` };
 }
 
+// ── Rule: SUBSET_ELIM ────────────────────────────────────────────────────────
+// If x ∈ A is established and A ⊆ B is established, then x ∈ B follows.
+export function checkSubsetElim(elementMembership: string, subsetClaim: string, target: string, ctx: ProofContext): CheckResult {
+  const hasMembership = isEstablished(elementMembership, ctx);
+  const hasSubset = isEstablished(subsetClaim, ctx);
+  if (hasMembership && hasSubset) {
+    return { valid: true, rule: 'SUBSET_ELIM', message: `Subset elimination: ${elementMembership}, ${subsetClaim} ⊢ ${target}` };
+  }
+  if (!hasMembership) {
+    return {
+      valid: false,
+      rule: 'SUBSET_ELIM',
+      message: `Cannot use subset elimination: '${elementMembership}' not yet established`,
+      hint: `Establish '${elementMembership}' before deriving '${target}'`,
+    };
+  }
+  return {
+    valid: false,
+    rule: 'SUBSET_ELIM',
+    message: `Cannot use subset elimination: '${subsetClaim}' not yet established`,
+    hint: `Establish '${subsetClaim}' before deriving '${target}'`,
+  };
+}
+
 // ── Rule: CONTRADICTION ───────────────────────────────────────────────────────
 // If we have assume(¬P) (or assume(P) then derive its negation), the
 // contradiction is valid and we can conclude P (or anything).

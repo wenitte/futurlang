@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const assert_1 = require("assert");
+const child_process_1 = require("child_process");
 const fs = __importStar(require("fs"));
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
@@ -63,6 +64,14 @@ runTest('parseExpr builds logical AST for supported expressions', () => {
     const expr = (0, expr_1.parseExpr)('(p && q) -> r');
     assert_1.strict.equal(expr.type, 'Implies');
 });
+runTest('parseExpr accepts MI-style implication and biconditional symbols', () => {
+    const impliesExpr = (0, expr_1.parseExpr)('(x ∈ A) ⇒ (x ∈ A)');
+    assert_1.strict.equal(impliesExpr.type, 'Implies');
+    const iffExpr = (0, expr_1.parseExpr)('(x ≤ y) ⇔ (x ≤ y)');
+    assert_1.strict.equal(iffExpr.type, 'Iff');
+    const subsetExpr = (0, expr_1.parseExpr)('(x ∈ A) ⇒ (A ⊆ B)');
+    assert_1.strict.equal(subsetExpr.type, 'Implies');
+});
 runTest('parser preserves malformed expressions as opaque atoms', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem Broken() {
@@ -75,6 +84,7 @@ theorem Broken() {
     assert_1.strict.equal(claim.type, 'Assert');
     assert_1.strict.equal(claim.expr.type, 'Atom');
     assert_1.strict.equal(claim.expr.atomKind, 'opaque');
+    assert_1.strict.match(claim.expr.parseError ?? '', /Unexpected token|Unexpected token after expression|Expected/);
 });
 runTest('checker validates a paired theorem and proof', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -91,9 +101,18 @@ proof Identity() {
     assert_1.strict.equal(report.valid, true);
     assert_1.strict.equal(report.pairedCount, 1);
     assert_1.strict.equal(report.reports[0].goal, 'p → p');
-    assert_1.strict.equal(report.reports[0].derivedConclusion, 'p');
+    assert_1.strict.equal(report.reports[0].derivedConclusion, 'p → p');
     assert_1.strict.equal(report.reports[0].proofSteps[0].rule, 'ASSUMPTION');
     assert_1.strict.equal(report.reports[0].proofSteps[1].rule, 'IMPLIES_INTRO');
+    assert_1.strict.equal(report.reports[0].proofObjects[0].rule, 'ASSUMPTION');
+    assert_1.strict.equal(report.reports[0].proofObjects[0].dependsOnIds.length, 0);
+    assert_1.strict.equal(report.reports[0].derivations.length, 1);
+    assert_1.strict.equal(report.reports[0].derivations[0].rule, 'IMPLIES_INTRO');
+    const implicationObject = report.reports[0].proofObjects.find(object => object.rule === 'IMPLIES_INTRO');
+    assert_1.strict.ok(implicationObject);
+    assert_1.strict.equal(implicationObject.claim, 'p → p');
+    assert_1.strict.equal(report.reports[0].baseFactIds.length, 1);
+    assert_1.strict.equal(report.reports[0].derivedFactIds.length, 1);
 });
 runTest('checker rejects proofs that do not establish theorem goal', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -110,6 +129,21 @@ proof Identity() {
     assert_1.strict.equal(report.valid, false);
     assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal/);
 });
+runTest('checker surfaces parser fallback diagnostics for malformed rich mathematical notation', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem QuantifiedIdentity() {
+  assert(∀(n: ℕ) ⇒)
+} ↔
+
+proof QuantifiedIdentity() {
+  assert(∀(n: ℕ) ⇒)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+    assert_1.strict.match(messages, /outside the current parser\/checker subset/i);
+    assert_1.strict.match(messages, /opaque symbolic claim/i);
+});
 runTest('checker accepts conjunction goals when both parts are established', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem Pair() {
@@ -125,6 +159,14 @@ proof Pair() {
     const report = (0, checker_1.checkFile)(ast);
     assert_1.strict.equal(report.valid, true);
     assert_1.strict.equal(report.reports[0].proofSteps[2].rule, 'AND_INTRO');
+    const conjunctionObject = report.reports[0].proofObjects.find(object => object.claim === 'p ∧ q');
+    assert_1.strict.ok(conjunctionObject);
+    assert_1.strict.equal(conjunctionObject.rule, 'AND_INTRO');
+    assert_1.strict.equal(conjunctionObject.dependsOn.length, 2);
+    assert_1.strict.equal(conjunctionObject.dependsOnIds.length, 2);
+    const conjunctionDerivation = report.reports[0].derivations.find(node => node.rule === 'AND_INTRO');
+    assert_1.strict.ok(conjunctionDerivation);
+    assert_1.strict.equal(conjunctionDerivation.inputIds.length, 2);
 });
 runTest('checker accepts modus ponens style derivations', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -142,6 +184,13 @@ proof ModusPonens() {
     assert_1.strict.equal(report.valid, true);
     assert_1.strict.equal(report.reports[0].premises[0], 'p → q');
     assert_1.strict.equal(report.reports[0].proofSteps[1].rule, 'IMPLIES_ELIM');
+    assert_1.strict.equal(report.reports[0].proofObjects[0].rule, 'PREMISE');
+    assert_1.strict.equal(report.reports[0].proofObjects[0].dependsOnIds.length, 0);
+    const modusPonensDerivation = report.reports[0].derivations.find(node => node.rule === 'IMPLIES_ELIM');
+    assert_1.strict.ok(modusPonensDerivation);
+    assert_1.strict.equal(modusPonensDerivation.inputIds.length, 2);
+    assert_1.strict.equal(report.reports[0].baseFactIds.length, 2);
+    assert_1.strict.equal(report.reports[0].derivedFactIds.length, 1);
 });
 runTest('checker accepts conjunction elimination derivations', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -157,6 +206,64 @@ proof LeftProjection() {
     const report = (0, checker_1.checkFile)(ast);
     assert_1.strict.equal(report.valid, true);
     assert_1.strict.equal(report.reports[0].proofSteps[1].rule, 'AND_ELIM');
+});
+runTest('checker accepts MI-style symbolic identity demos', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem MembershipIdentity() {
+  assert((x ∈ A) ⇒ (x ∈ A))
+} ↔
+
+proof MembershipIdentity() {
+  assume(x ∈ A) →
+  conclude(x ∈ A)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    assert_1.strict.equal(report.reports[0].derivedConclusion, 'x ∈ A → x ∈ A');
+});
+runTest('checker validates set-theoretic subset transport', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem SubsetTransport() {
+  given(x ∈ A) →
+  given(A ⊆ B) →
+  assert(x ∈ B)
+} ↔
+
+proof SubsetTransport() {
+  conclude(x ∈ B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SUBSET_ELIM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ B');
+    const subsetDerivation = theoremReport.derivations.find(node => node.rule === 'SUBSET_ELIM');
+    assert_1.strict.ok(subsetDerivation);
+    assert_1.strict.equal(subsetDerivation.inputIds.length, 2);
+});
+runTest('checker validates chained set-theoretic subset transport', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem SubsetChain() {
+  given(x ∈ A) →
+  given(A ⊆ B) →
+  given(B ⊆ C) →
+  assert(x ∈ C)
+} ↔
+
+proof SubsetChain() {
+  assert(x ∈ B) →
+  conclude(x ∈ C)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SUBSET_ELIM');
+    assert_1.strict.equal(theoremReport.proofSteps[1].rule, 'SUBSET_ELIM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ C');
+    assert_1.strict.equal(theoremReport.derivations.filter(node => node.rule === 'SUBSET_ELIM').length, 2);
 });
 runTest('checker enforces lemma hypotheses before apply', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -214,6 +321,11 @@ proof UsesForwardStep() {
     assert_1.strict.ok(importedFact);
     assert_1.strict.equal(importedFact.dependsOn[0], 'p → q');
     assert_1.strict.equal(importedFact.imports?.[0], 'q');
+    assert_1.strict.equal(importedFact.dependsOnIds.length, 1);
+    const lemmaDerivation = theoremReport.derivations.find(node => node.rule === 'BY_LEMMA');
+    assert_1.strict.ok(lemmaDerivation);
+    assert_1.strict.equal(lemmaDerivation.inputIds.length, 1);
+    assert_1.strict.equal(theoremReport.derivedFactIds.length, 1);
 });
 runTest('checker accepts chained multi-premise implication demo', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -270,6 +382,7 @@ proof ExplosionDemo() {
     assert_1.strict.ok(contradictionFact);
     assert_1.strict.match(contradictionFact.dependsOn.join(' '), /p/);
     assert_1.strict.match(contradictionFact.dependsOn.join(' '), /¬p/);
+    assert_1.strict.equal(contradictionFact.dependsOnIds.length, 2);
 });
 runTest('checker records implication proof objects for derived facts', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -289,6 +402,7 @@ proof ModusPonens() {
     assert_1.strict.ok(conclusionObject);
     assert_1.strict.equal(conclusionObject.rule, 'IMPLIES_ELIM');
     assert_1.strict.equal(conclusionObject.dependsOn.length, 2);
+    assert_1.strict.equal(conclusionObject.dependsOnIds.length, 2);
     assert_1.strict.match(conclusionObject.dependsOn.join(' '), /p/);
     assert_1.strict.match(conclusionObject.dependsOn.join(' '), /q/);
 });
@@ -347,5 +461,24 @@ theorem Hello() {
     assert_1.strict.equal(fs.existsSync(path.join(outDir, 'package.json')), true);
     assert_1.strict.equal(fs.existsSync(path.join(outDir, 'src', 'App.tsx')), true);
     assert_1.strict.equal(fs.existsSync(path.join(outDir, 'src', 'styles.css')), true);
+});
+runTest('default fl command auto-runs checker for proof-shaped files', () => {
+    const output = (0, child_process_1.execFileSync)('node', ['fl.js', 'examples/demo/identity.fl'], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    });
+    assert_1.strict.match(output, /theorem-prover mode/i);
+    assert_1.strict.match(output, /Checking identity\.fl/);
+    assert_1.strict.match(output, /final: p → p/);
+});
+runTest('default fl command presents standalone theorem files as declarations', () => {
+    const output = (0, child_process_1.execFileSync)('node', ['fl.js', 'test/connectives.fl'], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    });
+    assert_1.strict.match(output, /Declaration-only proof program/);
+    assert_1.strict.match(output, /Theorems: 9/);
+    assert_1.strict.doesNotMatch(output, /Score: 0\/100/);
+    assert_1.strict.doesNotMatch(output, /have no proof/);
 });
 console.log('All unit tests passed.');

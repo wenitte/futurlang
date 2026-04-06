@@ -1,0 +1,8 @@
+theorem MembershipIdentity() {
+  assert((x ∈ A) ⇒ (x ∈ A))
+} ↔
+
+proof MembershipIdentity() {
+  assume(x ∈ A) →
+  conclude(x ∈ A)
+}

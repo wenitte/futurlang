@@ -50,6 +50,12 @@ async function main() {
 
 function runEval(file: string) {
   const source = fs.readFileSync(file, 'utf8');
+  const ast = parseLinesToAST(lexFL(source));
+  if (isProofStyleProgram(ast)) {
+    console.log(`\n${path.basename(file)}: theorem-prover mode\n`);
+    printCheckReport(file, checkFile(ast));
+    return;
+  }
   const js = parseFL(source);
   try { eval(js); }
   catch (e: any) { console.error(e.message); process.exit(1); }
@@ -60,8 +66,12 @@ function runCheck(file: string) {
 
   const source = fs.readFileSync(file, 'utf8');
   const report = checkFile(parseLinesToAST(lexFL(source)));
+  printCheckReport(file, report);
+}
 
+function printCheckReport(file: string, report: ReturnType<typeof checkFile>) {
   console.log(`\nChecking ${path.basename(file)}\n`);
+  const declarationOnly = report.theoremCount > 0 && report.pairedCount === 0;
 
   for (const r of report.reports) {
     const icon   = r.valid ? '✓' : '✗';
@@ -102,12 +112,31 @@ function runCheck(file: string) {
   }
 
   for (const d of report.diagnostics) {
+    if (declarationOnly && d.message.includes('have no proof')) continue;
     console.log(`  ${d.severity === 'error' ? '✗' : 'ℹ'} ${d.message}`);
   }
 
-  console.log(`\n  Theorems: ${report.theoremCount}  Paired: ${report.pairedCount}  Score: ${report.score}/100`);
-  console.log(report.valid ? '\n✓ All proofs structurally valid' : '\n✗ Structural errors found');
+  if (declarationOnly) {
+    console.log(`\n  Declaration-only proof program`);
+    console.log(`  Theorems: ${report.theoremCount}`);
+    console.log(report.valid ? '\n✓ Declarations parsed cleanly' : '\n✗ Structural errors found');
+  } else {
+    console.log(`\n  Theorems: ${report.theoremCount}  Paired: ${report.pairedCount}  Score: ${report.score}/100`);
+    console.log(report.valid ? '\n✓ All proofs structurally valid' : '\n✗ Structural errors found');
+  }
   if (!report.valid) process.exit(1);
+}
+
+function isProofStyleProgram(ast: ReturnType<typeof parseLinesToAST>): boolean {
+  return ast.some(node =>
+    node.type === 'Theorem' ||
+    node.type === 'Proof' ||
+    node.type === 'Lemma' ||
+    node.type === 'Given' ||
+    node.type === 'Assume' ||
+    node.type === 'Conclude' ||
+    node.type === 'Apply'
+  );
 }
 
 function runVerify(file: string) {
@@ -156,7 +185,7 @@ function printUsage() {
 FuturLang — formal proof language
 
 Usage:
-  fl <file.fl>           Evaluate a proof program
+  fl <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
   fl check <file.fl>     Check proof structure (natural deduction)
   fl verify <file.fl>    Verify proof against Lean 4 / Mathlib
   fl web <file.fl>       Generate a React app from the program truth chain

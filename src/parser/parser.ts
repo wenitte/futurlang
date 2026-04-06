@@ -165,8 +165,13 @@ function parseCallExpr(content: string, keyword: string) {
   const body = extractCallBody(content, keyword);
   try {
     return parseExpr(body);
-  } catch {
-    return { type: 'Atom' as const, condition: body, atomKind: 'opaque' as const };
+  } catch (error) {
+    return {
+      type: 'Atom' as const,
+      condition: body,
+      atomKind: 'opaque' as const,
+      parseError: error instanceof Error ? error.message : 'Expression could not be parsed',
+    };
   }
 }
 

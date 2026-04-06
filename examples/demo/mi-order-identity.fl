@@ -1,0 +1,8 @@
+theorem OrderIdentity() {
+  assert((x ≤ y) ⇒ (x ≤ y))
+} ↔
+
+proof OrderIdentity() {
+  assume(x ≤ y) →
+  conclude(x ≤ y)
+}

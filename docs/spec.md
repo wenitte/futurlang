@@ -68,6 +68,25 @@ The intended long-term surface language follows the repository-style FuturLang c
 
 This is the canonical language direction even though the prover core currently supports only a smaller sound subset.
 
+## MI-Style Notation
+
+FuturLang now accepts a broader mathematical-looking surface syntax even when the fast checker only understands a narrow semantic subset.
+
+Examples of notation that now parses cleanly in the current surface language:
+
+- logical implication with `⇒`
+- biconditional with `⇔`
+- membership and containment symbols such as `∈`, `∉`, `⊆`, `⊂`
+- set-oriented grouping such as `(x ∈ A) ∧ (x ∈ B)`
+- order and comparison symbols such as `≤`, `≥`, `≠`
+- common mathematical alphabets such as `ℕ`, `ℤ`, `ℚ`, `ℝ`
+
+Important boundary:
+
+- the parser may accept these symbols as propositions or proposition atoms
+- the fast checker only proves a narrow propositional subset over them
+- richer mathematics should still go through `fl verify`
+
 ## Current Sound Subset
 
 Today, FuturLang is strongest on simple propositional demos:
@@ -80,5 +99,9 @@ Today, FuturLang is strongest on simple propositional demos:
 - negation
 - direct theorem/proof pairing
 - first-class theorem premises with `given(...)`
+- set-membership atoms such as `x ∈ A`
+- subset atoms such as `A ⊆ B`
+- subset transport of membership:
+  from `x ∈ A` and `A ⊆ B`, derive `x ∈ B`
 
 Advanced mathematics is not treated as proven by the JS evaluator. It must go through `fl verify`.

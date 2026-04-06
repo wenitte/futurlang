@@ -1,0 +1,8 @@
+theorem IntersectionLeft() {
+  given((x ∈ A) ∧ (x ∈ B)) →
+  assert(x ∈ A)
+} ↔
+
+proof IntersectionLeft() {
+  conclude(x ∈ A)
+}
