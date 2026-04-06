@@ -1,0 +1,8 @@
+theorem Identity() {
+  assert(p -> p)
+} ↔
+
+proof Identity() {
+  assume(p) →
+  conclude(p)
+}

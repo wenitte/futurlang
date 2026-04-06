@@ -1,0 +1,8 @@
+theorem LeftProjection() {
+  assert((p && q) -> p)
+} ↔
+
+proof LeftProjection() {
+  assume(p && q) →
+  conclude(p)
+}

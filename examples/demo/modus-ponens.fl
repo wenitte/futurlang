@@ -1,0 +1,9 @@
+theorem ModusPonens() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof ModusPonens() {
+  assume(p) →
+  conclude(q)
+}

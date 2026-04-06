@@ -1,0 +1,19 @@
+lemma ForwardStep() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof ForwardStep() {
+  assume(p) →
+  conclude(q)
+} →
+
+theorem UsesForwardStep() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof UsesForwardStep() {
+  assume(p) →
+  apply(ForwardStep)
+}

@@ -1,0 +1,9 @@
+theorem Pair() {
+  assert(p && q)
+} ↔
+
+proof Pair() {
+  assume(p) →
+  assert(q) →
+  conclude(p && q)
+}
