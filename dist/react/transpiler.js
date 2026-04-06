@@ -100,6 +100,15 @@ function serializeExpr(expr) {
     switch (expr.type) {
         case 'Atom':
             return serializeAtom(expr);
+        case 'Quantified':
+            return {
+                type: expr.type,
+                quantifier: expr.quantifier,
+                binderStyle: expr.binderStyle,
+                variable: expr.variable,
+                domain: expr.domain,
+                body: expr.body ? serializeExpr(expr.body) : null,
+            };
         case 'And':
         case 'Or':
         case 'Implies':
@@ -228,6 +237,12 @@ function evaluateExpr(expr: ProgramNode, scope: Record<string, unknown>): EvalRe
   switch (expr.type) {
     case 'Atom':
       return evaluateAtom(expr, scope);
+    case 'Quantified':
+      return {
+        value: false,
+        label: renderExprLabel(expr),
+        detail: 'Quantified expressions are outside the executable subset.',
+      };
     case 'And': {
       const left = evaluateExpr(expr.left, scope);
       const right = evaluateExpr(expr.right, scope);
@@ -254,6 +269,32 @@ function evaluateExpr(expr: ProgramNode, scope: Record<string, unknown>): EvalRe
     }
     default:
       return { value: false, label: 'unsupported expression', detail: 'Unsupported expression node' };
+  }
+}
+
+function renderExprLabel(expr: ProgramNode): string {
+  switch (expr.type) {
+    case 'Atom':
+      return expr.condition;
+    case 'Quantified': {
+      const symbol = expr.quantifier === 'forall' ? '∀' : expr.quantifier === 'exists' ? '∃' : '∃!';
+      const binder = expr.binderStyle === 'bounded'
+        ? expr.variable + ' ∈ ' + expr.domain
+        : expr.variable + ': ' + expr.domain;
+      return expr.body ? symbol + ' ' + binder + ', ' + renderExprLabel(expr.body) : symbol + ' ' + binder;
+    }
+    case 'And':
+      return '(' + renderExprLabel(expr.left) + ' ∧ ' + renderExprLabel(expr.right) + ')';
+    case 'Or':
+      return '(' + renderExprLabel(expr.left) + ' ∨ ' + renderExprLabel(expr.right) + ')';
+    case 'Implies':
+      return '(' + renderExprLabel(expr.left) + ' → ' + renderExprLabel(expr.right) + ')';
+    case 'Iff':
+      return '(' + renderExprLabel(expr.left) + ' ↔ ' + renderExprLabel(expr.right) + ')';
+    case 'Not':
+      return '¬' + renderExprLabel(expr.operand);
+    default:
+      return 'unsupported expression';
   }
 }
 

@@ -8,6 +8,13 @@ export function exprToProp(expr: ExprNode): string {
     case 'Implies': return `${exprToProp(expr.left)} → ${exprToProp(expr.right)}`;
     case 'Iff':     return `${exprToProp(expr.left)} ↔ ${exprToProp(expr.right)}`;
     case 'Not':     return `¬${exprToProp(expr.operand)}`;
+    case 'Quantified': {
+      const symbol = expr.quantifier === 'forall' ? '∀' : expr.quantifier === 'exists' ? '∃' : '∃!';
+      const binder = expr.binderStyle === 'bounded'
+        ? `${expr.variable} ∈ ${expr.domain}`
+        : `${expr.variable}: ${expr.domain}`;
+      return expr.body ? `${symbol} ${binder}, ${exprToProp(expr.body)}` : `${symbol} ${binder}`;
+    }
     default:        return '';
   }
 }

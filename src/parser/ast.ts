@@ -31,6 +31,15 @@ export interface NotNode {
   operand: ExprNode;
 }
 
+export interface QuantifiedNode {
+  type: 'Quantified';
+  quantifier: 'forall' | 'exists' | 'exists_unique';
+  binderStyle: 'bounded' | 'typed';
+  variable: string;
+  domain: string;
+  body: ExprNode | null;
+}
+
 export interface AtomNode {
   type: 'Atom';
   condition: string;
@@ -38,7 +47,7 @@ export interface AtomNode {
   parseError?: string;
 }
 
-export type ExprNode = AndNode | OrNode | ImpliesNode | IffNode | NotNode | AtomNode;
+export type ExprNode = AndNode | OrNode | ImpliesNode | IffNode | NotNode | QuantifiedNode | AtomNode;
 
 // ── Statement-level AST nodes ───────────────────────────────────────────────
 

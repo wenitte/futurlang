@@ -15,6 +15,12 @@ exports.checkEqualitySubst = checkEqualitySubst;
 exports.checkUnionIntro = checkUnionIntro;
 exports.checkIntersectionIntro = checkIntersectionIntro;
 exports.checkIntersectionElim = checkIntersectionElim;
+exports.checkForallTypedElim = checkForallTypedElim;
+exports.checkForallTypedIntro = checkForallTypedIntro;
+exports.checkExistsTypedIntro = checkExistsTypedIntro;
+exports.checkExistsTypedElim = checkExistsTypedElim;
+exports.checkExistsUniqueIntro = checkExistsUniqueIntro;
+exports.checkExistsUniqueElim = checkExistsUniqueElim;
 exports.checkForallInElim = checkForallInElim;
 exports.checkForallInIntro = checkForallInIntro;
 exports.checkExistsInIntro = checkExistsInIntro;
@@ -223,6 +229,131 @@ function checkIntersectionElim(intersectionClaim, target, ctx) {
         rule: 'INTERSECTION_ELIM',
         message: `Cannot use intersection elimination: '${intersectionClaim}' not yet established`,
         hint: `Establish '${intersectionClaim}' before deriving '${target}'`,
+    };
+}
+function checkForallTypedElim(quantifiedClaim, witnessDeclaration, target, ctx) {
+    const hasQuantified = isEstablished(quantifiedClaim, ctx);
+    const hasWitness = isEstablished(witnessDeclaration, ctx);
+    if (hasQuantified && hasWitness) {
+        return { valid: true, rule: 'FORALL_TYPED_ELIM', message: `Typed universal elimination: ${quantifiedClaim}, ${witnessDeclaration} ⊢ ${target}` };
+    }
+    if (!hasQuantified) {
+        return {
+            valid: false,
+            rule: 'FORALL_TYPED_ELIM',
+            message: `Cannot use typed universal elimination: '${quantifiedClaim}' not yet established`,
+            hint: `Establish '${quantifiedClaim}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'FORALL_TYPED_ELIM',
+        message: `Cannot use typed universal elimination: '${witnessDeclaration}' not yet established`,
+        hint: `Introduce '${witnessDeclaration}' before deriving '${target}'`,
+    };
+}
+function checkForallTypedIntro(witnessDeclaration, instantiatedBody, target, ctx) {
+    const hasWitness = isEstablished(witnessDeclaration, ctx);
+    const hasBody = isEstablished(instantiatedBody, ctx);
+    if (hasWitness && hasBody) {
+        return { valid: true, rule: 'FORALL_TYPED_INTRO', message: `Typed universal introduction: ${witnessDeclaration}, ${instantiatedBody} ⊢ ${target}` };
+    }
+    if (!hasWitness) {
+        return {
+            valid: false,
+            rule: 'FORALL_TYPED_INTRO',
+            message: `Cannot use typed universal introduction: '${witnessDeclaration}' not yet established`,
+            hint: `Open a fresh typed variable scope with '${witnessDeclaration}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'FORALL_TYPED_INTRO',
+        message: `Cannot use typed universal introduction: '${instantiatedBody}' not yet established`,
+        hint: `Establish '${instantiatedBody}' inside the typed witness scope before deriving '${target}'`,
+    };
+}
+function checkExistsTypedIntro(witnessDeclaration, instantiatedBody, target, ctx) {
+    const hasWitness = isEstablished(witnessDeclaration, ctx);
+    const hasBody = isEstablished(instantiatedBody, ctx);
+    if (hasWitness && hasBody) {
+        return { valid: true, rule: 'EXISTS_TYPED_INTRO', message: `Typed existential introduction: ${witnessDeclaration}, ${instantiatedBody} ⊢ ${target}` };
+    }
+    if (!hasWitness) {
+        return {
+            valid: false,
+            rule: 'EXISTS_TYPED_INTRO',
+            message: `Cannot use typed existential introduction: '${witnessDeclaration}' not yet established`,
+            hint: `Introduce '${witnessDeclaration}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'EXISTS_TYPED_INTRO',
+        message: `Cannot use typed existential introduction: '${instantiatedBody}' not yet established`,
+        hint: `Establish '${instantiatedBody}' before deriving '${target}'`,
+    };
+}
+function checkExistsTypedElim(existentialClaim, witnessDeclaration, instantiatedBody, target, ctx) {
+    const hasExistential = isEstablished(existentialClaim, ctx);
+    const hasWitness = isEstablished(witnessDeclaration, ctx);
+    const hasBody = isEstablished(instantiatedBody, ctx);
+    if (hasExistential && hasWitness && hasBody) {
+        return { valid: true, rule: 'EXISTS_TYPED_ELIM', message: `Typed existential elimination: ${existentialClaim}, ${witnessDeclaration}, ${instantiatedBody} ⊢ ${target}` };
+    }
+    if (!hasExistential) {
+        return {
+            valid: false,
+            rule: 'EXISTS_TYPED_ELIM',
+            message: `Cannot use typed existential elimination: '${existentialClaim}' not yet established`,
+            hint: `Establish '${existentialClaim}' before deriving '${target}'`,
+        };
+    }
+    if (!hasWitness) {
+        return {
+            valid: false,
+            rule: 'EXISTS_TYPED_ELIM',
+            message: `Cannot use typed existential elimination: '${witnessDeclaration}' not yet established`,
+            hint: `Open a typed witness scope with '${witnessDeclaration}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'EXISTS_TYPED_ELIM',
+        message: `Cannot use typed existential elimination: '${instantiatedBody}' not yet established`,
+        hint: `Establish '${instantiatedBody}' inside the typed witness scope before deriving '${target}'`,
+    };
+}
+function checkExistsUniqueIntro(uniqueClaim, existenceClaim, uniquenessClaim, ctx) {
+    const hasExistence = isEstablished(existenceClaim, ctx);
+    const hasUniqueness = isEstablished(uniquenessClaim, ctx);
+    if (hasExistence && hasUniqueness) {
+        return { valid: true, rule: 'EXISTS_UNIQUE_INTRO', message: `Unique existence introduction: ${existenceClaim}, ${uniquenessClaim} ⊢ ${uniqueClaim}` };
+    }
+    if (!hasExistence) {
+        return {
+            valid: false,
+            rule: 'EXISTS_UNIQUE_INTRO',
+            message: `Cannot use unique existence introduction: '${existenceClaim}' not yet established`,
+            hint: `Establish the existence component before deriving '${uniqueClaim}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'EXISTS_UNIQUE_INTRO',
+        message: `Cannot use unique existence introduction: '${uniquenessClaim}' not yet established`,
+        hint: `Establish the uniqueness component before deriving '${uniqueClaim}'`,
+    };
+}
+function checkExistsUniqueElim(uniqueClaim, target, ctx) {
+    if (isEstablished(uniqueClaim, ctx)) {
+        return { valid: true, rule: 'EXISTS_UNIQUE_ELIM', message: `Unique existence elimination: ${uniqueClaim} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'EXISTS_UNIQUE_ELIM',
+        message: `Cannot use unique existence elimination: '${uniqueClaim}' not yet established`,
+        hint: `Establish '${uniqueClaim}' before deriving '${target}'`,
     };
 }
 function checkForallInElim(quantifiedClaim, witnessMembership, target, ctx) {

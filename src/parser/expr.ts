@@ -12,7 +12,7 @@
 // Atoms: string literals, relational expressions (x == y), bare identifiers.
 
 import {
-  ExprNode, AtomNode, AndNode, OrNode, ImpliesNode, IffNode, NotNode,
+  ExprNode, AtomNode, AndNode, OrNode, ImpliesNode, IffNode, NotNode, QuantifiedNode,
 } from './ast';
 
 const WORD_NORMALIZATIONS: Array<[RegExp, string]> = [
@@ -54,6 +54,7 @@ function normalizeSurfaceSyntax(src: string): string {
     value = value.replace(/<=/g, '≤');
     value = value.replace(/>=/g, '≥');
     value = normalizePrefixQuantifiedBinders(value);
+    value = normalizeStandaloneQuantifiedDeclarations(value);
     return value;
   }).join('');
 }
@@ -72,6 +73,12 @@ function normalizePrefixQuantifiedBinders(src: string): string {
   return value;
 }
 
+function normalizeStandaloneQuantifiedDeclarations(src: string): string {
+  return src.replace(/(∀|∃!|∃)\s*\(([^()]+)\)(?=\s*(?:[∧∨),]|$))/g, (match, quantifier, binder) => {
+    return normalizeBinderList(quantifier, binder.trim(), null) ?? match;
+  });
+}
+
 function normalizeSingleLeadingQuantifier(src: string): string | null {
   const trimmed = src.trim();
   const quantifierMatch = trimmed.match(/^(∀|∃!|∃)\s*\(/);
@@ -84,6 +91,9 @@ function normalizeSingleLeadingQuantifier(src: string): string | null {
 
   const binder = trimmed.slice(binderStart + 1, binderEnd).trim();
   const remainder = trimmed.slice(binderEnd + 1).trimStart();
+  if (!remainder) {
+    return normalizeBinderList(quantifier, binder, null);
+  }
   const arrowMatch = remainder.match(/^(→|⇒|->)\s*([\s\S]+)$/);
   if (!arrowMatch) return null;
 
@@ -108,15 +118,15 @@ function findMatchingParen(value: string, start: number): number {
   return -1;
 }
 
-function normalizeBinderList(quantifier: string, binder: string, body: string): string | null {
-  const normalizedBody = normalizePrefixQuantifiedBinders(body);
+function normalizeBinderList(quantifier: string, binder: string, body: string | null): string | null {
+  const normalizedBody = body ? normalizePrefixQuantifiedBinders(body) : null;
   const boundedMatch = binder.match(/^(.+?)\s*∈\s*(.+)$/);
   if (boundedMatch) {
     const variables = splitBinderNames(boundedMatch[1]);
     const set = boundedMatch[2].trim();
     if (variables.length === 0 || !set) return null;
     return variables.reduceRight(
-      (acc, variable) => `${quantifier} ${variable} ∈ ${set}, ${acc}`,
+      (acc, variable) => acc ? `${quantifier} ${variable} ∈ ${set}, ${acc}` : `${quantifier} ${variable} ∈ ${set}`,
       normalizedBody,
     );
   }
@@ -127,7 +137,7 @@ function normalizeBinderList(quantifier: string, binder: string, body: string): 
     const type = typedMatch[2].trim();
     if (variables.length === 0 || !type) return null;
     return variables.reduceRight(
-      (acc, variable) => `${quantifier} ${variable}: ${type}, ${acc}`,
+      (acc, variable) => acc ? `${quantifier} ${variable}: ${type}, ${acc}` : `${quantifier} ${variable}: ${type}`,
       normalizedBody,
     );
   }
@@ -214,6 +224,10 @@ function tokenise(src: string): Token[] {
     // 3. Bare atom – consume chars one at a time until we hit an op boundary.
     //    This correctly stops at  ->  &&  ||  <->  etc.
     let atom = '';
+    if (s.startsWith('∃!')) {
+      atom = '∃!';
+      s = s.slice(2);
+    }
     while (s.length > 0) {
       const rest = s.replace(/^\s+/, '');
 
@@ -315,7 +329,12 @@ class ExprParser {
 
     if (t.kind === 'ATOM') {
       this.consume();
-      const condition = t.value.trim();
+      let condition = t.value.trim();
+      while (this.peek().kind === 'LPAREN') {
+        condition += this.consumeAtomicCallSuffix();
+      }
+      const quantified = parseQuantifiedExpr(condition);
+      if (quantified) return quantified;
       const atomKind =
         (condition.startsWith('"') && condition.endsWith('"')) ||
         (condition.startsWith("'") && condition.endsWith("'"))
@@ -326,18 +345,82 @@ class ExprParser {
 
     throw new Error(`Unexpected token: "${t.value}" (${t.kind})`);
   }
+
+  private consumeAtomicCallSuffix(): string {
+    let suffix = '';
+    let depth = 0;
+    while (true) {
+      const token = this.consume();
+      suffix += token.value;
+      if (token.kind === 'LPAREN') depth++;
+      else if (token.kind === 'RPAREN') {
+        depth--;
+        if (depth === 0) break;
+      } else if (token.kind === 'EOF') {
+        throw new Error('Unterminated atomic call suffix');
+      }
+    }
+    return suffix;
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function parseExpr(src: string): ExprNode {
   const normalized = normalizeSurfaceSyntax(src).trim();
-  if (isQuantifiedAtom(normalized)) {
-    return { type: 'Atom', condition: normalized, atomKind: 'expression' };
+  const quantified = parseQuantifiedExpr(normalized);
+  if (quantified) {
+    return quantified;
   }
   return new ExprParser(tokenise(normalized)).parse();
 }
 
-function isQuantifiedAtom(value: string): boolean {
-  return /^(∀|∃!|∃)\s+.+,\s*\S[\s\S]*$/.test(value);
+function parseQuantifiedExpr(value: string): ExprNode | null {
+  const trimmed = value.trim();
+  const head = trimmed.match(/^(∀|∃!|∃)\s+/);
+  if (!head) return null;
+
+  const quantifierSymbol = head[1];
+  const quantifier: QuantifiedNode['quantifier'] =
+    quantifierSymbol === '∀' ? 'forall' :
+    quantifierSymbol === '∃!' ? 'exists_unique' :
+    'exists';
+
+  let index = head[0].length;
+  const variableMatch = trimmed.slice(index).match(/^([A-Za-z_][\w₀-₉ₐ-ₙ]*)/);
+  if (!variableMatch) return null;
+  const variable = variableMatch[1];
+  index += variable.length;
+
+  while (index < trimmed.length && /\s/.test(trimmed[index])) index++;
+  const separator = trimmed[index];
+  if (separator !== ':' && separator !== '∈') return null;
+  const binderStyle: QuantifiedNode['binderStyle'] = separator === '∈' ? 'bounded' : 'typed';
+  index += 1;
+
+  while (index < trimmed.length && /\s/.test(trimmed[index])) index++;
+  const commaIndex = findTopLevelComma(trimmed, index);
+  const domain = (commaIndex === -1 ? trimmed.slice(index) : trimmed.slice(index, commaIndex)).trim();
+  const body = commaIndex === -1 ? '' : trimmed.slice(commaIndex + 1).trim();
+  if (!domain) return null;
+
+  return {
+    type: 'Quantified',
+    quantifier,
+    binderStyle,
+    variable,
+    domain,
+    body: body ? parseExpr(body) : null,
+  };
+}
+
+function findTopLevelComma(value: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && ch === ',') return i;
+  }
+  return -1;
 }

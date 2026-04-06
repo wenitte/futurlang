@@ -103,6 +103,8 @@ function generateExpr(node) {
         case 'Implies': return `implies(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
         case 'Iff': return `iff(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
         case 'Not': return `not(${generateExpr(node.operand)})`;
+        case 'Quantified':
+            return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported quantified notation in JS evaluator. Use 'fl verify' for formal support.")`;
         default: {
             const _ = node;
             throw new Error('Unhandled expr node type');
@@ -160,6 +162,13 @@ function renderExprSource(node) {
             return `(${renderExprSource(node.left)} ↔ ${renderExprSource(node.right)})`;
         case 'Not':
             return `¬${renderExprSource(node.operand)}`;
+        case 'Quantified': {
+            const symbol = node.quantifier === 'forall' ? '∀' : node.quantifier === 'exists' ? '∃' : '∃!';
+            const binder = node.binderStyle === 'bounded'
+                ? `${node.variable} ∈ ${node.domain}`
+                : `${node.variable}: ${node.domain}`;
+            return node.body ? `${symbol} ${binder}, ${renderExprSource(node.body)}` : `${symbol} ${binder}`;
+        }
         default: {
             const _ = node;
             throw new Error('Unhandled expr node type');

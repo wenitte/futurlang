@@ -46,16 +46,33 @@ runTest('parseExpr normalizes word equivalents for set notation and bounded quan
   assert.equal(exprToProp(unionExpr), 'x ∈ A → x ∈ A ∪ B');
 
   const quantified = parseExpr('forall x in A, exists y in B');
-  assert.equal(quantified.type, 'Atom');
-  assert.equal(quantified.atomKind, 'expression');
-  assert.equal(quantified.condition, '∀ x ∈ A, ∃ y ∈ B');
+  assert.equal(quantified.type, 'Quantified');
+  assert.equal(quantified.quantifier, 'forall');
+  assert.equal(quantified.binderStyle, 'bounded');
+  assert.equal(quantified.variable, 'x');
+  assert.equal(quantified.domain, 'A');
+  assert.equal(exprToProp(quantified), '∀ x ∈ A, ∃ y ∈ B');
 });
 
 runTest('parseExpr normalizes typed quantified binders into canonical atom form', () => {
   const quantified = parseExpr('∀(x y: G.carrier) ⇒ ∃(z: H) ⇒ x = z');
-  assert.equal(quantified.type, 'Atom');
-  assert.equal(quantified.atomKind, 'expression');
-  assert.equal(quantified.condition, '∀ x: G.carrier, ∀ y: G.carrier, ∃ z: H, x = z');
+  assert.equal(quantified.type, 'Quantified');
+  assert.equal(quantified.quantifier, 'forall');
+  assert.equal(quantified.binderStyle, 'typed');
+  assert.equal(quantified.variable, 'x');
+  assert.equal(quantified.domain, 'G.carrier');
+  assert.equal(exprToProp(quantified), '∀ x: G.carrier, ∀ y: G.carrier, ∃ z: H, x = z');
+});
+
+runTest('parseExpr accepts standalone existential-unique binders', () => {
+  const quantified = parseExpr('∃!(xH: Set)');
+  assert.equal(quantified.type, 'Quantified');
+  assert.equal(quantified.quantifier, 'exists_unique');
+  assert.equal(quantified.binderStyle, 'typed');
+  assert.equal(quantified.variable, 'xH');
+  assert.equal(quantified.domain, 'Set');
+  assert.equal(quantified.body, null);
+  assert.equal(exprToProp(quantified), '∃! xH: Set');
 });
 
 runTest('parser preserves malformed expressions as opaque atoms', () => {
@@ -163,7 +180,23 @@ proof TypedQuantifierDemo() {
   const report = checkFile(ast);
   const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
   assert.doesNotMatch(messages, /opaque symbolic claim/i);
-  assert.match(messages, /outside the current kernel subset|needs kernel rule/i);
+  assert.match(messages, /does not establish theorem goal/i);
+});
+
+runTest('checker preserves standalone existential-unique binders inside larger expressions', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsUniqueShorthand() {
+  assert(∀(x: G.carrier) ⇒ (∃!(xH: Set) ∧ DisjointCosets(G, H)))
+} ↔
+
+proof ExistsUniqueShorthand() {
+  assert(∀(x: G.carrier) ⇒ (∃!(xH: Set) ∧ DisjointCosets(G, H)))
+}
+`));
+  const report = checkFile(ast);
+  const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+  assert.doesNotMatch(messages, /opaque symbolic claim/i);
+  assert.match(messages, /FORALL_BINDER|outside the current kernel subset/i);
 });
 
 runTest('checker accepts conjunction goals when both parts are established', () => {
@@ -447,6 +480,25 @@ proof ForallInElim() {
   assert.equal(theoremReport.derivedConclusion, 'a ∈ B');
 });
 
+runTest('checker validates typed universal elimination', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ForallTypedElim() {
+  given(∀ x: Nat, P(x)) →
+  assert(P(a))
+} ↔
+
+proof ForallTypedElim() {
+  setVar(a: Nat) →
+  conclude(P(a))
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[1].rule, 'FORALL_TYPED_ELIM');
+  assert.equal(theoremReport.derivedConclusion, 'P(a)');
+});
+
 runTest('checker validates bounded universal introduction with explicit witness scope', () => {
   const ast = parseLinesToAST(lexFL(`
 theorem ForallInIntro() {
@@ -466,6 +518,44 @@ proof ForallInIntro() {
   const theoremReport = report.reports[0];
   assert.equal(theoremReport.proofSteps[3].rule, 'FORALL_IN_INTRO');
   assert.equal(theoremReport.derivedConclusion, '∀ x ∈ A, x ∈ B');
+});
+
+runTest('checker validates typed universal introduction with explicit typed witness scope', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ForallTypedIntro() {
+  given(∀ x: Nat, P(x)) →
+  assert(∀ y: Nat, P(y))
+} ↔
+
+proof ForallTypedIntro() {
+  setVar(a: Nat) →
+  conclude(P(a)) →
+  conclude(∀ y: Nat, P(y))
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[1].rule, 'FORALL_TYPED_ELIM');
+  assert.equal(theoremReport.proofSteps[2].rule, 'FORALL_TYPED_INTRO');
+  assert.equal(theoremReport.derivedConclusion, '∀ y: ℕ, P(y)');
+});
+
+runTest('checker satisfies nested typed universal theorem goals recursively', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem NestedForallGoal() {
+  given(∀ x: Nat, ∀ y: Nat, Q(x, y)) →
+  assert(∀ u: Nat, ∀ v: Nat, Q(u, v))
+} ↔
+
+proof NestedForallGoal() {
+  setVar(a: Nat) →
+  setVar(b: Nat) →
+  conclude(Q(a, b))
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
 });
 
 runTest('checker rejects bounded universal introduction when the witness is reused as the binder', () => {
@@ -506,6 +596,25 @@ proof ExistsInIntro() {
   assert.equal(theoremReport.derivedConclusion, '∃ x ∈ A, x ∈ B');
 });
 
+runTest('checker validates typed existential introduction', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsTypedIntro() {
+  given(P(a)) →
+  assert(∃ x: Nat, P(x))
+} ↔
+
+proof ExistsTypedIntro() {
+  setVar(a: Nat) →
+  conclude(∃ x: Nat, P(x))
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[1].rule, 'EXISTS_TYPED_INTRO');
+  assert.equal(theoremReport.derivedConclusion, '∃ x: ℕ, P(x)');
+});
+
 runTest('checker validates bounded existential elimination with explicit witness scope', () => {
   const ast = parseLinesToAST(lexFL(`
 theorem ExistsInElim() {
@@ -525,6 +634,63 @@ proof ExistsInElim() {
   const theoremReport = report.reports[0];
   assert.equal(theoremReport.proofSteps[3].rule, 'EXISTS_IN_ELIM');
   assert.equal(theoremReport.derivedConclusion, 'q');
+});
+
+runTest('checker validates typed existential elimination with explicit witness scope', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsTypedElim() {
+  given(∃ x: Nat, P(x)) →
+  assert(q)
+} ↔
+
+proof ExistsTypedElim() {
+  setVar(a: Nat) →
+  assume(P(a)) →
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[2].rule, 'EXISTS_TYPED_ELIM');
+  assert.equal(theoremReport.derivedConclusion, 'q');
+});
+
+runTest('checker validates unique existence introduction from existence and uniqueness', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsUniqueIntro() {
+  given(∃ x: Nat, P(x)) →
+  given(∀ y: Nat, ∀ z: Nat, (P(y) && P(z)) -> y = z) →
+  assert(∃! x: Nat, P(x))
+} ↔
+
+proof ExistsUniqueIntro() {
+  conclude(∃! x: Nat, P(x))
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[0].rule, 'EXISTS_UNIQUE_INTRO');
+  assert.equal(theoremReport.derivedConclusion, '∃! x: ℕ, P(x)');
+});
+
+runTest('checker derives existence from a unique existence premise', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsUniqueElimExistence() {
+  given(∃! x: Nat, P(x)) →
+  assert(∃ x: Nat, P(x))
+} ↔
+
+proof ExistsUniqueElimExistence() {
+  conclude(∃ x: Nat, P(x))
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[0].rule, 'EXISTS_UNIQUE_ELIM');
+  assert.equal(theoremReport.derivedConclusion, '∃ x: ℕ, P(x)');
 });
 
 runTest('checker rejects existential elimination when the witness leaks into the conclusion', () => {
