@@ -46,6 +46,7 @@ Every established fact becomes a proof object with:
 - a proposition string
 - a source such as `premise`, `assumption`, `assertion`, `conclusion`, or `lemma_application`
 - the rule associated with how it entered the context
+- the nested proof scopes in which it is visible
 - dependency labels and dependency ids
 
 4. Derivation nodes
@@ -55,6 +56,7 @@ Whenever the checker accepts a genuinely derived step in the supported subset, i
 - the inference rule
 - input proof-object ids
 - one output proof-object id
+- and, when relevant, the scopes that were discharged by that derivation
 
 So the checker is no longer only producing trace text. It now builds a small derivation graph.
 
@@ -114,6 +116,7 @@ That layer is still narrow:
 - each established fact is recorded with a rule, source, step, and dependencies
 - proof objects now also carry links to the proof objects they depend on
 - accepted proof steps now also emit explicit derivation nodes with input ids and an output id
+- the checker now tracks nested proof scopes for assumptions and witness variables, then records which scopes are discharged by intro/elim rules
 - theorem premises become `PREMISE` proof objects
 - assumptions, derived conclusions, contradiction steps, and lemma imports become proof objects
 - supported rules now construct proof objects directly instead of going through a generic dependency-inference pass

@@ -475,6 +475,25 @@ proof ExistsInElimLeak() {
   assert.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
 });
 
+runTest('checker prevents witness facts from leaking after bounded universal introduction discharge', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem WitnessDoesNotLeak() {
+  assert(a in B)
+} ↔
+
+proof WitnessDoesNotLeak() {
+  setVar(a) →
+  assume(a in A) →
+  assert(a in B) →
+  conclude(forall x in A, x in B) →
+  conclude(a in B)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+  assert.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
+});
+
 runTest('checker enforces lemma hypotheses before apply', () => {
   const ast = parseLinesToAST(lexFL(`
 lemma NeedsP() {

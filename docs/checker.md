@@ -9,6 +9,7 @@
 - theorem/proof names match
 - theorem and lemma premises declared with `given(...)` are carried into proof context
 - each established fact in the current checker subset is recorded as an internal proof object with dependencies
+- proof objects and derivations now also carry explicit scope information, so discharged witness and assumption facts stop being visible after the relevant intro/elim rule fires
 - rich mathematical expressions that fall outside the fast checker subset now produce explicit parser/checker fallback diagnostics instead of silently disappearing into generic structure
 - theorem blocks declare a claim
 - proofs are non-empty

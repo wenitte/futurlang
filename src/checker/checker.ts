@@ -1856,6 +1856,10 @@ function currentScopeIds(ctx: ProofContext): string[] {
   return ctx.currentScopes.map(scope => scope.id);
 }
 
+function visibleEstablishedClaims(ctx: ProofContext): Claim[] {
+  return ctx.established.filter(claim => isVisibleInCurrentScope(claim.scopeIds, ctx));
+}
+
 function dischargeScopeIds(ctx: ProofContext, dischargedScopeIds: string[]): string[] {
   const discharged = new Set(dischargedScopeIds);
   return currentScopeIds(ctx).filter(id => !discharged.has(id));
@@ -2041,11 +2045,12 @@ function parserFallbackHint(value: string): string {
 }
 
 function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
-  if (ctx.established.some(item => sameProp(item.content, claim))) {
+  const established = visibleEstablishedClaims(ctx);
+  if (established.some(item => sameProp(item.content, claim))) {
     return null;
   }
 
-  for (const item of ctx.established) {
+  for (const item of established) {
     const implication = parseImplicationProp(item.content);
     if (!implication) continue;
     const [antecedent, consequent] = implication;
@@ -2054,7 +2059,7 @@ function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null
     if (result.valid) return result;
   }
 
-  for (const item of ctx.established) {
+  for (const item of established) {
     const conjunction = parseConjunctionProp(item.content);
     if (!conjunction) continue;
     const [left, right] = conjunction;
@@ -2109,7 +2114,7 @@ function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null
 function checkSubsetDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
   const output = parseMembershipProp(claim);
   if (!output) return null;
-  for (const item of ctx.established) {
+  for (const item of visibleEstablishedClaims(ctx)) {
     const subset = parseSubsetProp(item.content);
     if (!subset || !sameProp(subset.right, output.set)) continue;
     const membershipClaim = `${output.element} ∈ ${subset.left}`;
@@ -2122,10 +2127,11 @@ function checkSubsetDerivedClaim(claim: string, ctx: ProofContext): CheckResult 
 function checkSubsetTransDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
   const target = parseSubsetProp(claim);
   if (!target) return null;
-  for (const item of ctx.established) {
+  const established = visibleEstablishedClaims(ctx);
+  for (const item of established) {
     const left = parseSubsetProp(item.content);
     if (!left || !sameProp(left.left, target.left)) continue;
-    for (const next of ctx.established) {
+    for (const next of established) {
       const right = parseSubsetProp(next.content);
       if (!right) continue;
       if (sameProp(left.right, right.left) && sameProp(right.right, target.right)) {
@@ -2140,10 +2146,11 @@ function checkSubsetTransDerivedClaim(claim: string, ctx: ProofContext): CheckRe
 function checkEqualitySubstDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
   const output = parseMembershipProp(claim);
   if (!output) return null;
-  for (const equalityItem of ctx.established) {
+  const established = visibleEstablishedClaims(ctx);
+  for (const equalityItem of established) {
     const equality = parseEqualityProp(equalityItem.content);
     if (!equality) continue;
-    for (const membershipItem of ctx.established) {
+    for (const membershipItem of established) {
       if (supportsEqualitySubstitution(equalityItem.content, membershipItem.content, claim)) {
         const result = checkEqualitySubst(equalityItem.content, membershipItem.content, claim, ctx);
         if (result.valid) return result;
@@ -2180,7 +2187,7 @@ function checkIntersectionIntroDerivedClaim(claim: string, ctx: ProofContext): C
 function checkIntersectionElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
   const output = parseMembershipProp(claim);
   if (!output) return null;
-  for (const item of ctx.established) {
+  for (const item of visibleEstablishedClaims(ctx)) {
     const membership = parseMembershipProp(item.content);
     if (!membership || !sameProp(membership.element, output.element)) continue;
     const intersection = parseBinarySetProp(membership.set, '∩');
@@ -2194,10 +2201,11 @@ function checkIntersectionElimDerivedClaim(claim: string, ctx: ProofContext): Ch
 }
 
 function checkForallInElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
-  for (const quantifiedItem of ctx.established) {
+  const established = visibleEstablishedClaims(ctx);
+  for (const quantifiedItem of established) {
     const quantifier = parseBoundedQuantifierProp(quantifiedItem.content, 'forall');
     if (!quantifier) continue;
-    for (const membershipItem of ctx.established) {
+    for (const membershipItem of established) {
       const witness = parseMembershipProp(membershipItem.content);
       if (!witness || !sameProp(witness.set, quantifier.set)) continue;
       const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
@@ -2222,12 +2230,13 @@ function checkForallInIntroDerivedClaim(claim: string, ctx: ProofContext): Check
 function checkExistsInIntroDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
   const quantifier = parseBoundedQuantifierProp(claim, 'exists');
   if (!quantifier) return null;
-  for (const membershipItem of ctx.established) {
+  const established = visibleEstablishedClaims(ctx);
+  for (const membershipItem of established) {
     const witness = parseMembershipProp(membershipItem.content);
     if (!witness || !sameProp(witness.set, quantifier.set)) continue;
     const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
     if (!instantiated) continue;
-    if (ctx.established.some(item => sameProp(item.content, instantiated))) {
+    if (established.some(item => sameProp(item.content, instantiated))) {
       const result = checkExistsInIntro(membershipItem.content, instantiated, claim, ctx);
       if (result.valid) return result;
     }
@@ -2236,7 +2245,7 @@ function checkExistsInIntroDerivedClaim(claim: string, ctx: ProofContext): Check
 }
 
 function checkExistsInElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
-  for (const existentialItem of ctx.established) {
+  for (const existentialItem of visibleEstablishedClaims(ctx)) {
     const quantifier = parseBoundedQuantifierProp(existentialItem.content, 'exists');
     if (!quantifier) continue;
     const scope = findExistsElimScope(quantifier, claim, ctx);
@@ -2256,9 +2265,9 @@ function checkImplicationGoalDischarge(claim: string, ctx: ProofContext): CheckR
   if (!sameProp(consequent, claim)) return null;
 
   const antecedentAssumed = ctx.established.some(
-    item => item.source === 'assumption' && sameProp(item.content, antecedent)
+    item => isVisibleInCurrentScope(item.scopeIds, ctx) && item.source === 'assumption' && sameProp(item.content, antecedent)
   );
-  const consequentEstablished = ctx.established.some(item => sameProp(item.content, consequent));
+  const consequentEstablished = visibleEstablishedClaims(ctx).some(item => sameProp(item.content, consequent));
   return checkImpliesIntro(antecedent, consequent, antecedentAssumed, consequentEstablished);
 }
 
@@ -2273,7 +2282,7 @@ function checkForallGoalDischarge(claim: string, ctx: ProofContext): CheckResult
 }
 
 function checkContradictionDischarge(claim: string, ctx: ProofContext): CheckResult | null {
-  const contradictionEstablished = ctx.established.some(item => sameProp(item.content, 'contradiction'));
+  const contradictionEstablished = visibleEstablishedClaims(ctx).some(item => sameProp(item.content, 'contradiction'));
   if (!contradictionEstablished) return null;
   const contradiction = checkContradiction(ctx);
   if (!contradiction.valid) return contradiction;
@@ -2286,7 +2295,7 @@ function checkContradictionDischarge(claim: string, ctx: ProofContext): CheckRes
 
 function checkPremiseClaim(claim: string, ctx: ProofContext): CheckResult | null {
   if (!ctx.goal) return null;
-  if (!sameProp(claim, ctx.goal) && !ctx.established.some(item => item.source === 'premise' && sameProp(item.content, claim))) {
+  if (!sameProp(claim, ctx.goal) && !visibleEstablishedClaims(ctx).some(item => item.source === 'premise' && sameProp(item.content, claim))) {
     return null;
   }
   return {

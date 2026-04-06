@@ -190,6 +190,31 @@ Meaning:
 - they connect adjacent proof steps
 - order matters because the checker only sees earlier facts as established
 
+## Scope And Discharge
+
+The current checker now tracks explicit nested proof scopes internally.
+
+Scope openers:
+
+- `setVar(a)` opens a witness-style variable scope
+- `assume(P)` opens an assumption scope nested under the current scope
+
+Visibility rule:
+
+- facts established in a parent scope are visible in its children
+- facts established in a child scope are not visible after that scope is discharged
+
+Current discharge rules:
+
+- `IMPLIES_INTRO` discharges the relevant assumption scope
+- `FORALL_IN_INTRO` discharges the witness scope used for the bounded universal introduction
+- `EXISTS_IN_ELIM` discharges the explicit witness scope used for existential elimination
+- `CONTRADICTION` may discharge the active contradiction assumption scope
+
+Practical consequence:
+
+- a witness fact like `a ∈ B` established inside a bounded witness scope should not be assumed available after the quantified conclusion has been discharged
+
 ## Expression Surface
 
 Current logical surface:

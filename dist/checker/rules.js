@@ -283,7 +283,7 @@ function checkContradiction(ctx) {
         };
     }
     // Check that we have two claims that directly contradict each other
-    const contradiction = findContradiction(ctx.established);
+    const contradiction = findContradiction(visibleClaims(ctx));
     if (contradiction) {
         return {
             valid: true, rule: 'CONTRADICTION',
@@ -409,7 +409,15 @@ function checkImpliesIntro(antecedent, consequent, antecedentAssumed, consequent
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isEstablished(claim, ctx) {
     const normalized = (0, propositions_1.normalizeProp)(claim);
-    return ctx.established.some(c => (0, propositions_1.normalizeProp)(c.content) === normalized);
+    const active = ctx.currentScopes.map(scope => scope.id);
+    return ctx.established.some(c => (0, propositions_1.normalizeProp)(c.content) === normalized &&
+        c.scopeIds.length <= active.length &&
+        c.scopeIds.every((id, index) => active[index] === id));
+}
+function visibleClaims(ctx) {
+    const active = ctx.currentScopes.map(scope => scope.id);
+    return ctx.established.filter(c => c.scopeIds.length <= active.length &&
+        c.scopeIds.every((id, index) => active[index] === id));
 }
 function normalizeClaim(s) {
     return (0, propositions_1.normalizeProp)(s);

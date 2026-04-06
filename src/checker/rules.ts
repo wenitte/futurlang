@@ -296,7 +296,7 @@ export function checkContradiction(ctx: ProofContext): CheckResult {
     };
   }
   // Check that we have two claims that directly contradict each other
-  const contradiction = findContradiction(ctx.established);
+  const contradiction = findContradiction(visibleClaims(ctx));
   if (contradiction) {
     return {
       valid: true, rule: 'CONTRADICTION',
@@ -443,7 +443,20 @@ export function checkImpliesIntro(
 
 function isEstablished(claim: string, ctx: ProofContext): boolean {
   const normalized = normalizeProp(claim);
-  return ctx.established.some(c => normalizeProp(c.content) === normalized);
+  const active = ctx.currentScopes.map(scope => scope.id);
+  return ctx.established.some(c =>
+    normalizeProp(c.content) === normalized &&
+    c.scopeIds.length <= active.length &&
+    c.scopeIds.every((id, index) => active[index] === id)
+  );
+}
+
+function visibleClaims(ctx: ProofContext): Claim[] {
+  const active = ctx.currentScopes.map(scope => scope.id);
+  return ctx.established.filter(c =>
+    c.scopeIds.length <= active.length &&
+    c.scopeIds.every((id, index) => active[index] === id)
+  );
 }
 
 function normalizeClaim(s: string): string {

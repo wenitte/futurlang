@@ -136,6 +136,7 @@ function checkProofBlock(name, body, globalLemmas, method, goal = null, premises
         content,
         source: 'premise',
         step: -(index + 1),
+        scopeIds: [],
         proofObjectId: makeProofObjectId(-(index + 1), 'premise', content),
     }));
     const ctx = {
@@ -146,11 +147,13 @@ function checkProofBlock(name, body, globalLemmas, method, goal = null, premises
             rule: 'PREMISE',
             source: claim.source,
             step: claim.step,
+            scopeIds: claim.scopeIds,
             dependsOn: [],
             dependsOnIds: [],
         })),
         derivations: [],
         variables: [],
+        currentScopes: [],
         lemmas: new Map(globalLemmas),
         method,
         inContradiction: false,
@@ -351,7 +354,8 @@ function checkProofBlock(name, body, globalLemmas, method, goal = null, premises
             }
             case 'SetVar': {
                 const n = node;
-                ctx.variables.push({ name: n.varName, type: n.varType, step });
+                const scope = openScope(ctx, 'variable', n.varName, step);
+                ctx.variables.push({ name: n.varName, type: n.varType, step, scopeId: scope.id });
                 // Variables are always valid introductions
                 if (n.varType) {
                     registerVariableClaim(ctx, `${n.varName}: ${n.varType}`, step);
@@ -596,6 +600,7 @@ function registerClaim(ctx, input) {
         content: input.content,
         source: input.source,
         step: input.step,
+        scopeIds: input.scopeIds ?? currentScopeIds(ctx),
         proofObjectId,
     };
     ctx.established.push(claim);
@@ -605,16 +610,19 @@ function registerClaim(ctx, input) {
         rule: input.rule,
         source: input.source,
         step: input.step,
+        scopeIds: claim.scopeIds,
+        dischargedScopeIds: input.dischargedScopeIds && input.dischargedScopeIds.length > 0 ? uniqueIds(input.dischargedScopeIds) : undefined,
         dependsOn: uniqueProps(input.dependsOn),
         dependsOnIds: uniqueIds(input.dependsOnIds ?? resolveClaimIds(ctx, input.dependsOn)),
         imports: input.imports && input.imports.length > 0 ? uniqueProps(input.imports) : undefined,
     });
     if (input.emitDerivation !== false) {
-        ctx.derivations.push(makeDerivationNode(input.step, input.rule, uniqueIds(input.dependsOnIds ?? resolveClaimIds(ctx, input.dependsOn)), proofObjectId));
+        ctx.derivations.push(makeDerivationNode(input.step, input.rule, uniqueIds(input.dependsOnIds ?? resolveClaimIds(ctx, input.dependsOn)), proofObjectId, input.dischargedScopeIds));
     }
     return claim;
 }
 function registerAssumptionClaim(ctx, claim, step, rule) {
+    openScope(ctx, 'assumption', claim, step);
     return registerClaim(ctx, {
         content: claim,
         source: 'assumption',
@@ -678,18 +686,20 @@ function registerDerivedClaim(ctx, input) {
         ...builder,
         emitDerivation: Boolean(input.derivation?.valid) && !graphValidation,
     });
+    applyDischargedScopes(ctx, builder.dischargedScopeIds);
     return { claim, result };
 }
 function makeProofObjectId(step, source, claim) {
     return `${source}:${step}:${normalizeName(claim)}`;
 }
-function makeDerivationNode(step, rule, inputIds, outputId) {
+function makeDerivationNode(step, rule, inputIds, outputId, dischargedScopeIds) {
     return {
         id: `derivation:${step}:${normalizeName(outputId)}`,
         step,
         rule,
         inputIds,
         outputId,
+        dischargedScopeIds: dischargedScopeIds && dischargedScopeIds.length > 0 ? uniqueIds(dischargedScopeIds) : undefined,
     };
 }
 function collectBaseFactIds(proofObjects, derivations) {
@@ -1050,6 +1060,7 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             source,
             step,
             rule: derivation?.rule ?? 'STRUCTURAL',
+            scopeIds: currentScopeIds(ctx),
             dependsOn: [],
         };
     }
@@ -1092,6 +1103,7 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
                 source,
                 step,
                 rule: derivation.rule,
+                scopeIds: currentScopeIds(ctx),
                 dependsOn: [],
             };
     }
@@ -1232,11 +1244,14 @@ function buildForallInElimProofObject(claim, source, step, ctx) {
 function buildForallInIntroProofObject(claim, source, step, ctx) {
     const outputClaim = forallOutputClaim(claim, ctx);
     const dependency = findForallInIntroDependency(outputClaim, ctx);
+    const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
     return {
         content: outputClaim,
         source,
         step,
         rule: 'FORALL_IN_INTRO',
+        scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+        dischargedScopeIds,
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -1254,11 +1269,14 @@ function buildExistsInIntroProofObject(claim, source, step, ctx) {
 }
 function buildExistsInElimProofObject(claim, source, step, ctx) {
     const dependency = findExistsInElimDependency(claim, ctx);
+    const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
     return {
         content: claim,
         source,
         step,
         rule: 'EXISTS_IN_ELIM',
+        scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+        dischargedScopeIds,
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -1266,22 +1284,28 @@ function buildExistsInElimProofObject(claim, source, step, ctx) {
 function buildImpliesIntroProofObject(claim, source, step, ctx) {
     const dependency = findImplicationIntroDependency(claim, ctx);
     const outputClaim = implicationOutputClaim(claim, ctx);
+    const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
     return {
         content: outputClaim,
         source,
         step,
         rule: 'IMPLIES_INTRO',
+        scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+        dischargedScopeIds,
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
 }
 function buildContradictionDischargeProofObject(claim, source, step, ctx) {
     const dependency = findContradictionDependency(ctx);
+    const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
     return {
         content: claim,
         source,
         step,
         rule: 'CONTRADICTION',
+        scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+        dischargedScopeIds,
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -1482,6 +1506,7 @@ function findForallInIntroDependency(claim, ctx) {
     return {
         claims: [scope.membership.claim, scope.body.claim],
         ids: uniqueIds([scope.membership.id, scope.body.id]),
+        dischargedScopeIds: scope.dischargedScopeIds,
     };
 }
 function findExistsInIntroDependency(claim, ctx) {
@@ -1518,6 +1543,7 @@ function findExistsInElimDependency(claim, ctx) {
         return {
             claims: [existential.claim, scope.membership.claim, scope.body.claim],
             ids: uniqueIds([existential.id, scope.membership.id, scope.body.id]),
+            dischargedScopeIds: scope.dischargedScopeIds,
         };
     }
     return null;
@@ -1530,18 +1556,26 @@ function findImplicationIntroDependency(claim, ctx) {
     const consequentObject = findLatestProofObjectByClaim(ctx, implication[1]);
     if (!antecedentObject || !consequentObject)
         return null;
+    const dischargedScopeIds = scopesThrough(ctx, antecedentObject.scopeIds[antecedentObject.scopeIds.length - 1]);
     return {
         claims: [implication[0], implication[1]],
         ids: uniqueIds([antecedentObject.id, consequentObject.id]),
+        dischargedScopeIds,
     };
 }
 function findContradictionDependency(ctx) {
     const contradiction = findContradictionProofObjects(ctx);
     if (!contradiction)
         return null;
+    const dischargedScopeIds = contradiction.a.source === 'assumption'
+        ? scopesThrough(ctx, contradiction.a.scopeIds[contradiction.a.scopeIds.length - 1])
+        : contradiction.b.source === 'assumption'
+            ? scopesThrough(ctx, contradiction.b.scopeIds[contradiction.b.scopeIds.length - 1])
+            : [];
     return {
         claims: [contradiction.a.claim, contradiction.b.claim],
         ids: uniqueIds([contradiction.a.id, contradiction.b.id]),
+        dischargedScopeIds,
     };
 }
 function findContradictionPair(established) {
@@ -1584,10 +1618,50 @@ function uniqueProps(values) {
 function uniqueIds(values) {
     return [...new Set(values.filter(Boolean))];
 }
+function openScope(ctx, kind, label, step) {
+    const scope = {
+        id: `scope:${kind}:${step}:${normalizeName(label)}`,
+        kind,
+        label,
+        step,
+    };
+    ctx.currentScopes.push(scope);
+    return scope;
+}
+function currentScopeIds(ctx) {
+    return ctx.currentScopes.map(scope => scope.id);
+}
+function visibleEstablishedClaims(ctx) {
+    return ctx.established.filter(claim => isVisibleInCurrentScope(claim.scopeIds, ctx));
+}
+function dischargeScopeIds(ctx, dischargedScopeIds) {
+    const discharged = new Set(dischargedScopeIds);
+    return currentScopeIds(ctx).filter(id => !discharged.has(id));
+}
+function applyDischargedScopes(ctx, dischargedScopeIds) {
+    if (!dischargedScopeIds || dischargedScopeIds.length === 0)
+        return;
+    const discharged = new Set(dischargedScopeIds);
+    ctx.currentScopes = ctx.currentScopes.filter(scope => !discharged.has(scope.id));
+}
+function scopesThrough(ctx, scopeId) {
+    if (!scopeId)
+        return [];
+    const index = ctx.currentScopes.findIndex(scope => scope.id === scopeId);
+    if (index === -1)
+        return [];
+    return ctx.currentScopes.slice(index).map(scope => scope.id);
+}
+function isVisibleInCurrentScope(scopeIds, ctx) {
+    const active = currentScopeIds(ctx);
+    if (scopeIds.length > active.length)
+        return false;
+    return scopeIds.every((id, index) => active[index] === id);
+}
 function resolveClaimIds(ctx, claims) {
     const resolved = [];
     for (const claim of claims) {
-        const matches = ctx.established.filter(item => (0, propositions_1.sameProp)(item.content, claim) && item.proofObjectId);
+        const matches = ctx.established.filter(item => (0, propositions_1.sameProp)(item.content, claim) && item.proofObjectId && isVisibleInCurrentScope(item.scopeIds, ctx));
         if (matches.length > 0) {
             resolved.push(matches[matches.length - 1].proofObjectId);
         }
@@ -1597,7 +1671,7 @@ function resolveClaimIds(ctx, claims) {
 function findLatestProofObjectByClaim(ctx, claim, predicate) {
     for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
         const object = ctx.proofObjects[i];
-        if ((0, propositions_1.sameProp)(object.claim, claim) && (!predicate || predicate(object))) {
+        if ((0, propositions_1.sameProp)(object.claim, claim) && isVisibleInCurrentScope(object.scopeIds, ctx) && (!predicate || predicate(object))) {
             return object;
         }
     }
@@ -1606,7 +1680,7 @@ function findLatestProofObjectByClaim(ctx, claim, predicate) {
 function findLatestProofObject(ctx, predicate) {
     for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
         const object = ctx.proofObjects[i];
-        if (predicate(object))
+        if (isVisibleInCurrentScope(object.scopeIds, ctx) && predicate(object))
             return object;
     }
     return null;
@@ -1727,10 +1801,11 @@ function parserFallbackHint(value) {
     return `Rewrite the expression into the current fast checker subset or use 'fl verify'.`;
 }
 function checkDerivedClaim(claim, ctx) {
-    if (ctx.established.some(item => (0, propositions_1.sameProp)(item.content, claim))) {
+    const established = visibleEstablishedClaims(ctx);
+    if (established.some(item => (0, propositions_1.sameProp)(item.content, claim))) {
         return null;
     }
-    for (const item of ctx.established) {
+    for (const item of established) {
         const implication = parseImplicationProp(item.content);
         if (!implication)
             continue;
@@ -1741,7 +1816,7 @@ function checkDerivedClaim(claim, ctx) {
         if (result.valid)
             return result;
     }
-    for (const item of ctx.established) {
+    for (const item of established) {
         const conjunction = parseConjunctionProp(item.content);
         if (!conjunction)
             continue;
@@ -1796,7 +1871,7 @@ function checkSubsetDerivedClaim(claim, ctx) {
     const output = parseMembershipProp(claim);
     if (!output)
         return null;
-    for (const item of ctx.established) {
+    for (const item of visibleEstablishedClaims(ctx)) {
         const subset = parseSubsetProp(item.content);
         if (!subset || !(0, propositions_1.sameProp)(subset.right, output.set))
             continue;
@@ -1811,11 +1886,12 @@ function checkSubsetTransDerivedClaim(claim, ctx) {
     const target = parseSubsetProp(claim);
     if (!target)
         return null;
-    for (const item of ctx.established) {
+    const established = visibleEstablishedClaims(ctx);
+    for (const item of established) {
         const left = parseSubsetProp(item.content);
         if (!left || !(0, propositions_1.sameProp)(left.left, target.left))
             continue;
-        for (const next of ctx.established) {
+        for (const next of established) {
             const right = parseSubsetProp(next.content);
             if (!right)
                 continue;
@@ -1832,11 +1908,12 @@ function checkEqualitySubstDerivedClaim(claim, ctx) {
     const output = parseMembershipProp(claim);
     if (!output)
         return null;
-    for (const equalityItem of ctx.established) {
+    const established = visibleEstablishedClaims(ctx);
+    for (const equalityItem of established) {
         const equality = parseEqualityProp(equalityItem.content);
         if (!equality)
             continue;
-        for (const membershipItem of ctx.established) {
+        for (const membershipItem of established) {
             if (supportsEqualitySubstitution(equalityItem.content, membershipItem.content, claim)) {
                 const result = (0, rules_1.checkEqualitySubst)(equalityItem.content, membershipItem.content, claim, ctx);
                 if (result.valid)
@@ -1877,7 +1954,7 @@ function checkIntersectionElimDerivedClaim(claim, ctx) {
     const output = parseMembershipProp(claim);
     if (!output)
         return null;
-    for (const item of ctx.established) {
+    for (const item of visibleEstablishedClaims(ctx)) {
         const membership = parseMembershipProp(item.content);
         if (!membership || !(0, propositions_1.sameProp)(membership.element, output.element))
             continue;
@@ -1893,11 +1970,12 @@ function checkIntersectionElimDerivedClaim(claim, ctx) {
     return null;
 }
 function checkForallInElimDerivedClaim(claim, ctx) {
-    for (const quantifiedItem of ctx.established) {
+    const established = visibleEstablishedClaims(ctx);
+    for (const quantifiedItem of established) {
         const quantifier = parseBoundedQuantifierProp(quantifiedItem.content, 'forall');
         if (!quantifier)
             continue;
-        for (const membershipItem of ctx.established) {
+        for (const membershipItem of established) {
             const witness = parseMembershipProp(membershipItem.content);
             if (!witness || !(0, propositions_1.sameProp)(witness.set, quantifier.set))
                 continue;
@@ -1925,14 +2003,15 @@ function checkExistsInIntroDerivedClaim(claim, ctx) {
     const quantifier = parseBoundedQuantifierProp(claim, 'exists');
     if (!quantifier)
         return null;
-    for (const membershipItem of ctx.established) {
+    const established = visibleEstablishedClaims(ctx);
+    for (const membershipItem of established) {
         const witness = parseMembershipProp(membershipItem.content);
         if (!witness || !(0, propositions_1.sameProp)(witness.set, quantifier.set))
             continue;
         const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
         if (!instantiated)
             continue;
-        if (ctx.established.some(item => (0, propositions_1.sameProp)(item.content, instantiated))) {
+        if (established.some(item => (0, propositions_1.sameProp)(item.content, instantiated))) {
             const result = (0, rules_1.checkExistsInIntro)(membershipItem.content, instantiated, claim, ctx);
             if (result.valid)
                 return result;
@@ -1941,7 +2020,7 @@ function checkExistsInIntroDerivedClaim(claim, ctx) {
     return null;
 }
 function checkExistsInElimDerivedClaim(claim, ctx) {
-    for (const existentialItem of ctx.established) {
+    for (const existentialItem of visibleEstablishedClaims(ctx)) {
         const quantifier = parseBoundedQuantifierProp(existentialItem.content, 'exists');
         if (!quantifier)
             continue;
@@ -1963,8 +2042,8 @@ function checkImplicationGoalDischarge(claim, ctx) {
     const [antecedent, consequent] = implication;
     if (!(0, propositions_1.sameProp)(consequent, claim))
         return null;
-    const antecedentAssumed = ctx.established.some(item => item.source === 'assumption' && (0, propositions_1.sameProp)(item.content, antecedent));
-    const consequentEstablished = ctx.established.some(item => (0, propositions_1.sameProp)(item.content, consequent));
+    const antecedentAssumed = ctx.established.some(item => isVisibleInCurrentScope(item.scopeIds, ctx) && item.source === 'assumption' && (0, propositions_1.sameProp)(item.content, antecedent));
+    const consequentEstablished = visibleEstablishedClaims(ctx).some(item => (0, propositions_1.sameProp)(item.content, consequent));
     return (0, rules_1.checkImpliesIntro)(antecedent, consequent, antecedentAssumed, consequentEstablished);
 }
 function checkForallGoalDischarge(claim, ctx) {
@@ -1981,7 +2060,7 @@ function checkForallGoalDischarge(claim, ctx) {
     return (0, rules_1.checkForallInIntro)(scope.membership.claim, scope.body.claim, ctx.goal, ctx);
 }
 function checkContradictionDischarge(claim, ctx) {
-    const contradictionEstablished = ctx.established.some(item => (0, propositions_1.sameProp)(item.content, 'contradiction'));
+    const contradictionEstablished = visibleEstablishedClaims(ctx).some(item => (0, propositions_1.sameProp)(item.content, 'contradiction'));
     if (!contradictionEstablished)
         return null;
     const contradiction = (0, rules_1.checkContradiction)(ctx);
@@ -1996,7 +2075,7 @@ function checkContradictionDischarge(claim, ctx) {
 function checkPremiseClaim(claim, ctx) {
     if (!ctx.goal)
         return null;
-    if (!(0, propositions_1.sameProp)(claim, ctx.goal) && !ctx.established.some(item => item.source === 'premise' && (0, propositions_1.sameProp)(item.content, claim))) {
+    if (!(0, propositions_1.sameProp)(claim, ctx.goal) && !visibleEstablishedClaims(ctx).some(item => item.source === 'premise' && (0, propositions_1.sameProp)(item.content, claim))) {
         return null;
     }
     return {
@@ -2127,7 +2206,12 @@ function findExistsElimScope(quantifier, target, ctx) {
         if (!body)
             continue;
         if (!containsFreeLikeVariable(target, witness)) {
-            return { witness, membership, body };
+            return {
+                witness,
+                membership,
+                body,
+                dischargedScopeIds: scopesThrough(ctx, membership.scopeIds[membership.scopeIds.length - 1]),
+            };
         }
     }
     return null;
@@ -2149,7 +2233,12 @@ function findForallInIntroScope(quantifier, ctx) {
         if (!body)
             continue;
         if (isFreshScopedWitness(witness, quantifier, target)) {
-            return { witness, membership, body };
+            return {
+                witness,
+                membership,
+                body,
+                dischargedScopeIds: scopesThrough(ctx, membership.scopeIds[membership.scopeIds.length - 1]),
+            };
         }
     }
     return null;
