@@ -284,6 +284,97 @@ export function checkExistsInElim(
   };
 }
 
+// ── Rule: OR_INTRO_LEFT ───────────────────────────────────────────────────────
+// have P, conclude P ∨ Q  (Q is arbitrary)
+export function checkOrIntroLeft(left: string, disjunction: string, ctx: ProofContext): CheckResult {
+  if (!isEstablished(left, ctx)) {
+    return {
+      valid: false, rule: 'OR_INTRO_LEFT',
+      message: `Cannot form disjunction: '${left}' not yet established`,
+      hint: `Establish '${left}' before asserting the disjunction`,
+    };
+  }
+  return { valid: true, rule: 'OR_INTRO_LEFT', message: `Disjunction introduction (left): ${left} ⊢ ${disjunction}` };
+}
+
+// ── Rule: OR_INTRO_RIGHT ──────────────────────────────────────────────────────
+// have Q, conclude P ∨ Q  (P is arbitrary)
+export function checkOrIntroRight(right: string, disjunction: string, ctx: ProofContext): CheckResult {
+  if (!isEstablished(right, ctx)) {
+    return {
+      valid: false, rule: 'OR_INTRO_RIGHT',
+      message: `Cannot form disjunction: '${right}' not yet established`,
+      hint: `Establish '${right}' before asserting the disjunction`,
+    };
+  }
+  return { valid: true, rule: 'OR_INTRO_RIGHT', message: `Disjunction introduction (right): ${right} ⊢ ${disjunction}` };
+}
+
+// ── Rule: OR_ELIM ─────────────────────────────────────────────────────────────
+// have P ∨ Q, have P → R, have Q → R, conclude R
+export function checkOrElim(
+  disjunction: string,
+  leftImpl: string,
+  rightImpl: string,
+  target: string,
+  ctx: ProofContext,
+): CheckResult {
+  const hasDisj  = isEstablished(disjunction, ctx);
+  const hasLeft  = isEstablished(leftImpl, ctx);
+  const hasRight = isEstablished(rightImpl, ctx);
+  if (hasDisj && hasLeft && hasRight) {
+    return { valid: true, rule: 'OR_ELIM', message: `Disjunction elimination: ${disjunction}, ${leftImpl}, ${rightImpl} ⊢ ${target}` };
+  }
+  if (!hasDisj) return { valid: false, rule: 'OR_ELIM', message: `OR_ELIM: '${disjunction}' not yet established` };
+  if (!hasLeft) return { valid: false, rule: 'OR_ELIM', message: `OR_ELIM: '${leftImpl}' not yet established` };
+  return { valid: false, rule: 'OR_ELIM', message: `OR_ELIM: '${rightImpl}' not yet established` };
+}
+
+// ── Rule: NOT_INTRO ───────────────────────────────────────────────────────────
+// assume P, derive ⊥, conclude ¬P
+export function checkNotIntro(
+  assumption: string,
+  target: string,
+  ctx: ProofContext,
+): CheckResult {
+  const hasAssumption    = isEstablished(assumption, ctx);
+  const hasContradiction = isEstablished('⊥', ctx) || isEstablished('contradiction', ctx);
+  if (hasAssumption && hasContradiction) {
+    return { valid: true, rule: 'NOT_INTRO', message: `Negation introduction: assumed ${assumption}, derived ⊥ ⊢ ${target}` };
+  }
+  if (!hasAssumption) {
+    return { valid: false, rule: 'NOT_INTRO', message: `NOT_INTRO: '${assumption}' not assumed`, hint: `Add assume(${assumption})` };
+  }
+  return { valid: false, rule: 'NOT_INTRO', message: `NOT_INTRO: no contradiction (⊥) in context`, hint: `Derive a contradiction after assuming ${assumption}` };
+}
+
+// ── Rule: NOT_ELIM (double negation) ──────────────────────────────────────────
+// have ¬¬P, conclude P
+export function checkNotElim(doubleNeg: string, target: string, ctx: ProofContext): CheckResult {
+  if (!isEstablished(doubleNeg, ctx)) {
+    return {
+      valid: false, rule: 'NOT_ELIM',
+      message: `NOT_ELIM: '${doubleNeg}' not yet established`,
+      hint: `Establish '${doubleNeg}' before applying double-negation elimination`,
+    };
+  }
+  return { valid: true, rule: 'NOT_ELIM', message: `Double-negation elimination: ${doubleNeg} ⊢ ${target}` };
+}
+
+// ── Rule: EX_FALSO ────────────────────────────────────────────────────────────
+// have ⊥, conclude any Q
+export function checkExFalso(target: string, ctx: ProofContext): CheckResult {
+  const hasFalsum = isEstablished('⊥', ctx) || isEstablished('contradiction', ctx);
+  if (hasFalsum) {
+    return { valid: true, rule: 'EX_FALSO', message: `Ex falso quodlibet: ⊥ ⊢ ${target}` };
+  }
+  return {
+    valid: false, rule: 'EX_FALSO',
+    message: `EX_FALSO: no ⊥ (contradiction) in context`,
+    hint: `Establish ⊥ via contradiction() before using ex falso`,
+  };
+}
+
 // ── Rule: CONTRADICTION ───────────────────────────────────────────────────────
 // If we have assume(¬P) (or assume(P) then derive its negation), the
 // contradiction is valid and we can conclude P (or anything).
@@ -443,6 +534,8 @@ export function checkImpliesIntro(
 
 function isEstablished(claim: string, ctx: ProofContext): boolean {
   const normalized = normalizeProp(claim);
+  // UNVERIFIED claims are not usable as inputs to derivation rules
+  if (ctx.unverifiedContents.has(normalized)) return false;
   const active = ctx.currentScopes.map(scope => scope.id);
   return ctx.established.some(c =>
     normalizeProp(c.content) === normalized &&

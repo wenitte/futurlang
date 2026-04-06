@@ -34,3 +34,8 @@ export function splitIff(expr: ExprNode): [string, string] | null {
   if (expr.type !== 'Iff') return null;
   return [exprToProp(expr.left), exprToProp(expr.right)];
 }
+
+export function splitDisjunction(expr: ExprNode): [string, string] | null {
+  if (expr.type !== 'Or') return null;
+  return [exprToProp(expr.left), exprToProp(expr.right)];
+}

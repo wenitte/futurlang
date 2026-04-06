@@ -19,15 +19,13 @@ Visible chaining is a language law. FuturLang should not evolve toward hidden th
 
 ## Current Architecture
 
-FuturLang currently has three distinct execution modes:
+FuturLang currently has two distinct execution modes:
 
 - `fl <file.fl>`
   Auto-detects proof-shaped programs. If the file contains theorem-prover constructs, `fl` runs theorem-prover check mode automatically; otherwise it runs the JavaScript evaluator for the strict executable subset.
   Standalone theorem/declaration files are presented as declaration-only proof programs instead of as failed paired proofs.
 - `fl check <file.fl>`
-  Runs the structural checker. This validates theorem/proof pairing and basic proof-shape rules without claiming full semantic verification.
-- `fl verify <file.fl>`
-  Transpiles FuturLang to Lean 4 and checks it with Mathlib. This is the long-term source of truth for advanced mathematics.
+  Runs the self-contained kernel checker. This validates proof structure through a fixed set of natural-deduction rules with explicit derivation objects, sort checking, and variable scope tracking.
 - `fl web <file.fl> [out-dir]`
   Generates an experimental React app where the FuturLang program is rendered and evaluated as a visible truth chain.
 
@@ -35,9 +33,9 @@ The important boundary is intentional:
 
 - `fl` now defaults to checker behavior for proof-shaped programs
 - the JS evaluator is strict and fails closed on unsupported mathematical notation
-- the checker is structural, not fully semantic
-- the checker now records explicit derivation objects for the small supported subset, but this is still not a trusted kernel
-- Lean verification is the path for richer formal claims
+- the kernel checker is self-contained — no external tools required
+- proof objects carry PROVED / UNVERIFIED / FAILED status — no silent structural acceptance
+- UNVERIFIED claims are tracked but cannot be used as inputs to derivation rules
 
 ## Installation
 
@@ -229,21 +227,18 @@ This is deliberate. If FuturLang cannot justify a claim in the strict evaluator,
 
 This is useful feedback, but it is not the same as formal semantic proof.
 
-## Lean Verification
+## Kernel Verification
 
-`fl verify` transpiles FuturLang to Lean 4 and checks the generated source against Mathlib.
+`fl check` (and `fl` auto-mode) run the self-contained kernel checker. No external tools are required.
 
-This backend is the strategic direction of the project, but it is still incomplete:
+The checker supports:
 
-- some advanced constructs still lower to `sorry`
-- definitions and structs are only partially modeled
-- source-to-Lean mapping is still approximate
+- full propositional logic: IMPLIES_INTRO/ELIM, AND_INTRO/ELIM, OR_INTRO_LEFT/RIGHT, OR_ELIM, NOT_INTRO, NOT_ELIM (double-negation), EX_FALSO, CONTRADICTION
+- set-theoretic rules: SUBSET_ELIM, SUBSET_TRANS, EQUALITY_SUBST, UNION_INTRO, INTERSECTION_INTRO/ELIM, FORALL_IN_ELIM/INTRO, EXISTS_IN_INTRO/ELIM
+- sort system: Set and Element sorts enforced on ∈, ⊆, ∪, ∩
+- scope model: variables introduced by given/assume/setVar; conclusions scope-checked
 
-So the current state is:
-
-- strict subset: executable now
-- structural proof feedback: usable now
-- full formal verification: partially implemented, promising, not complete
+Proof object status is PROVED, UNVERIFIED, or FAILED. UNVERIFIED claims cannot be used as inputs to derivation rules.
 
 ## Testing
 
@@ -256,8 +251,9 @@ npm test
 That currently covers:
 
 - parser regression tests
-- checker regression tests
-- Lean transpilation regression tests
+- checker regression tests for all kernel rules
+- sort error and scope error tests
+- PROVED / UNVERIFIED / FAILED status distinction tests
 - sample evaluator runs for supported programs
 - structural checking for advanced math examples
 
@@ -296,10 +292,9 @@ The generated app:
 
 High-leverage next steps:
 
-- make simple proof demos excellent before expanding the surface area
-- expand MI-style mathematical notation and parser tolerance for mathematician demos
-- make the Lean backend authoritative for a narrow fully-supported subset
-- replace remaining `sorry`-driven proof steps with real translations
+- eliminate remaining UNVERIFIED paths in the demo examples
+- add IFF_INTRO/ELIM rules for biconditional proofs
+- add equality transitivity and reflexivity rules
 - expand the proof language without weakening the “fail closed” rule
 - improve theorem-to-proof source mapping and diagnostics
 - grow the web/backend story so programs can act as proof-driven applications

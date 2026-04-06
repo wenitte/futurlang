@@ -44,8 +44,7 @@ const parser_1 = require("../parser/parser");
 const checker_1 = require("../checker/checker");
 const propositions_1 = require("../checker/propositions");
 const formal_1 = require("../parser/formal");
-const transpiler_1 = require("../lean/transpiler");
-const transpiler_2 = require("../react/transpiler");
+const transpiler_1 = require("../react/transpiler");
 function runTest(name, fn) {
     try {
         fn();
@@ -166,7 +165,7 @@ proof BoundedQuantifierDemo() {
     const report = (0, checker_1.checkFile)(ast);
     const messages = report.reports.flatMap(r => r.diagnostics.map(d => `${d.message}\n${d.hint ?? ''}`)).join('\n');
     assert_1.strict.match(messages, /FORALL_BINDER/);
-    assert_1.strict.match(messages, /fl verify/);
+    assert_1.strict.match(messages, /kernel/i);
 });
 runTest('checker accepts conjunction goals when both parts are established', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -176,7 +175,7 @@ theorem Pair() {
 
 proof Pair() {
   assume(p) →
-  assert(q) →
+  assume(q) →
   conclude(p && q)
 }
 `));
@@ -186,6 +185,7 @@ proof Pair() {
     const conjunctionObject = report.reports[0].proofObjects.find(object => object.claim === 'p ∧ q');
     assert_1.strict.ok(conjunctionObject);
     assert_1.strict.equal(conjunctionObject.rule, 'AND_INTRO');
+    assert_1.strict.equal(conjunctionObject.status, 'PROVED');
     assert_1.strict.equal(conjunctionObject.dependsOn.length, 2);
     assert_1.strict.equal(conjunctionObject.dependsOnIds.length, 2);
     const conjunctionDerivation = report.reports[0].derivations.find(node => node.rule === 'AND_INTRO');
@@ -393,6 +393,7 @@ proof ForallInElim() {
 runTest('checker validates bounded universal introduction with explicit witness scope', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem ForallInIntro() {
+  given(A subset B) →
   assert(forall x in A, x in B)
 } ↔
 
@@ -412,6 +413,7 @@ proof ForallInIntro() {
 runTest('checker rejects bounded universal introduction when the witness is reused as the binder', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem ForallInIntroNotFresh() {
+  given(A subset B) →
   assert(forall a in A, a in B)
 } ↔
 
@@ -498,7 +500,7 @@ proof WitnessDoesNotLeak() {
 `));
     const report = (0, checker_1.checkFile)(ast);
     assert_1.strict.equal(report.valid, false);
-    assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
+    assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived|scope error/i);
 });
 runTest('checker enforces lemma hypotheses before apply', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -674,16 +676,200 @@ theorem AdvancedMath() {
         eval(js);
     }, /Use 'fl verify'/);
 });
-runTest('Lean transpiler retains advanced mathematical claims', () => {
+// ── Phase 4: New propositional rules ─────────────────────────────────────────
+runTest('checker accepts OR_INTRO_LEFT (have p, conclude p ∨ q)', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
-theorem AdvancedMath() {
-  assert(∀(n: ℕ) ⇒ n = n)
+theorem OrIntroLeft() {
+  assert(p -> p || q)
+} ↔
+
+proof OrIntroLeft() {
+  assume(p) →
+  conclude(p || q)
 }
 `));
-    const output = (0, transpiler_1.transpileToLean)(ast);
-    assert_1.strict.match(output.source, /theorem AdvancedMath/);
-    assert_1.strict.match(output.source, /∀ n : ℕ,/);
-    assert_1.strict.match(output.source, /n = n/);
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const step = report.reports[0].proofSteps.find(s => s.rule === 'OR_INTRO_LEFT' || s.rule === 'IMPLIES_INTRO');
+    assert_1.strict.ok(step);
+});
+runTest('checker accepts OR_INTRO_RIGHT (have q, conclude p ∨ q)', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem OrIntroRight() {
+  assert(q -> p || q)
+} ↔
+
+proof OrIntroRight() {
+  assume(q) →
+  conclude(p || q)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+});
+runTest('checker rejects OR_INTRO when neither side is established', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem OrIntroFail() {
+  assert(p || q)
+} ↔
+
+proof OrIntroFail() {
+  conclude(p || q)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+});
+runTest('checker accepts OR_ELIM (have p ∨ q, p → r, q → r → conclude r)', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem OrElim() {
+  given(p || q) →
+  given(p -> r) →
+  given(q -> r) →
+  assert(r)
+} ↔
+
+proof OrElim() {
+  conclude(r)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const step = report.reports[0].proofSteps.find(s => s.rule === 'OR_ELIM');
+    assert_1.strict.ok(step);
+});
+runTest('checker accepts NOT_ELIM (double negation: ¬¬p → p)', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem NotElim() {
+  given(¬¬p) →
+  assert(p)
+} ↔
+
+proof NotElim() {
+  conclude(p)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const step = report.reports[0].proofSteps.find(s => s.rule === 'NOT_ELIM');
+    assert_1.strict.ok(step);
+});
+runTest('checker accepts EX_FALSO (from ⊥ conclude anything)', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ExFalso() {
+  given(p) →
+  given(¬p) →
+  assert(q)
+} ↔
+
+proof ExFalso() {
+  assume(¬q) →
+  contradiction() →
+  conclude(q)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+});
+// ── Phase 2: Sort errors ──────────────────────────────────────────────────────
+runTest('checker rejects x ∈ x (both sides Element — sort error)', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem SortError() {
+  assert(x ∈ x)
+} ↔
+
+proof SortError() {
+  conclude(x ∈ x)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+    assert_1.strict.match(messages, /sort error/i);
+});
+runTest('checker rejects A ⊆ x (right side Element in subset — sort error)', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem SortError2() {
+  given(A ⊆ x) →
+  assert(A ⊆ x)
+} ↔
+
+proof SortError2() {
+  conclude(A ⊆ x)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    // sort error from the given/assume — should be flagged
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n') +
+        report.diagnostics.map(d => d.message).join('\n');
+    assert_1.strict.match(messages, /sort error/i);
+});
+// ── Phase 5: UNVERIFIED vs PROVED distinction ─────────────────────────────────
+runTest('checker marks structurally-accepted assertions as UNVERIFIED', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem Unverified() {
+  assert(p)
+} ↔
+
+proof Unverified() {
+  assert(p)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    const unverifiedObj = report.reports[0].proofObjects.find(o => o.status === 'UNVERIFIED');
+    assert_1.strict.ok(unverifiedObj, 'Expected at least one UNVERIFIED proof object');
+    assert_1.strict.ok(report.reports[0].unverifiedCount > 0);
+});
+runTest('checker marks properly derived facts as PROVED', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem Proved() {
+  assert(p -> p)
+} ↔
+
+proof Proved() {
+  assume(p) →
+  conclude(p)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    assert_1.strict.equal(report.reports[0].unverifiedCount, 0);
+    assert_1.strict.ok(report.reports[0].provedCount > 0);
+    const allProved = report.reports[0].proofObjects.every(o => o.status === 'PROVED');
+    assert_1.strict.equal(allProved, true);
+});
+runTest('checker rejects use of UNVERIFIED claim as derivation input', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UnverifiedInput() {
+  assert(p && q)
+} ↔
+
+proof UnverifiedInput() {
+  assume(p) →
+  assert(q) →
+  conclude(p && q)
+}
+`));
+    // q is asserted without derivation → UNVERIFIED → AND_INTRO fails
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+});
+// ── Phase 3: Scope errors ─────────────────────────────────────────────────────
+runTest('checker rejects set-theoretic conclusion with variable not in scope', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ScopeError() {
+  assert(z ∈ C)
+} ↔
+
+proof ScopeError() {
+  conclude(z ∈ C)
+}
+`));
+    // z and C are never introduced via given/assume/setVar
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+    assert_1.strict.match(messages, /scope error/i);
 });
 runTest('React backend generates a webapp scaffold', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -692,7 +878,7 @@ theorem Hello() {
 }
 `));
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'futurlang-web-'));
-    (0, transpiler_2.createReactApp)(ast, outDir);
+    (0, transpiler_1.createReactApp)(ast, outDir);
     assert_1.strict.equal(fs.existsSync(path.join(outDir, 'package.json')), true);
     assert_1.strict.equal(fs.existsSync(path.join(outDir, 'src', 'App.tsx')), true);
     assert_1.strict.equal(fs.existsSync(path.join(outDir, 'src', 'styles.css')), true);

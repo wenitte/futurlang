@@ -18,10 +18,13 @@ import {
   checkSubsetTrans, checkEqualitySubst, checkUnionIntro,
   checkIntersectionIntro, checkIntersectionElim, checkForallInElim,
   checkForallInIntro, checkExistsInIntro, checkExistsInElim,
+  checkOrIntroLeft, checkOrIntroRight, checkOrElim,
+  checkNotIntro, checkNotElim, checkExFalso,
 } from './rules';
+import { sortCheckProposition, inferIdentifierSort, Sort } from './sorts';
 import {
-  exprToProp, sameProp, splitConjunction as splitGoalConjunction,
-  splitImplication, splitIff,
+  exprToProp, sameProp, normalizeProp, splitConjunction as splitGoalConjunction,
+  splitDisjunction as splitGoalDisjunction, splitImplication, splitIff,
 } from './propositions';
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -142,7 +145,7 @@ function checkPair(thm: TheoremNode | LemmaNode, proof: ProofNode, globalLemmas:
     if (!isCheckableGoal(theoremGoalExpr)) {
       diagnostics.push({
         severity: 'info',
-        message: `Goal '${theoremGoal}' is outside the current checker subset; use 'fl verify' for semantic verification`,
+        message: `Goal '${theoremGoal}' is outside the current kernel subset; steps will be marked UNVERIFIED`,
         rule: 'THEOREM_PROOF',
       });
     } else if (!goalSatisfied(theoremGoalExpr, proofReport, proof.body)) {
@@ -169,6 +172,8 @@ function checkPair(thm: TheoremNode | LemmaNode, proof: ProofNode, globalLemmas:
     baseFactIds: proofReport.baseFactIds,
     derivedFactIds: proofReport.derivedFactIds,
     diagnostics,
+    provedCount: proofReport.provedCount,
+    unverifiedCount: proofReport.unverifiedCount,
     metrics: proofReport.metrics,
   };
 }
@@ -191,8 +196,16 @@ function checkProofBlock(
     scopeIds: [] as string[],
     proofObjectId: makeProofObjectId(-(index + 1), 'premise', content),
   }));
+  // Build initial sort scope from premises (given() statements)
+  const initialSortScope = new Map<string, Sort>();
+  for (const premise of premises) {
+    extractSortScopeFromClaim(premise, initialSortScope);
+  }
+
   const ctx: ProofContext = {
     established: premiseClaims,
+    unverified: [],
+    unverifiedContents: new Set<string>(),
     proofObjects: premiseClaims.map(claim => ({
       id: claim.proofObjectId!,
       claim: claim.content,
@@ -202,9 +215,11 @@ function checkProofBlock(
       scopeIds: claim.scopeIds,
       dependsOn: [],
       dependsOnIds: [],
+      status: 'PROVED' as const,
     })),
     derivations: [],
     variables: [],
+    sortScope: initialSortScope,
     currentScopes: [],
     lemmas: new Map(globalLemmas),
     method,
@@ -229,10 +244,17 @@ function checkProofBlock(
         if (parseDiagnostic) diagnostics.push(parseDiagnostic);
         const kernelDiagnostic = kernelSubsetDiagnostic(n.expr, `Step ${step} assumption '${claim}'`, step);
         if (kernelDiagnostic) diagnostics.push(kernelDiagnostic);
+        // Sort check
+        const sortErr = sortCheckProposition(claim);
+        if (sortErr) {
+          diagnostics.push({ severity: 'error', message: sortErr.message, step, rule: 'ASSUMPTION' });
+        }
         const result = checkAssumption(claim);
         if (!result.valid) {
           diagnostics.push({ severity: 'error', message: result.message, step, rule: result.rule });
         }
+        // Introduce variables into sort scope
+        extractSortScopeFromClaim(claim, ctx.sortScope);
         registerAssumptionClaim(ctx, claim, step, result.rule);
         proofSteps.push({
           step,
@@ -240,6 +262,7 @@ function checkProofBlock(
           claim,
           rule: result.rule,
           valid: result.valid,
+          status: 'PROVED',
           message: result.message,
           establishesAs: 'assumption',
         });
@@ -262,31 +285,41 @@ function checkProofBlock(
         const kernelDiagnostic = kernelSubsetDiagnostic(n.expr, `Step ${step} assertion '${claim}'`, step);
         if (kernelDiagnostic) diagnostics.push(kernelDiagnostic);
 
+        // Sort check — block derivation on sort error
+        const assertSortErr = sortCheckProposition(claim);
+        if (assertSortErr) {
+          diagnostics.push({ severity: 'error', message: assertSortErr.message, step, rule: 'STRUCTURAL' });
+          proofSteps.push({ step, kind: 'assert', claim, rule: 'STRUCTURAL', valid: false, status: 'UNVERIFIED', message: assertSortErr.message });
+          break;
+        }
+
         // Check for sorry (explicit gap)
         if (claim.toLowerCase().includes('sorry')) {
           hasSorry = true;
           diagnostics.push({ severity: 'info', message: `Step ${step}: sorry placeholder`, rule: 'SORRY' });
-          registerAssertionClaim(ctx, claim, step, 'SORRY');
+          registerUnverifiedClaim(ctx, claim, step, 'SORRY');
           proofSteps.push({
-            step,
-            kind: 'assert',
-            claim,
-            rule: 'SORRY',
-            valid: true,
+            step, kind: 'assert', claim, rule: 'SORRY', valid: true, status: 'UNVERIFIED',
             message: 'sorry placeholder',
           });
           break;
         }
 
-        // Check and/intro: if claim is a conjunction, verify both sides
+        // Check and/intro: if claim is a conjunction, verify both sides.
+        // Failed derivations fall back to UNVERIFIED (no error here for assertions).
         let stepRule: CheckResult | null = null;
         if (isConjunction(n.expr)) {
           const [left, right] = splitConjunction(n.expr);
           const andResult = checkAndIntro(left, right, ctx);
-          stepRule = andResult;
-          if (!andResult.valid) {
-            // Warning not error — the conjunction may be introducing new facts
-            diagnostics.push({ severity: 'info', message: andResult.message, step, hint: andResult.hint });
+          stepRule = andResult.valid ? andResult : null;
+        } else if (isDisjunction(n.expr)) {
+          const [left, right] = splitDisjunction(n.expr);
+          const orLeft = checkOrIntroLeft(left, claim, ctx);
+          if (orLeft.valid) {
+            stepRule = orLeft;
+          } else {
+            const orRight = checkOrIntroRight(right, claim, ctx);
+            stepRule = orRight.valid ? orRight : null;
           }
         } else {
           const premise = checkPremiseClaim(claim, ctx);
@@ -306,7 +339,8 @@ function checkProofBlock(
           step,
           derivation: stepRule,
         });
-        if (!finalizedAssertion.result.valid && stepRule?.valid !== false) {
+        // Only emit error for definitively-failed derivations, not UNVERIFIED
+        if (!finalizedAssertion.result.valid && stepRule?.valid === false) {
           diagnostics.push({
             severity: 'error',
             message: finalizedAssertion.result.message,
@@ -320,7 +354,8 @@ function checkProofBlock(
           kind: 'assert',
           claim,
           rule: finalizedAssertion.result.rule,
-          valid: finalizedAssertion.result.valid,
+          valid: finalizedAssertion.result.valid || finalizedAssertion.objectStatus === 'UNVERIFIED',
+          status: finalizedAssertion.objectStatus,
           message: finalizedAssertion.result.message,
           establishesAs: 'assertion',
         });
@@ -339,11 +374,27 @@ function checkProofBlock(
         if (parseDiagnostic) diagnostics.push(parseDiagnostic);
         const kernelDiagnostic = kernelSubsetDiagnostic(n.expr, `Step ${step} conclusion '${claim}'`, step);
         if (kernelDiagnostic) diagnostics.push(kernelDiagnostic);
+        // Sort check
+        const concSortErr = sortCheckProposition(claim);
+        if (concSortErr) {
+          diagnostics.push({ severity: 'error', message: concSortErr.message, step, rule: 'STRUCTURAL' });
+        }
+        // Scope check for set-theoretic conclusions
+        const scopeErr = checkScopeForClaim(claim, ctx, step);
+        if (scopeErr) diagnostics.push(scopeErr);
+
         const contradictionDischarge = checkContradictionDischarge(claim, ctx);
         const forallDischarge = checkForallGoalDischarge(claim, ctx);
-        const derivation = isConjunction(n.expr)
-          ? checkAndIntro(...splitConjunction(n.expr), ctx)
-          : contradictionDischarge ?? checkDerivedClaim(claim, ctx) ?? forallDischarge ?? checkImplicationGoalDischarge(claim, ctx);
+        let derivation: ReturnType<typeof checkDerivedClaim>;
+        if (isConjunction(n.expr)) {
+          derivation = checkAndIntro(...splitConjunction(n.expr), ctx);
+        } else if (isDisjunction(n.expr)) {
+          const [left, right] = splitDisjunction(n.expr);
+          const orLeft = checkOrIntroLeft(left, claim, ctx);
+          derivation = orLeft.valid ? orLeft : checkOrIntroRight(right, claim, ctx);
+        } else {
+          derivation = contradictionDischarge ?? checkDerivedClaim(claim, ctx) ?? forallDischarge ?? checkImplicationGoalDischarge(claim, ctx);
+        }
         if (derivation && !derivation.valid) {
           diagnostics.push({ severity: 'error', message: derivation.message, step, hint: derivation.hint, rule: derivation.rule });
         }
@@ -353,7 +404,7 @@ function checkProofBlock(
           step,
           derivation,
         });
-        if (!finalizedConclusion.result.valid) {
+        if (!finalizedConclusion.result.valid && finalizedConclusion.objectStatus !== 'UNVERIFIED') {
           diagnostics.push({ severity: 'error', message: finalizedConclusion.result.message, step, hint: finalizedConclusion.result.hint, rule: finalizedConclusion.result.rule });
         }
         proofSteps.push({
@@ -361,7 +412,8 @@ function checkProofBlock(
           kind: 'conclude',
           claim,
           rule: finalizedConclusion.result.rule,
-          valid: finalizedConclusion.result.valid,
+          valid: finalizedConclusion.result.valid || finalizedConclusion.objectStatus === 'UNVERIFIED',
+          status: finalizedConclusion.objectStatus,
           message: finalizedConclusion.result.message,
           establishesAs: 'conclusion',
         });
@@ -410,7 +462,15 @@ function checkProofBlock(
         const n = node as SetVarNode;
         const scope = openScope(ctx, 'variable', n.varName, step);
         ctx.variables.push({ name: n.varName, type: n.varType, step, scopeId: scope.id });
-        // Variables are always valid introductions
+        // Introduce into sort scope
+        const varSort = resolveVarTypeSort(n.varType);
+        if (varSort !== null) {
+          ctx.sortScope.set(n.varName, varSort);
+        } else {
+          // Default: lowercase → Element, uppercase → Set
+          const inferredSort = inferIdentifierSort(n.varName);
+          if (inferredSort !== null) ctx.sortScope.set(n.varName, inferredSort);
+        }
         if (n.varType) {
           registerVariableClaim(ctx, `${n.varName}: ${n.varType}`, step);
         }
@@ -420,6 +480,7 @@ function checkProofBlock(
           claim: n.varType ? `${n.varName}: ${n.varType}` : n.varName,
           rule: 'VARIABLE',
           valid: true,
+          status: 'PROVED',
           message: 'Variable introduced into context',
           establishesAs: 'variable',
         });
@@ -514,6 +575,9 @@ function checkProofBlock(
     derivations: ctx.derivations,
   }));
 
+  const provedCount    = ctx.proofObjects.filter(o => o.status === 'PROVED').length;
+  const unverifiedCount = ctx.proofObjects.filter(o => o.status === 'UNVERIFIED').length;
+
   return {
     name,
     valid: !diagnostics.some(d => d.severity === 'error'),
@@ -528,6 +592,8 @@ function checkProofBlock(
     baseFactIds,
     derivedFactIds,
     diagnostics,
+    provedCount,
+    unverifiedCount,
     metrics: {
       assumptionCount,
       assertionCount,
@@ -616,11 +682,19 @@ function computeScore(reports: ProofReport[], paired: number, total: number): nu
   return Math.round(score);
 }
 
+function isProvedConclusion(content: string, report: ProofReport): boolean {
+  return report.proofObjects.some(
+    o => o.status === 'PROVED' &&
+      (o.source === 'conclusion' || o.source === 'assertion' || o.source === 'lemma_application') &&
+      sameProp(o.claim, content)
+  );
+}
+
 function goalSatisfied(goalExpr: ExprNode, report: ProofReport, body: ASTNode[]): boolean {
   const established = report.derivedConclusion;
   if (!established) return false;
   const goal = exprToProp(goalExpr);
-  if (sameProp(established, goal)) return true;
+  if (sameProp(established, goal) && isProvedConclusion(established, report)) return true;
 
   const implication = splitImplication(goalExpr);
   if (implication) {
@@ -683,9 +757,11 @@ function registerClaim(
     dependsOnIds?: string[];
     imports?: string[];
     emitDerivation?: boolean;
+    objectStatus?: 'PROVED' | 'UNVERIFIED';
   }
 ): Claim {
   const proofObjectId = makeProofObjectId(input.step, input.source, input.content);
+  const status = input.objectStatus ?? 'PROVED';
   const claim: Claim = {
     content: input.content,
     source: input.source,
@@ -693,7 +769,13 @@ function registerClaim(
     scopeIds: input.scopeIds ?? currentScopeIds(ctx),
     proofObjectId,
   };
+  // PROVED claims go into established; UNVERIFIED claims go into both
+  // established (for goal-tracking) AND unverified (to block rule use)
   ctx.established.push(claim);
+  if (status === 'UNVERIFIED') {
+    ctx.unverified.push(claim);
+    ctx.unverifiedContents.add(normalizeProp(claim.content));
+  }
   ctx.proofObjects.push({
     id: proofObjectId,
     claim: input.content,
@@ -705,8 +787,9 @@ function registerClaim(
     dependsOn: uniqueProps(input.dependsOn),
     dependsOnIds: uniqueIds(input.dependsOnIds ?? resolveClaimIds(ctx, input.dependsOn)),
     imports: input.imports && input.imports.length > 0 ? uniqueProps(input.imports) : undefined,
+    status,
   });
-  if (input.emitDerivation !== false) {
+  if (input.emitDerivation !== false && status === 'PROVED') {
     ctx.derivations.push(makeDerivationNode(
       input.step,
       input.rule,
@@ -727,6 +810,7 @@ function registerAssumptionClaim(ctx: ProofContext, claim: string, step: number,
     rule,
     dependsOn: [],
     emitDerivation: false,
+    objectStatus: 'PROVED',
   });
 }
 
@@ -738,6 +822,7 @@ function registerAssertionClaim(ctx: ProofContext, claim: string, step: number, 
     rule,
     dependsOn: [],
     emitDerivation: false,
+    objectStatus: 'PROVED',
   });
 }
 
@@ -749,6 +834,7 @@ function registerVariableClaim(ctx: ProofContext, claim: string, step: number): 
     rule: 'VARIABLE',
     dependsOn: [],
     emitDerivation: false,
+    objectStatus: 'PROVED',
   });
 }
 
@@ -767,6 +853,7 @@ function registerLemmaImportClaim(
     dependsOn: hypotheses,
     dependsOnIds: resolveClaimIds(ctx, hypotheses),
     imports,
+    objectStatus: 'PROVED',
   });
 }
 
@@ -779,6 +866,7 @@ function registerContradictionClaim(ctx: ProofContext, step: number, rule: Check
     rule,
     dependsOn: dependency?.claims ?? [],
     dependsOnIds: dependency?.ids ?? [],
+    objectStatus: 'PROVED',
   });
 }
 
@@ -790,20 +878,43 @@ function registerDerivedClaim(
     step: number;
     derivation: CheckResult | null;
   }
-): { claim: Claim; result: CheckResult } {
+): { claim: Claim; result: CheckResult; objectStatus: 'PROVED' | 'UNVERIFIED' } {
   const builder = buildProofObjectInput(input.content, input.source, input.step, input.derivation, ctx);
   const graphValidation = validateProofObjectInput(builder);
-  const result = graphValidation ?? input.derivation ?? {
+
+  // Determine whether this claim is PROVED or UNVERIFIED
+  const hasDerivedRule = input.derivation?.valid === true && !graphValidation;
+  const objectStatus: 'PROVED' | 'UNVERIFIED' = hasDerivedRule ? 'PROVED' : 'UNVERIFIED';
+
+  const result: CheckResult = graphValidation ?? input.derivation ?? {
     valid: true as const,
     rule: builder.rule,
-    message: builder.rule === 'STRUCTURAL' ? 'Assertion accepted' : `${builder.rule} accepted`,
+    message: objectStatus === 'UNVERIFIED'
+      ? `UNVERIFIED: '${input.content}' accepted without a derivation chain`
+      : `${builder.rule} accepted`,
   };
+
   const claim = registerClaim(ctx, {
     ...builder,
-    emitDerivation: Boolean(input.derivation?.valid) && !graphValidation,
+    emitDerivation: hasDerivedRule,
+    objectStatus,
   });
   applyDischargedScopes(ctx, builder.dischargedScopeIds);
-  return { claim, result };
+  return { claim, result, objectStatus };
+}
+
+// Register a claim that is explicitly UNVERIFIED (no derivation is expected).
+// Used for sorry placeholders and claims outside the kernel.
+function registerUnverifiedClaim(ctx: ProofContext, claim: string, step: number, rule: 'SORRY' | 'STRUCTURAL'): Claim {
+  return registerClaim(ctx, {
+    content: claim,
+    source: 'assertion',
+    step,
+    rule,
+    dependsOn: [],
+    emitDerivation: false,
+    objectStatus: 'UNVERIFIED',
+  });
 }
 
 function makeProofObjectId(step: number, source: string, claim: string): string {
@@ -914,6 +1025,18 @@ function validateDerivationNode(
       return validateImpliesIntroNode(node, inputs, output, goal);
     case 'CONTRADICTION':
       return validateContradictionNode(node, inputs);
+    case 'OR_INTRO_LEFT':
+      return validateOrIntroLeftNode(node, inputs, output);
+    case 'OR_INTRO_RIGHT':
+      return validateOrIntroRightNode(node, inputs, output);
+    case 'OR_ELIM':
+      return validateOrElimNode(node, inputs, output);
+    case 'NOT_INTRO':
+      return validateNotIntroNode(node, inputs, output);
+    case 'NOT_ELIM':
+      return validateNotElimNode(node, inputs, output);
+    case 'EX_FALSO':
+      return validateExFalsoNode(node, inputs);
     case 'BY_LEMMA':
       return inputs.length === 0 && output.dependsOnIds.length > 0
         ? {
@@ -1214,6 +1337,70 @@ function validateContradictionNode(node: DerivationNode, inputs: ProofObject[]):
   return null;
 }
 
+function validateOrIntroLeftNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 1) return { severity: 'error', message: `OR_INTRO_LEFT '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+  const disj = parseDisjunctionProp(output.claim);
+  if (!disj) return { severity: 'error', message: `OR_INTRO_LEFT '${node.id}' must produce a disjunction`, step: node.step, rule: node.rule };
+  if (!sameProp(inputs[0].claim, disj[0])) {
+    return { severity: 'error', message: `OR_INTRO_LEFT '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateOrIntroRightNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 1) return { severity: 'error', message: `OR_INTRO_RIGHT '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+  const disj = parseDisjunctionProp(output.claim);
+  if (!disj) return { severity: 'error', message: `OR_INTRO_RIGHT '${node.id}' must produce a disjunction`, step: node.step, rule: node.rule };
+  if (!sameProp(inputs[0].claim, disj[1])) {
+    return { severity: 'error', message: `OR_INTRO_RIGHT '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateOrElimNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 3) return { severity: 'error', message: `OR_ELIM '${node.id}' requires 3 inputs`, step: node.step, rule: node.rule };
+  const disjObj = inputs.find(i => parseDisjunctionProp(i.claim));
+  if (!disjObj) return { severity: 'error', message: `OR_ELIM '${node.id}' must have a disjunction input`, step: node.step, rule: node.rule };
+  const disj = parseDisjunctionProp(disjObj.claim)!;
+  const leftImpl  = inputs.find(i => { const p = parseImplicationProp(i.claim); return p && sameProp(p[0], disj[0]) && sameProp(p[1], output.claim); });
+  const rightImpl = inputs.find(i => { const p = parseImplicationProp(i.claim); return p && sameProp(p[0], disj[1]) && sameProp(p[1], output.claim); });
+  if (!leftImpl || !rightImpl) {
+    return { severity: 'error', message: `OR_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateNotIntroNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length < 2) return { severity: 'error', message: `NOT_INTRO '${node.id}' requires assumption and contradiction inputs`, step: node.step, rule: node.rule };
+  const inner = extractNegand(output.claim);
+  if (!inner) return { severity: 'error', message: `NOT_INTRO '${node.id}' must produce a negation`, step: node.step, rule: node.rule };
+  const assumption = inputs.find(i => i.source === 'assumption' && sameProp(i.claim, inner));
+  const falsum     = inputs.find(i => sameProp(i.claim, '⊥') || sameProp(i.claim, 'contradiction'));
+  if (!assumption || !falsum) {
+    return { severity: 'error', message: `NOT_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateNotElimNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 1) return { severity: 'error', message: `NOT_ELIM '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+  const doubleNeg = inputs[0].claim;
+  const inner = extractNegand(doubleNeg);
+  const inner2 = inner ? extractNegand(inner) : null;
+  if (!inner2 || !sameProp(inner2, output.claim)) {
+    return { severity: 'error', message: `NOT_ELIM '${node.id}' input must be ¬¬P for output P, got '${doubleNeg}' ⊢ '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateExFalsoNode(node: DerivationNode, inputs: ProofObject[]): Diagnostic | null {
+  if (inputs.length !== 1) return { severity: 'error', message: `EX_FALSO '${node.id}' requires 1 input (⊥)`, step: node.step, rule: node.rule };
+  if (!sameProp(inputs[0].claim, '⊥') && !sameProp(inputs[0].claim, 'contradiction')) {
+    return { severity: 'error', message: `EX_FALSO '${node.id}' input must be ⊥ (contradiction)`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
 function buildProofObjectInput(
   claim: string,
   source: 'assertion' | 'conclusion',
@@ -1275,6 +1462,18 @@ function buildProofObjectInput(
       return buildImpliesIntroProofObject(claim, source, step, ctx);
     case 'CONTRADICTION':
       return buildContradictionDischargeProofObject(claim, source, step, ctx);
+    case 'OR_INTRO_LEFT':
+      return buildOrIntroProofObject(claim, source, step, ctx, 'left');
+    case 'OR_INTRO_RIGHT':
+      return buildOrIntroProofObject(claim, source, step, ctx, 'right');
+    case 'OR_ELIM':
+      return buildOrElimProofObject(claim, source, step, ctx);
+    case 'NOT_INTRO':
+      return buildNotIntroProofObject(claim, source, step, ctx);
+    case 'NOT_ELIM':
+      return buildNotElimProofObject(claim, source, step, ctx);
+    case 'EX_FALSO':
+      return buildExFalsoProofObject(claim, source, step, ctx);
     default:
       return {
         content: claim,
@@ -1502,6 +1701,81 @@ function buildContradictionDischargeProofObject(claim: string, source: 'assertio
     dischargedScopeIds,
     dependsOn: dependency?.claims ?? [],
     dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildOrIntroProofObject(
+  claim: string,
+  source: 'assertion' | 'conclusion',
+  step: number,
+  ctx: ProofContext,
+  side: 'left' | 'right',
+) {
+  const ruleTag: 'OR_INTRO_LEFT' | 'OR_INTRO_RIGHT' = side === 'left' ? 'OR_INTRO_LEFT' : 'OR_INTRO_RIGHT';
+  const disjunction = parseDisjunctionProp(claim);
+  if (!disjunction) return { content: claim, source, step, rule: ruleTag, dependsOn: [] as string[], dependsOnIds: [] as string[] };
+  const sideClaim = side === 'left' ? disjunction[0] : disjunction[1];
+  const obj = findLatestProofObjectByClaim(ctx, sideClaim);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: ruleTag,
+    dependsOn: obj ? [obj.claim] : [] as string[],
+    dependsOnIds: obj ? [obj.id] : [] as string[],
+  };
+}
+
+function buildOrElimProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dep = findOrElimDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'OR_ELIM' as const,
+    dependsOn: dep?.claims ?? [],
+    dependsOnIds: dep?.ids ?? [],
+  };
+}
+
+function buildNotIntroProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  // ¬P from: assume P (assumption), ⊥ (contradiction)
+  const inner = extractNegand(claim);
+  const assumptionObj = inner ? findLatestProofObjectByClaim(ctx, inner, o => o.source === 'assumption') : null;
+  const contradictionObj = findLatestProofObjectByClaim(ctx, '⊥') ?? findLatestProofObjectByClaim(ctx, 'contradiction');
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'NOT_INTRO' as const,
+    dependsOn: [assumptionObj?.claim, contradictionObj?.claim].filter(Boolean) as string[],
+    dependsOnIds: [assumptionObj?.id, contradictionObj?.id].filter(Boolean) as string[],
+  };
+}
+
+function buildNotElimProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  // P from ¬¬P
+  const doubleNeg = `¬¬${claim}`;
+  const obj = findLatestProofObjectByClaim(ctx, doubleNeg) ?? findLatestProofObjectByClaim(ctx, `¬${extractNegand(claim) ?? ''}`);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'NOT_ELIM' as const,
+    dependsOn: obj ? [obj.claim] : [],
+    dependsOnIds: obj ? [obj.id] : [],
+  };
+}
+
+function buildExFalsoProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const falsum = findLatestProofObjectByClaim(ctx, '⊥') ?? findLatestProofObjectByClaim(ctx, 'contradiction');
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'EX_FALSO' as const,
+    dependsOn: falsum ? [falsum.claim] : [],
+    dependsOnIds: falsum ? [falsum.id] : [],
   };
 }
 
@@ -1781,6 +2055,28 @@ function findImplicationIntroDependency(
   };
 }
 
+function findOrElimDependency(
+  target: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  for (const disjObj of ctx.proofObjects) {
+    const disj = parseDisjunctionProp(disjObj.claim);
+    if (!disj) continue;
+    const [left, right] = disj;
+    const leftImpl  = `${left} → ${target}`;
+    const rightImpl = `${right} → ${target}`;
+    const leftObj  = findLatestProofObjectByClaim(ctx, leftImpl);
+    const rightObj = findLatestProofObjectByClaim(ctx, rightImpl);
+    if (leftObj && rightObj) {
+      return {
+        claims: [disjObj.claim, leftImpl, rightImpl],
+        ids: uniqueIds([disjObj.id, leftObj.id, rightObj.id]),
+      };
+    }
+  }
+  return null;
+}
+
 function findContradictionDependency(ctx: ProofContext): { claims: string[]; ids: string[]; dischargedScopeIds: string[] } | null {
   const contradiction = findContradictionProofObjects(ctx);
   if (!contradiction) return null;
@@ -2030,18 +2326,18 @@ function containsMathNotation(value: string): boolean {
 
 function parserFallbackHint(value: string): string {
   if (/[∀∃]/.test(value)) {
-    return `This looks like quantified mathematics. Keep the MI-style notation if you want, but use 'fl verify' until bounded quantifier rules are part of the fast checker subset.`;
+    return `This looks like quantified mathematics. Only bounded quantifiers in the form ∀x ∈ A, P(x) and ∃x ∈ A, P(x) are kernel-checked.`;
   }
   if (/[∈∉⊆⊂∪∩]/.test(value)) {
-    return `This looks like set-theoretic notation. The fast checker currently verifies only a small kernel subset of membership, subset, equality-substitution, and union/intersection membership rules; otherwise use 'fl verify'.`;
+    return `This looks like set-theoretic notation. The kernel verifies membership, subset, equality-substitution, and union/intersection membership rules.`;
   }
   if (/:\s*[\wℕℤℚℝ]/.test(value) || /→|⇒/.test(value)) {
-    return `This looks like typed or function-style mathematical notation. Keep the MI-style syntax if you want, but use 'fl verify' outside the fast checker subset.`;
+    return `This looks like typed or function-style mathematical notation outside the current kernel subset.`;
   }
   if (containsMathNotation(value)) {
-    return `This looks like mathematical notation. Keep the MI-style syntax if you want, but use 'fl verify' for richer semantics outside the fast checker subset.`;
+    return `This looks like mathematical notation outside the current kernel subset.`;
   }
-  return `Rewrite the expression into the current fast checker subset or use 'fl verify'.`;
+  return `Rewrite the expression into the current kernel subset.`;
 }
 
 function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
@@ -2098,6 +2394,22 @@ function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null
 
   const existsElim = checkExistsInElimDerivedClaim(claim, ctx);
   if (existsElim?.valid) return existsElim;
+
+  // OR_ELIM: have P ∨ Q, P → R, Q → R → conclude R
+  const orElimResult = checkOrElimDerivedClaim(claim, ctx);
+  if (orElimResult?.valid) return orElimResult;
+
+  // NOT_ELIM: have ¬¬P → conclude P
+  const notElimResult = checkNotElimDerivedClaim(claim, ctx);
+  if (notElimResult?.valid) return notElimResult;
+
+  // NOT_INTRO: have P assumed + ⊥ → conclude ¬P
+  const notIntroResult = checkNotIntroDerivedClaim(claim, ctx);
+  if (notIntroResult?.valid) return notIntroResult;
+
+  // EX_FALSO: have ⊥ → conclude anything
+  const exFalsoResult = checkExFalsoDerivedClaim(claim, ctx);
+  if (exFalsoResult?.valid) return exFalsoResult;
 
   if (ctx.goal && sameProp(ctx.goal, claim)) {
     return {
@@ -2369,7 +2681,7 @@ function parseBoundedQuantifierProp(
   return null;
 }
 
-function splitTopLevel(prop: string, operator: '→' | '∧' | '∪' | '∩'): [string, string] | null {
+function splitTopLevel(prop: string, operator: '→' | '∧' | '∨' | '∪' | '∩'): [string, string] | null {
   let depth = 0;
   for (let i = 0; i < prop.length; i++) {
     const ch = prop[i];
@@ -2518,10 +2830,10 @@ function kernelSubsetDiagnostic(expr: ExprNode, label: string, step?: number): D
   if (!gap) return null;
   return {
     severity: 'info',
-    message: `${label} needs kernel rule ${gap.rule}, which the fast checker does not implement yet.`,
+    message: `${label} needs kernel rule ${gap.rule}, which is outside the current self-contained kernel.`,
     step,
     rule: 'STRUCTURAL',
-    hint: `Use 'fl verify' for semantic verification. ${gap.hint}`,
+    hint: gap.hint,
   };
 }
 
@@ -2567,6 +2879,137 @@ function kernelSubsetGap(value: string): { rule: string; hint: string } | null {
       hint: 'Only membership introduction/elimination over unions and intersections is kernel-checked today.',
     };
   }
+  return null;
+}
+
+// ── New derived-claim checkers for Phase 4 rules ──────────────────────────────
+
+function checkOrElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  for (const item of visibleEstablishedClaims(ctx)) {
+    const disj = parseDisjunctionProp(item.content);
+    if (!disj) continue;
+    const [left, right] = disj;
+    const leftImpl  = `${left} → ${claim}`;
+    const rightImpl = `${right} → ${claim}`;
+    const result = checkOrElim(item.content, leftImpl, rightImpl, claim, ctx);
+    if (result.valid) return result;
+  }
+  return null;
+}
+
+function checkNotElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const doubleNeg = `¬¬${claim}`;
+  const result = checkNotElim(doubleNeg, claim, ctx);
+  return result.valid ? result : null;
+}
+
+function checkNotIntroDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const inner = extractNegand(claim);
+  if (!inner) return null;
+  const result = checkNotIntro(inner, claim, ctx);
+  return result.valid ? result : null;
+}
+
+function checkExFalsoDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const result = checkExFalso(claim, ctx);
+  return result.valid ? result : null;
+}
+
+// ── Disjunction helpers ───────────────────────────────────────────────────────
+
+function parseDisjunctionProp(prop: string): [string, string] | null {
+  return splitTopLevel(prop, '∨');
+}
+
+function isDisjunction(expr: ExprNode): boolean {
+  return expr.type === 'Or';
+}
+
+function splitDisjunction(expr: ExprNode): [string, string] {
+  return splitGoalDisjunction(expr) ?? ['', ''];
+}
+
+// ── Negation helpers ──────────────────────────────────────────────────────────
+
+// Extract the proposition P from ¬P (returns null if input is not a negation)
+function extractNegand(claim: string): string | null {
+  const s = claim.trim();
+  if (s.startsWith('¬')) return s.slice(1).trim();
+  if (s.startsWith('not ')) return s.slice(4).trim();
+  return null;
+}
+
+// ── Sort scope helpers ────────────────────────────────────────────────────────
+
+// Extract variables from a claim and add them to the sort scope.
+// Handles membership claims like x ∈ A → x: Element, A: Set
+// Handles subset claims like A ⊆ B → A: Set, B: Set
+function extractSortScopeFromClaim(claim: string, sortScope: Map<string, Sort>): void {
+  const s = claim.trim();
+  // Membership: x ∈ A
+  const membershipMatch = s.match(/^(.+?)\s*∈\s*(.+)$/);
+  if (membershipMatch) {
+    const left  = membershipMatch[1].trim().replace(/[()]/g, '').trim();
+    const right = membershipMatch[2].trim().replace(/[()]/g, '').trim();
+    const leftId  = left.split(/\s/)[0];
+    if (/^[a-z][a-z0-9_]*$/.test(leftId))  sortScope.set(leftId, 'Element');
+    // Extract ALL uppercase identifiers from compound set expressions (A ∩ B, A ∪ B, etc.)
+    const rightIds = right.match(/[A-Z][A-Za-z0-9_]*/g) || [];
+    for (const id of rightIds) sortScope.set(id, 'Set');
+    return;
+  }
+  // Subset: A ⊆ B (also handles compound expressions)
+  const subsetMatch = s.match(/^(.+?)\s*[⊆⊂]\s*(.+)$/);
+  if (subsetMatch) {
+    const left  = subsetMatch[1].trim().replace(/[()]/g, '').trim();
+    const right = subsetMatch[2].trim().replace(/[()]/g, '').trim();
+    const leftIds  = left.match(/[A-Z][A-Za-z0-9_]*/g) || [];
+    const rightIds = right.match(/[A-Z][A-Za-z0-9_]*/g) || [];
+    for (const id of leftIds)  sortScope.set(id, 'Set');
+    for (const id of rightIds) sortScope.set(id, 'Set');
+    return;
+  }
+  // Equality: x = y
+  const equalityMatch = s.match(/^(.+?)\s*=\s*(.+)$/);
+  if (equalityMatch && !s.includes('==')) {
+    const left  = equalityMatch[1].trim().replace(/[()]/g, '').trim();
+    const right = equalityMatch[2].trim().replace(/[()]/g, '').trim();
+    const leftSort  = inferIdentifierSort(left);
+    const rightSort = inferIdentifierSort(right);
+    if (leftSort  !== null) sortScope.set(left, leftSort);
+    if (rightSort !== null) sortScope.set(right, rightSort);
+  }
+}
+
+// Check scope for a set-theoretic claim: every identifier must be in sortScope with correct sort.
+// Only checks top-level identifiers in set-theoretic expressions.
+function checkScopeForClaim(claim: string, ctx: ProofContext, step: number): Diagnostic | null {
+  const s = claim.trim();
+  // Only check claims with set-theoretic operators
+  if (!/[∈⊆⊂∪∩]/.test(s)) return null;
+
+  const membershipMatch = s.match(/^(.+?)\s*∈\s*(.+)$/);
+  if (membershipMatch) {
+    const leftId  = membershipMatch[1].trim().replace(/[()]/g, '').trim().split(/\s/)[0];
+    const rightId = membershipMatch[2].trim().replace(/[()]/g, '').trim().split(/\s/)[0].replace(/[^A-Za-z0-9_]/g, '');
+    const leftSort  = inferIdentifierSort(leftId);
+    const rightSort = inferIdentifierSort(rightId);
+    if (leftSort === 'Element' && !ctx.sortScope.has(leftId)) {
+      return { severity: 'error', message: `Scope error: variable '${leftId}' used in '${claim}' but not introduced in any given/assume/setVar`, step, rule: 'STRUCTURAL' };
+    }
+    if (rightSort === 'Set' && rightId && !ctx.sortScope.has(rightId)) {
+      return { severity: 'error', message: `Scope error: set '${rightId}' used in '${claim}' but not introduced in any given/assume/setVar`, step, rule: 'STRUCTURAL' };
+    }
+  }
+  return null;
+}
+
+// Resolve a setVar type annotation to a sort
+function resolveVarTypeSort(varType: string | null | undefined): Sort | null {
+  if (!varType) return null;
+  const t = varType.trim().toLowerCase();
+  if (t === 'element' || t === 'elem') return 'Element';
+  if (t === 'set') return 'Set';
   return null;
 }
 

@@ -9,7 +9,6 @@ import { parseLinesToAST } from '../parser/parser';
 import { checkFile } from '../checker/checker';
 import { exprToProp } from '../checker/propositions';
 import { parseFL } from '../parser/formal';
-import { transpileToLean } from '../lean/transpiler';
 import { createReactApp } from '../react/transpiler';
 
 function runTest(name: string, fn: () => void) {
@@ -141,7 +140,7 @@ proof BoundedQuantifierDemo() {
   const report = checkFile(ast);
   const messages = report.reports.flatMap(r => r.diagnostics.map(d => `${d.message}\n${d.hint ?? ''}`)).join('\n');
   assert.match(messages, /FORALL_BINDER/);
-  assert.match(messages, /fl verify/);
+  assert.match(messages, /kernel/i);
 });
 
 runTest('checker accepts conjunction goals when both parts are established', () => {
@@ -152,7 +151,7 @@ theorem Pair() {
 
 proof Pair() {
   assume(p) →
-  assert(q) →
+  assume(q) →
   conclude(p && q)
 }
 `));
@@ -162,6 +161,7 @@ proof Pair() {
   const conjunctionObject = report.reports[0].proofObjects.find(object => object.claim === 'p ∧ q');
   assert.ok(conjunctionObject);
   assert.equal(conjunctionObject!.rule, 'AND_INTRO');
+  assert.equal(conjunctionObject!.status, 'PROVED');
   assert.equal(conjunctionObject!.dependsOn.length, 2);
   assert.equal(conjunctionObject!.dependsOnIds.length, 2);
   const conjunctionDerivation = report.reports[0].derivations.find(node => node.rule === 'AND_INTRO');
@@ -381,6 +381,7 @@ proof ForallInElim() {
 runTest('checker validates bounded universal introduction with explicit witness scope', () => {
   const ast = parseLinesToAST(lexFL(`
 theorem ForallInIntro() {
+  given(A subset B) →
   assert(forall x in A, x in B)
 } ↔
 
@@ -401,6 +402,7 @@ proof ForallInIntro() {
 runTest('checker rejects bounded universal introduction when the witness is reused as the binder', () => {
   const ast = parseLinesToAST(lexFL(`
 theorem ForallInIntroNotFresh() {
+  given(A subset B) →
   assert(forall a in A, a in B)
 } ↔
 
@@ -491,7 +493,7 @@ proof WitnessDoesNotLeak() {
 `));
   const report = checkFile(ast);
   assert.equal(report.valid, false);
-  assert.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
+  assert.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived|scope error/i);
 });
 
 runTest('checker enforces lemma hypotheses before apply', () => {
@@ -682,16 +684,215 @@ theorem AdvancedMath() {
   );
 });
 
-runTest('Lean transpiler retains advanced mathematical claims', () => {
+// ── Phase 4: New propositional rules ─────────────────────────────────────────
+
+runTest('checker accepts OR_INTRO_LEFT (have p, conclude p ∨ q)', () => {
   const ast = parseLinesToAST(lexFL(`
-theorem AdvancedMath() {
-  assert(∀(n: ℕ) ⇒ n = n)
+theorem OrIntroLeft() {
+  assert(p -> p || q)
+} ↔
+
+proof OrIntroLeft() {
+  assume(p) →
+  conclude(p || q)
 }
 `));
-  const output = transpileToLean(ast);
-  assert.match(output.source, /theorem AdvancedMath/);
-  assert.match(output.source, /∀ n : ℕ,/);
-  assert.match(output.source, /n = n/);
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const step = report.reports[0].proofSteps.find(s => s.rule === 'OR_INTRO_LEFT' || s.rule === 'IMPLIES_INTRO');
+  assert.ok(step);
+});
+
+runTest('checker accepts OR_INTRO_RIGHT (have q, conclude p ∨ q)', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem OrIntroRight() {
+  assert(q -> p || q)
+} ↔
+
+proof OrIntroRight() {
+  assume(q) →
+  conclude(p || q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+});
+
+runTest('checker rejects OR_INTRO when neither side is established', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem OrIntroFail() {
+  assert(p || q)
+} ↔
+
+proof OrIntroFail() {
+  conclude(p || q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+});
+
+runTest('checker accepts OR_ELIM (have p ∨ q, p → r, q → r → conclude r)', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem OrElim() {
+  given(p || q) →
+  given(p -> r) →
+  given(q -> r) →
+  assert(r)
+} ↔
+
+proof OrElim() {
+  conclude(r)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const step = report.reports[0].proofSteps.find(s => s.rule === 'OR_ELIM');
+  assert.ok(step);
+});
+
+runTest('checker accepts NOT_ELIM (double negation: ¬¬p → p)', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem NotElim() {
+  given(¬¬p) →
+  assert(p)
+} ↔
+
+proof NotElim() {
+  conclude(p)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const step = report.reports[0].proofSteps.find(s => s.rule === 'NOT_ELIM');
+  assert.ok(step);
+});
+
+runTest('checker accepts EX_FALSO (from ⊥ conclude anything)', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExFalso() {
+  given(p) →
+  given(¬p) →
+  assert(q)
+} ↔
+
+proof ExFalso() {
+  assume(¬q) →
+  contradiction() →
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+});
+
+// ── Phase 2: Sort errors ──────────────────────────────────────────────────────
+
+runTest('checker rejects x ∈ x (both sides Element — sort error)', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem SortError() {
+  assert(x ∈ x)
+} ↔
+
+proof SortError() {
+  conclude(x ∈ x)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+  const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+  assert.match(messages, /sort error/i);
+});
+
+runTest('checker rejects A ⊆ x (right side Element in subset — sort error)', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem SortError2() {
+  given(A ⊆ x) →
+  assert(A ⊆ x)
+} ↔
+
+proof SortError2() {
+  conclude(A ⊆ x)
+}
+`));
+  const report = checkFile(ast);
+  // sort error from the given/assume — should be flagged
+  const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n') +
+                   report.diagnostics.map(d => d.message).join('\n');
+  assert.match(messages, /sort error/i);
+});
+
+// ── Phase 5: UNVERIFIED vs PROVED distinction ─────────────────────────────────
+
+runTest('checker marks structurally-accepted assertions as UNVERIFIED', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem Unverified() {
+  assert(p)
+} ↔
+
+proof Unverified() {
+  assert(p)
+}
+`));
+  const report = checkFile(ast);
+  const unverifiedObj = report.reports[0].proofObjects.find(o => o.status === 'UNVERIFIED');
+  assert.ok(unverifiedObj, 'Expected at least one UNVERIFIED proof object');
+  assert.ok(report.reports[0].unverifiedCount > 0);
+});
+
+runTest('checker marks properly derived facts as PROVED', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem Proved() {
+  assert(p -> p)
+} ↔
+
+proof Proved() {
+  assume(p) →
+  conclude(p)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  assert.equal(report.reports[0].unverifiedCount, 0);
+  assert.ok(report.reports[0].provedCount > 0);
+  const allProved = report.reports[0].proofObjects.every(o => o.status === 'PROVED');
+  assert.equal(allProved, true);
+});
+
+runTest('checker rejects use of UNVERIFIED claim as derivation input', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem UnverifiedInput() {
+  assert(p && q)
+} ↔
+
+proof UnverifiedInput() {
+  assume(p) →
+  assert(q) →
+  conclude(p && q)
+}
+`));
+  // q is asserted without derivation → UNVERIFIED → AND_INTRO fails
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+});
+
+// ── Phase 3: Scope errors ─────────────────────────────────────────────────────
+
+runTest('checker rejects set-theoretic conclusion with variable not in scope', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ScopeError() {
+  assert(z ∈ C)
+} ↔
+
+proof ScopeError() {
+  conclude(z ∈ C)
+}
+`));
+  // z and C are never introduced via given/assume/setVar
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+  const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+  assert.match(messages, /scope error/i);
 });
 
 runTest('React backend generates a webapp scaffold', () => {

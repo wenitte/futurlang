@@ -6,6 +6,7 @@ exports.sameProp = sameProp;
 exports.splitImplication = splitImplication;
 exports.splitConjunction = splitConjunction;
 exports.splitIff = splitIff;
+exports.splitDisjunction = splitDisjunction;
 function exprToProp(expr) {
     switch (expr.type) {
         case 'Atom': return expr.condition;
@@ -35,6 +36,11 @@ function splitConjunction(expr) {
 }
 function splitIff(expr) {
     if (expr.type !== 'Iff')
+        return null;
+    return [exprToProp(expr.left), exprToProp(expr.right)];
+}
+function splitDisjunction(expr) {
+    if (expr.type !== 'Or')
         return null;
     return [exprToProp(expr.left), exprToProp(expr.right)];
 }

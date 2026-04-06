@@ -40,8 +40,6 @@ const formal_1 = require("./parser/formal");
 const lexer_1 = require("./parser/lexer");
 const parser_1 = require("./parser/parser");
 const checker_1 = require("./checker/checker");
-const setup_1 = require("./lean/setup");
-const verifier_1 = require("./lean/verifier");
 const transpiler_1 = require("./react/transpiler");
 const args = process.argv.slice(2);
 async function main() {
@@ -50,16 +48,6 @@ async function main() {
         return;
     }
     const command = args[0];
-    if (command === 'setup') {
-        try {
-            await (0, setup_1.setup)(msg => console.log(msg));
-        }
-        catch (e) {
-            console.error('Setup failed:', e.message);
-            process.exit(1);
-        }
-        return;
-    }
     if (command === 'check') {
         const file = args[1];
         if (!file) {
@@ -67,15 +55,6 @@ async function main() {
             process.exit(1);
         }
         runCheck(file);
-        return;
-    }
-    if (command === 'verify') {
-        const file = args[1];
-        if (!file) {
-            console.error('Usage: fl verify <file.fl>');
-            process.exit(1);
-        }
-        runVerify(file);
         return;
     }
     if (command === 'web') {
@@ -126,9 +105,12 @@ function printCheckReport(file, report) {
     console.log(`\nChecking ${path.basename(file)}\n`);
     const declarationOnly = report.theoremCount > 0 && report.pairedCount === 0;
     for (const r of report.reports) {
-        const icon = r.valid ? '✓' : '✗';
+        const status = r.valid ? (r.unverifiedCount > 0 ? '~' : '✓') : '✗';
         const method = r.method !== 'unknown' ? ` [${r.method}]` : '';
-        console.log(`  ${icon} ${r.name}${method}  (${r.stepCount} steps, depth ${r.metrics.dependencyDepth})`);
+        const statusSuffix = r.unverifiedCount > 0
+            ? ` (${r.provedCount} PROVED, ${r.unverifiedCount} UNVERIFIED)`
+            : r.provedCount > 0 ? ` (${r.provedCount} PROVED)` : '';
+        console.log(`  ${status} ${r.name}${method}  (${r.stepCount} steps, depth ${r.metrics.dependencyDepth})${statusSuffix}`);
         if (r.premises.length > 0) {
             console.log(`      premises: ${r.premises.join(' ; ')}`);
         }
@@ -139,7 +121,7 @@ function printCheckReport(file, report) {
             console.log(`      final: ${r.derivedConclusion}`);
         }
         for (const step of r.proofSteps) {
-            const stepIcon = step.valid ? '✓' : '✗';
+            const stepIcon = step.valid ? (step.status === 'UNVERIFIED' ? '~' : '✓') : '✗';
             console.log(`      ${stepIcon} step ${step.step} [${step.rule}] ${step.kind} ${step.claim}`);
             if (step.uses && step.uses.length > 0) {
                 console.log(`        uses: ${step.uses.join(' ; ')}`);
@@ -177,7 +159,18 @@ function printCheckReport(file, report) {
     }
     else {
         console.log(`\n  Theorems: ${report.theoremCount}  Paired: ${report.pairedCount}  Score: ${report.score}/100`);
-        console.log(report.valid ? '\n✓ All proofs structurally valid' : '\n✗ Structural errors found');
+        if (report.valid) {
+            const hasUnverified = report.reports.some(r => r.unverifiedCount > 0);
+            if (hasUnverified) {
+                console.log('\n~ Proof structure valid — some steps UNVERIFIED (accepted without derivation chain)');
+            }
+            else {
+                console.log('\n✓ All proofs verified');
+            }
+        }
+        else {
+            console.log('\n✗ Structural errors found');
+        }
     }
     if (!report.valid)
         process.exit(1);
@@ -190,40 +183,6 @@ function isProofStyleProgram(ast) {
         node.type === 'Assume' ||
         node.type === 'Conclude' ||
         node.type === 'Apply');
-}
-function runVerify(file) {
-    if (!(0, setup_1.isSetupComplete)()) {
-        console.error('Lean backend not installed. Run: fl setup');
-        process.exit(1);
-    }
-    const source = fs.readFileSync(file, 'utf8');
-    const sourceLines = source.split('\n');
-    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source));
-    console.log(`Verifying ${path.basename(file)}...`);
-    const result = (0, verifier_1.verify)(ast, sourceLines);
-    for (const thm of result.theorems) {
-        console.log(`  ${thm.verified ? '✓' : '✗'} ${thm.name}`);
-    }
-    if (result.errors.length > 0) {
-        console.log('');
-        for (const err of result.errors) {
-            if (!err.message.toLowerCase().includes('sorry')) {
-                const loc = err.flLine ? ` (line ${err.flLine})` : '';
-                console.error(`  ✗${loc} ${err.message}`);
-            }
-        }
-    }
-    const realErrors = result.errors.filter(e => !e.message.toLowerCase().includes('sorry'));
-    if (realErrors.length > 0) {
-        console.log('\n✗ Verification failed');
-        process.exit(1);
-    }
-    else if (!result.success) {
-        console.log('\n~ Proof structure verified (some steps use sorry placeholders)');
-    }
-    else {
-        console.log('\n✓ Proof verified');
-    }
 }
 function runWeb(file, outDir) {
     if (!fs.existsSync(file)) {
@@ -241,10 +200,8 @@ FuturLang — formal proof language
 
 Usage:
   fl <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
-  fl check <file.fl>     Check proof structure (natural deduction)
-  fl verify <file.fl>    Verify proof against Lean 4 / Mathlib
+  fl check <file.fl>     Check proof structure (natural deduction, self-contained kernel)
   fl web <file.fl>       Generate a React app from the program truth chain
-  fl setup               Install verification backend (one-time, ~4GB)
 `);
 }
 main().catch(e => { console.error(e.message); process.exit(1); });

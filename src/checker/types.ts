@@ -1,11 +1,13 @@
 // src/checker/types.ts
 // Core types for the natural deduction proof checker
 
+import { Sort } from './sorts';
+
 export type CheckResult =
   | { valid: true;  rule: InferenceRule; message: string }
   | { valid: false; rule: InferenceRule; message: string; hint?: string };
 
-// The 12 inference rules we check
+// The inference rules supported by the kernel
 export type InferenceRule =
   // Structural
   | 'ASSUMPTION'        // assume(P) introduces P into context
@@ -16,7 +18,16 @@ export type InferenceRule =
   | 'IMPLIES_INTRO'     // assume(P) → ... → conclude(Q) proves P → Q
   | 'IMPLIES_ELIM'      // have P → Q, have P, conclude Q  (modus ponens)
   | 'AND_INTRO'         // have P, have Q, conclude P ∧ Q
-  | 'AND_ELIM'          // have P ∧ Q, conclude P (or Q)
+  | 'AND_ELIM'          // have P ∧ Q, conclude P  or  have P ∧ Q, conclude Q
+  | 'AND_ELIM_LEFT'     // have P ∧ Q, conclude P
+  | 'AND_ELIM_RIGHT'    // have P ∧ Q, conclude Q
+  | 'OR_INTRO_LEFT'     // have P, conclude P ∨ Q
+  | 'OR_INTRO_RIGHT'    // have Q, conclude P ∨ Q
+  | 'OR_ELIM'           // have P ∨ Q, P → R, Q → R, conclude R
+  | 'NOT_INTRO'         // assume P, derive ⊥, conclude ¬P
+  | 'NOT_ELIM'          // have ¬¬P, conclude P  (double negation elimination)
+  | 'EX_FALSO'          // have ⊥, conclude anything
+  // Set-theoretic
   | 'SUBSET_ELIM'       // have x ∈ A, have A ⊆ B, conclude x ∈ B
   | 'SUBSET_TRANS'      // have A ⊆ B, have B ⊆ C, conclude A ⊆ C
   | 'EQUALITY_SUBST'    // have x = y and x ∈ A, conclude y ∈ A
@@ -27,8 +38,6 @@ export type InferenceRule =
   | 'FORALL_IN_INTRO'   // open fresh witness a with a ∈ A and derive P(a), conclude ∀x ∈ A, P(x)
   | 'EXISTS_IN_INTRO'   // have a ∈ A and P(a), conclude ∃x ∈ A, P(x)
   | 'EXISTS_IN_ELIM'    // have ∃x ∈ A, P(x), open witness a with a ∈ A and P(a), conclude witness-free Q
-  | 'OR_INTRO'          // have P, conclude P ∨ Q
-  | 'IFF_INTRO'         // prove P → Q and Q → P, conclude P ↔ Q
   // Proof methods
   | 'CONTRADICTION'     // assume(¬P), derive ⊥, conclude P
   | 'INDUCTION'         // base_case + inductive_step → conclude ∀n.P(n)
@@ -36,17 +45,26 @@ export type InferenceRule =
   // Meta
   | 'THEOREM_PROOF'     // theorem ↔ proof pairing is valid
   | 'SORRY'             // explicit gap marker — valid structure, unverified step
-  | 'STRUCTURAL'        // basic structural validity
+  | 'STRUCTURAL'        // basic structural validity — claim is UNVERIFIED
+
+// Three-way proof object status
+export type ProofObjectStatus = 'PROVED' | 'UNVERIFIED';
 
 export interface ProofContext {
-  // What we've established so far in this proof
+  // What we've established so far in this proof (PROVED claims only)
   established: Claim[];
+  // Claims that were accepted structurally without a derivation (UNVERIFIED)
+  unverified: Claim[];
+  // Normalized claim strings of UNVERIFIED claims (for fast lookup in isEstablished)
+  unverifiedContents: Set<string>;
   // Internal proof objects for established facts in this proof.
   proofObjects: ProofObject[];
   // Internal derivation nodes connecting input proof objects to output proof objects.
   derivations: DerivationNode[];
   // Variables in scope
   variables: Variable[];
+  // Sort scope: variable name → sort (for set-theoretic scope checking)
+  sortScope: Map<string, Sort>;
   // Explicit nested proof scopes currently open.
   currentScopes: ScopeFrame[];
   // Lemmas available (from earlier in the file or inline)
@@ -109,6 +127,7 @@ export interface ProofObject {
   dependsOn: string[];
   dependsOnIds: string[];
   imports?: string[];
+  status: ProofObjectStatus;
 }
 
 export interface DerivationNode {
@@ -136,6 +155,7 @@ export interface ProofStepTrace {
   rule: InferenceRule;
   valid: boolean;
   message: string;
+  status?: ProofObjectStatus;
   uses?: string[];
   imports?: string[];
   establishesAs?: ClaimSource;
@@ -156,6 +176,9 @@ export interface ProofReport {
   baseFactIds: string[];
   derivedFactIds: string[];
   diagnostics: Diagnostic[];
+  // Counts for PROVED vs UNVERIFIED proof objects
+  provedCount: number;
+  unverifiedCount: number;
   // Structural metrics useful as training signal
   metrics: {
     assumptionCount: number;

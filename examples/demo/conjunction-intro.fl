@@ -4,6 +4,6 @@ theorem Pair() {
 
 proof Pair() {
   assume(p) →
-  assert(q) →
+  assume(q) →
   conclude(p && q)
 }

@@ -1,32 +1,33 @@
 # Roadmap
 
-## Stage 1
+## Stage 1 — Complete (self-contained kernel)
 
-Make simple proof demos excellent.
+The internal derivation kernel now covers full propositional logic and the set-theoretic subset.
 
-- implication and conjunction proofs should feel reliable
-- checker messages should mention the actual theorem goal
-- examples should avoid unsupported advanced syntax unless routed through Lean
+- Sort system: two base sorts (Set and Element), enforced on ∈, ⊆, ∪, ∩
+- Scope model: variables introduced by given/assume/setVar; conclusions scope-checked
+- Full propositional rules: IMPLIES_INTRO/ELIM, AND_INTRO/ELIM, OR_INTRO_LEFT/RIGHT, OR_ELIM, NOT_INTRO, NOT_ELIM, EX_FALSO, CONTRADICTION
+- Three-way status: PROVED / UNVERIFIED / FAILED
+- UNVERIFIED claims are tracked but cannot be used as inputs to derivation rules
+- Lean backend removed; kernel is self-contained
 
-## Stage 2
+## Stage 2 — Build a sound core
 
-Build a small sound core.
+- Eliminate remaining UNVERIFIED paths in the demos and examples
+- Add equality reasoning rules (x = y, y = z → x = z)
+- Add IFF_INTRO/ELIM rules
+- Improve theorem-to-proof source mapping and diagnostics
 
-- explicit proof objects
-- scoped contexts
-- theorem application with tracked conclusions
-- elimination rules
+## Stage 3 — Elaboration and richer libraries
 
-## Stage 3
+- Equality, function application, and algebraic laws
+- Named lemma libraries for common mathematical facts
+- Bounded quantifier introduction with auto-witnessed proofs
 
-Use Lean as a semantic oracle while expanding the core.
+## Stage 4 — Expressive mathematics
 
-- keep the supported subset narrow
-- compare FuturLang judgments against Lean outcomes
-- eliminate silent fallbacks
+- Structural induction for natural numbers and lists
+- Rich type annotations on setVar
+- Towards a serious prover for undergraduate-level mathematics
 
-## Stage 4
-
-Add elaboration, equality, and richer libraries.
-
-That is the point where FuturLang starts moving from a strong demo language toward a serious prover.
+Visible chaining is a language law. All extensions must preserve the single-chain source model.
