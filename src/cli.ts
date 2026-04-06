@@ -8,7 +8,9 @@ import { parseLinesToAST } from './parser/parser';
 import { checkFile } from './checker/checker';
 import { createReactApp } from './react/transpiler';
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const strict = rawArgs.includes('--strict');
+const args = rawArgs.filter(arg => arg !== '--strict');
 
 async function main() {
   if (args.length === 0) { printUsage(); return; }
@@ -39,7 +41,7 @@ function runEval(file: string) {
   const ast = parseLinesToAST(lexFL(source));
   if (isProofStyleProgram(ast)) {
     console.log(`\n${path.basename(file)}: theorem-prover mode\n`);
-    printCheckReport(file, checkFile(ast));
+    printCheckReport(file, checkFile(ast, { strict }));
     return;
   }
   const js = parseFL(source);
@@ -51,7 +53,7 @@ function runCheck(file: string) {
   if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
 
   const source = fs.readFileSync(file, 'utf8');
-  const report = checkFile(parseLinesToAST(lexFL(source)));
+  const report = checkFile(parseLinesToAST(lexFL(source)), { strict });
   printCheckReport(file, report);
 }
 
@@ -150,9 +152,9 @@ function printUsage() {
 FuturLang — formal proof language
 
 Usage:
-  fl <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
-  fl check <file.fl>     Check proof structure (natural deduction, self-contained kernel)
-  fl web <file.fl>       Generate a React app from the program truth chain
+  fl [--strict] <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
+  fl check [--strict] <file.fl>     Check proof structure (natural deduction, self-contained kernel)
+  fl web <file.fl>                  Generate a React app from the program truth chain
 `);
 }
 

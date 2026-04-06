@@ -8,6 +8,9 @@ exports.checkAndIntro = checkAndIntro;
 exports.checkAndElim = checkAndElim;
 exports.checkSubsetElim = checkSubsetElim;
 exports.checkSubsetTrans = checkSubsetTrans;
+exports.checkEqualityRefl = checkEqualityRefl;
+exports.checkEqualitySymm = checkEqualitySymm;
+exports.checkEqualityTrans = checkEqualityTrans;
 exports.checkEqualitySubst = checkEqualitySubst;
 exports.checkUnionIntro = checkUnionIntro;
 exports.checkIntersectionIntro = checkIntersectionIntro;
@@ -125,6 +128,44 @@ function checkSubsetTrans(leftSubset, rightSubset, target, ctx) {
         rule: 'SUBSET_TRANS',
         message: `Cannot use subset transitivity: '${rightSubset}' not yet established`,
         hint: `Establish '${rightSubset}' before deriving '${target}'`,
+    };
+}
+function checkEqualityRefl(target) {
+    if (!target || target.trim() === '') {
+        return { valid: false, rule: 'EQUALITY_REFL', message: 'Cannot prove empty equality' };
+    }
+    return { valid: true, rule: 'EQUALITY_REFL', message: `Equality reflexivity: ${target}` };
+}
+function checkEqualitySymm(equalityClaim, target, ctx) {
+    if (isEstablished(equalityClaim, ctx)) {
+        return { valid: true, rule: 'EQUALITY_SYMM', message: `Equality symmetry: ${equalityClaim} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'EQUALITY_SYMM',
+        message: `Cannot use equality symmetry: '${equalityClaim}' not yet established`,
+        hint: `Establish '${equalityClaim}' before deriving '${target}'`,
+    };
+}
+function checkEqualityTrans(leftEquality, rightEquality, target, ctx) {
+    const hasLeft = isEstablished(leftEquality, ctx);
+    const hasRight = isEstablished(rightEquality, ctx);
+    if (hasLeft && hasRight) {
+        return { valid: true, rule: 'EQUALITY_TRANS', message: `Equality transitivity: ${leftEquality}, ${rightEquality} ⊢ ${target}` };
+    }
+    if (!hasLeft) {
+        return {
+            valid: false,
+            rule: 'EQUALITY_TRANS',
+            message: `Cannot use equality transitivity: '${leftEquality}' not yet established`,
+            hint: `Establish '${leftEquality}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'EQUALITY_TRANS',
+        message: `Cannot use equality transitivity: '${rightEquality}' not yet established`,
+        hint: `Establish '${rightEquality}' before deriving '${target}'`,
     };
 }
 function checkEqualitySubst(equalityClaim, membershipClaim, target, ctx) {

@@ -80,6 +80,12 @@ runTest('parseExpr normalizes word equivalents for set notation and bounded quan
     assert_1.strict.equal(quantified.atomKind, 'expression');
     assert_1.strict.equal(quantified.condition, '∀ x ∈ A, ∃ y ∈ B');
 });
+runTest('parseExpr normalizes typed quantified binders into canonical atom form', () => {
+    const quantified = (0, expr_1.parseExpr)('∀(x y: G.carrier) ⇒ ∃(z: H) ⇒ x = z');
+    assert_1.strict.equal(quantified.type, 'Atom');
+    assert_1.strict.equal(quantified.atomKind, 'expression');
+    assert_1.strict.equal(quantified.condition, '∀ x: G.carrier, ∀ y: G.carrier, ∃ z: H, x = z');
+});
 runTest('parser preserves malformed expressions as opaque atoms', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem Broken() {
@@ -166,6 +172,21 @@ proof BoundedQuantifierDemo() {
     const messages = report.reports.flatMap(r => r.diagnostics.map(d => `${d.message}\n${d.hint ?? ''}`)).join('\n');
     assert_1.strict.match(messages, /FORALL_BINDER/);
     assert_1.strict.match(messages, /kernel/i);
+});
+runTest('checker classifies typed quantified binders as kernel gaps, not parser fallbacks', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem TypedQuantifierDemo() {
+  assert(∀(n: ℕ) ⇒ n = n)
+} ↔
+
+proof TypedQuantifierDemo() {
+  assert(∀(n: ℕ) ⇒ n = n)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+    assert_1.strict.doesNotMatch(messages, /opaque symbolic claim/i);
+    assert_1.strict.match(messages, /outside the current kernel subset|needs kernel rule/i);
 });
 runTest('checker accepts conjunction goals when both parts are established', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -324,6 +345,49 @@ proof EqualitySubstitution() {
     const theoremReport = report.reports[0];
     assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'EQUALITY_SUBST');
     assert_1.strict.equal(theoremReport.derivedConclusion, 'y ∈ A');
+});
+runTest('checker validates direct equality reflexivity and symmetry', () => {
+    const reflAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem EqualityRefl() {
+  assert(x = x)
+} ↔
+
+proof EqualityRefl() {
+  conclude(x = x)
+}
+`));
+    const reflReport = (0, checker_1.checkFile)(reflAst);
+    assert_1.strict.equal(reflReport.valid, true);
+    assert_1.strict.equal(reflReport.reports[0].proofSteps[0].rule, 'EQUALITY_REFL');
+    const symmAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem EqualitySymm() {
+  given(x = y) →
+  assert(y = x)
+} ↔
+
+proof EqualitySymm() {
+  conclude(y = x)
+}
+`));
+    const symmReport = (0, checker_1.checkFile)(symmAst);
+    assert_1.strict.equal(symmReport.valid, true);
+    assert_1.strict.equal(symmReport.reports[0].proofSteps[0].rule, 'EQUALITY_SYMM');
+});
+runTest('checker validates equality transitivity', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem EqualityTrans() {
+  given(x = y) →
+  given(y = z) →
+  assert(x = z)
+} ↔
+
+proof EqualityTrans() {
+  conclude(x = z)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    assert_1.strict.equal(report.reports[0].proofSteps[0].rule, 'EQUALITY_TRANS');
 });
 runTest('checker validates union introduction from word-form notation', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -854,6 +918,21 @@ proof UnverifiedInput() {
     const report = (0, checker_1.checkFile)(ast);
     assert_1.strict.equal(report.valid, false);
 });
+runTest('checker strict mode rejects UNVERIFIED assertions', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UnverifiedStrict() {
+  assert(p)
+} ↔
+
+proof UnverifiedStrict() {
+  assert(p)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast, { strict: true });
+    assert_1.strict.equal(report.valid, false);
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+    assert_1.strict.match(messages, /Strict mode rejects/i);
+});
 // ── Phase 3: Scope errors ─────────────────────────────────────────────────────
 runTest('checker rejects set-theoretic conclusion with variable not in scope', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -901,5 +980,30 @@ runTest('default fl command presents standalone theorem files as declarations', 
     assert_1.strict.match(output, /Theorems: 9/);
     assert_1.strict.doesNotMatch(output, /Score: 0\/100/);
     assert_1.strict.doesNotMatch(output, /have no proof/);
+});
+runTest('fl check --strict exits non-zero on UNVERIFIED proofs', () => {
+    const file = path.join(os.tmpdir(), `strict-${Date.now()}.fl`);
+    fs.writeFileSync(file, `
+theorem StrictCli() {
+  assert(p)
+} ↔
+
+proof StrictCli() {
+  assert(p)
+}
+`);
+    let stderr = '';
+    try {
+        (0, child_process_1.execFileSync)('node', ['fl.js', 'check', '--strict', file], {
+            cwd: process.cwd(),
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        assert_1.strict.fail('Expected strict CLI invocation to fail');
+    }
+    catch (error) {
+        stderr = String(error.stdout ?? '') + String(error.stderr ?? '');
+    }
+    assert_1.strict.match(stderr, /Strict mode rejects/);
 });
 console.log('All unit tests passed.');

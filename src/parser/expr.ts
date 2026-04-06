@@ -53,8 +53,93 @@ function normalizeSurfaceSyntax(src: string): string {
     value = value.replace(/!=/g, '≠');
     value = value.replace(/<=/g, '≤');
     value = value.replace(/>=/g, '≥');
+    value = normalizePrefixQuantifiedBinders(value);
     return value;
   }).join('');
+}
+
+function normalizePrefixQuantifiedBinders(src: string): string {
+  let value = src.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const normalized = normalizeSingleLeadingQuantifier(value);
+    if (normalized && normalized !== value) {
+      value = normalized;
+      changed = true;
+    }
+  }
+  return value;
+}
+
+function normalizeSingleLeadingQuantifier(src: string): string | null {
+  const trimmed = src.trim();
+  const quantifierMatch = trimmed.match(/^(∀|∃!|∃)\s*\(/);
+  if (!quantifierMatch) return null;
+
+  const quantifier = quantifierMatch[1];
+  const binderStart = trimmed.indexOf('(');
+  const binderEnd = findMatchingParen(trimmed, binderStart);
+  if (binderEnd === -1) return null;
+
+  const binder = trimmed.slice(binderStart + 1, binderEnd).trim();
+  const remainder = trimmed.slice(binderEnd + 1).trimStart();
+  const arrowMatch = remainder.match(/^(→|⇒|->)\s*([\s\S]+)$/);
+  if (!arrowMatch) return null;
+
+  const body = arrowMatch[2].trim();
+  if (!body) return null;
+
+  const normalizedBinders = normalizeBinderList(quantifier, binder, body);
+  if (!normalizedBinders) return null;
+  return normalizedBinders;
+}
+
+function findMatchingParen(value: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function normalizeBinderList(quantifier: string, binder: string, body: string): string | null {
+  const normalizedBody = normalizePrefixQuantifiedBinders(body);
+  const boundedMatch = binder.match(/^(.+?)\s*∈\s*(.+)$/);
+  if (boundedMatch) {
+    const variables = splitBinderNames(boundedMatch[1]);
+    const set = boundedMatch[2].trim();
+    if (variables.length === 0 || !set) return null;
+    return variables.reduceRight(
+      (acc, variable) => `${quantifier} ${variable} ∈ ${set}, ${acc}`,
+      normalizedBody,
+    );
+  }
+
+  const typedMatch = binder.match(/^(.+?)\s*:\s*(.+)$/);
+  if (typedMatch) {
+    const variables = splitBinderNames(typedMatch[1]);
+    const type = typedMatch[2].trim();
+    if (variables.length === 0 || !type) return null;
+    return variables.reduceRight(
+      (acc, variable) => `${quantifier} ${variable}: ${type}, ${acc}`,
+      normalizedBody,
+    );
+  }
+
+  return null;
+}
+
+function splitBinderNames(value: string): string[] {
+  return value
+    .split(/[,\s]+/)
+    .map(part => part.trim())
+    .filter(Boolean);
 }
 
 // ── Operator table ────────────────────────────────────────────────────────────
@@ -246,5 +331,13 @@ class ExprParser {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function parseExpr(src: string): ExprNode {
-  return new ExprParser(tokenise(normalizeSurfaceSyntax(src))).parse();
+  const normalized = normalizeSurfaceSyntax(src).trim();
+  if (isQuantifiedAtom(normalized)) {
+    return { type: 'Atom', condition: normalized, atomKind: 'expression' };
+  }
+  return new ExprParser(tokenise(normalized)).parse();
+}
+
+function isQuantifiedAtom(value: string): boolean {
+  return /^(∀|∃!|∃)\s+.+,\s*\S[\s\S]*$/.test(value);
 }

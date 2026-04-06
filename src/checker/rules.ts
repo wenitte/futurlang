@@ -115,6 +115,47 @@ export function checkSubsetTrans(leftSubset: string, rightSubset: string, target
   };
 }
 
+export function checkEqualityRefl(target: string): CheckResult {
+  if (!target || target.trim() === '') {
+    return { valid: false, rule: 'EQUALITY_REFL', message: 'Cannot prove empty equality' };
+  }
+  return { valid: true, rule: 'EQUALITY_REFL', message: `Equality reflexivity: ${target}` };
+}
+
+export function checkEqualitySymm(equalityClaim: string, target: string, ctx: ProofContext): CheckResult {
+  if (isEstablished(equalityClaim, ctx)) {
+    return { valid: true, rule: 'EQUALITY_SYMM', message: `Equality symmetry: ${equalityClaim} ⊢ ${target}` };
+  }
+  return {
+    valid: false,
+    rule: 'EQUALITY_SYMM',
+    message: `Cannot use equality symmetry: '${equalityClaim}' not yet established`,
+    hint: `Establish '${equalityClaim}' before deriving '${target}'`,
+  };
+}
+
+export function checkEqualityTrans(leftEquality: string, rightEquality: string, target: string, ctx: ProofContext): CheckResult {
+  const hasLeft = isEstablished(leftEquality, ctx);
+  const hasRight = isEstablished(rightEquality, ctx);
+  if (hasLeft && hasRight) {
+    return { valid: true, rule: 'EQUALITY_TRANS', message: `Equality transitivity: ${leftEquality}, ${rightEquality} ⊢ ${target}` };
+  }
+  if (!hasLeft) {
+    return {
+      valid: false,
+      rule: 'EQUALITY_TRANS',
+      message: `Cannot use equality transitivity: '${leftEquality}' not yet established`,
+      hint: `Establish '${leftEquality}' before deriving '${target}'`,
+    };
+  }
+  return {
+    valid: false,
+    rule: 'EQUALITY_TRANS',
+    message: `Cannot use equality transitivity: '${rightEquality}' not yet established`,
+    hint: `Establish '${rightEquality}' before deriving '${target}'`,
+  };
+}
+
 export function checkEqualitySubst(equalityClaim: string, membershipClaim: string, target: string, ctx: ProofContext): CheckResult {
   const hasEquality = isEstablished(equalityClaim, ctx);
   const hasMembership = isEstablished(membershipClaim, ctx);

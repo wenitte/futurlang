@@ -41,7 +41,9 @@ const lexer_1 = require("./parser/lexer");
 const parser_1 = require("./parser/parser");
 const checker_1 = require("./checker/checker");
 const transpiler_1 = require("./react/transpiler");
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const strict = rawArgs.includes('--strict');
+const args = rawArgs.filter(arg => arg !== '--strict');
 async function main() {
     if (args.length === 0) {
         printUsage();
@@ -80,7 +82,7 @@ function runEval(file) {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source));
     if (isProofStyleProgram(ast)) {
         console.log(`\n${path.basename(file)}: theorem-prover mode\n`);
-        printCheckReport(file, (0, checker_1.checkFile)(ast));
+        printCheckReport(file, (0, checker_1.checkFile)(ast, { strict }));
         return;
     }
     const js = (0, formal_1.parseFL)(source);
@@ -98,7 +100,7 @@ function runCheck(file) {
         process.exit(1);
     }
     const source = fs.readFileSync(file, 'utf8');
-    const report = (0, checker_1.checkFile)((0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source)));
+    const report = (0, checker_1.checkFile)((0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source)), { strict });
     printCheckReport(file, report);
 }
 function printCheckReport(file, report) {
@@ -199,9 +201,9 @@ function printUsage() {
 FuturLang — formal proof language
 
 Usage:
-  fl <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
-  fl check <file.fl>     Check proof structure (natural deduction, self-contained kernel)
-  fl web <file.fl>       Generate a React app from the program truth chain
+  fl [--strict] <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
+  fl check [--strict] <file.fl>     Check proof structure (natural deduction, self-contained kernel)
+  fl web <file.fl>                  Generate a React app from the program truth chain
 `);
 }
 main().catch(e => { console.error(e.message); process.exit(1); });

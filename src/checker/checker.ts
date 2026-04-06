@@ -9,13 +9,13 @@ import {
 import {
   ProofContext, ProofReport, FileReport, Diagnostic,
   Claim, Variable, ClaimSet, ProofMethod, CheckResult, ProofStepTrace, ProofObject,
-  DerivationNode, ScopeFrame,
+  DerivationNode, ScopeFrame, CheckOptions,
 } from './types';
 import {
   checkAssumption, checkContradiction, checkLemmaApplication,
   checkTheoremProofPairing, checkInduction, checkAndIntro,
   checkAndElim, checkImpliesIntro, checkModusPonens, checkSubsetElim,
-  checkSubsetTrans, checkEqualitySubst, checkUnionIntro,
+  checkSubsetTrans, checkEqualityRefl, checkEqualitySymm, checkEqualityTrans, checkEqualitySubst, checkUnionIntro,
   checkIntersectionIntro, checkIntersectionElim, checkForallInElim,
   checkForallInIntro, checkExistsInIntro, checkExistsInElim,
   checkOrIntroLeft, checkOrIntroRight, checkOrElim,
@@ -29,7 +29,7 @@ import {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function checkFile(nodes: ASTNode[]): FileReport {
+export function checkFile(nodes: ASTNode[], options: CheckOptions = {}): FileReport {
   const diagnostics: Diagnostic[] = [];
   const reports: ProofReport[] = [];
   const globalLemmas = new Map<string, ClaimSet>();
@@ -49,7 +49,7 @@ export function checkFile(nodes: ASTNode[]): FileReport {
     if (node.type === 'Lemma')   {
       theoremCount++;
       if (!pairedNames.has(normalizeName(node.name))) {
-        const report = checkProofBlock(node.name, node.body, globalLemmas, 'unknown');
+        const report = checkProofBlock(node.name, node.body, globalLemmas, 'unknown', null, [], options);
         reports.push(report);
       }
     }
@@ -57,7 +57,7 @@ export function checkFile(nodes: ASTNode[]): FileReport {
 
   for (const pair of pairs) {
     pairedCount++;
-    const report = checkPair(pair.theorem, pair.proof, globalLemmas);
+    const report = checkPair(pair.theorem, pair.proof, globalLemmas, options);
     reports.push(report);
   }
 
@@ -109,7 +109,12 @@ function findPairs(nodes: ASTNode[]): TheoremProofPair[] {
 
 // ── Check a theorem↔proof pair ────────────────────────────────────────────────
 
-function checkPair(thm: TheoremNode | LemmaNode, proof: ProofNode, globalLemmas: Map<string, ClaimSet>): ProofReport {
+function checkPair(
+  thm: TheoremNode | LemmaNode,
+  proof: ProofNode,
+  globalLemmas: Map<string, ClaimSet>,
+  options: CheckOptions,
+): ProofReport {
   const diagnostics: Diagnostic[] = [];
   const theoremPremises = thm.body
     .filter((n): n is GivenNode => n.type === 'Given')
@@ -134,7 +139,7 @@ function checkPair(thm: TheoremNode | LemmaNode, proof: ProofNode, globalLemmas:
   const method = detectProofMethod(proof.body);
 
   // Check the proof body
-  const proofReport = checkProofBlock(proof.name, proof.body, globalLemmas, method, theoremGoal, theoremPremises);
+  const proofReport = checkProofBlock(proof.name, proof.body, globalLemmas, method, theoremGoal, theoremPremises, options);
   diagnostics.push(...proofReport.diagnostics);
 
   if (theoremGoalExpr) {
@@ -186,7 +191,8 @@ function checkProofBlock(
   globalLemmas: Map<string, ClaimSet>,
   method: ProofMethod,
   goal: string | null = null,
-  premises: string[] = []
+  premises: string[] = [],
+  options: CheckOptions = {},
 ): ProofReport {
   const diagnostics: Diagnostic[] = [];
   const premiseClaims = premises.map((content, index) => ({
@@ -577,6 +583,14 @@ function checkProofBlock(
 
   const provedCount    = ctx.proofObjects.filter(o => o.status === 'PROVED').length;
   const unverifiedCount = ctx.proofObjects.filter(o => o.status === 'UNVERIFIED').length;
+  if (options.strict && unverifiedCount > 0) {
+    diagnostics.push({
+      severity: 'error',
+      message: `Strict mode rejects ${unverifiedCount} UNVERIFIED step(s) in proof '${name}'`,
+      hint: 'Derive each claim inside the kernel or rerun without --strict.',
+      rule: 'STRUCTURAL',
+    });
+  }
 
   return {
     name,
@@ -1005,6 +1019,12 @@ function validateDerivationNode(
       return validateSubsetElimNode(node, inputs, output);
     case 'SUBSET_TRANS':
       return validateSubsetTransNode(node, inputs, output);
+    case 'EQUALITY_REFL':
+      return validateEqualityReflNode(node, inputs, output);
+    case 'EQUALITY_SYMM':
+      return validateEqualitySymmNode(node, inputs, output);
+    case 'EQUALITY_TRANS':
+      return validateEqualityTransNode(node, inputs, output);
     case 'EQUALITY_SUBST':
       return validateEqualitySubstNode(node, inputs, output);
     case 'UNION_INTRO':
@@ -1138,6 +1158,41 @@ function validateSubsetTransNode(node: DerivationNode, inputs: ProofObject[], ou
   );
   if (!valid) {
     return { severity: 'error', message: `SUBSET_TRANS '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateEqualityReflNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 0) {
+    return { severity: 'error', message: `EQUALITY_REFL '${node.id}' requires 0 inputs`, step: node.step, rule: node.rule };
+  }
+  const equality = parseEqualityProp(output.claim);
+  if (!equality || !sameProp(equality.left, equality.right)) {
+    return { severity: 'error', message: `EQUALITY_REFL '${node.id}' must produce x = x`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateEqualitySymmNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 1) {
+    return { severity: 'error', message: `EQUALITY_SYMM '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+  }
+  const source = parseEqualityProp(inputs[0].claim);
+  const target = parseEqualityProp(output.claim);
+  if (!source || !target ||
+      !sameProp(source.left, target.right) ||
+      !sameProp(source.right, target.left)) {
+    return { severity: 'error', message: `EQUALITY_SYMM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateEqualityTransNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 2) {
+    return { severity: 'error', message: `EQUALITY_TRANS '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+  }
+  if (!supportsEqualityTransitivity(inputs[0].claim, inputs[1].claim, output.claim)) {
+    return { severity: 'error', message: `EQUALITY_TRANS '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
   }
   return null;
 }
@@ -1442,6 +1497,12 @@ function buildProofObjectInput(
       return buildSubsetElimProofObject(claim, source, step, ctx);
     case 'SUBSET_TRANS':
       return buildSubsetTransProofObject(claim, source, step, ctx);
+    case 'EQUALITY_REFL':
+      return buildEqualityReflProofObject(claim, source, step);
+    case 'EQUALITY_SYMM':
+      return buildEqualitySymmProofObject(claim, source, step, ctx);
+    case 'EQUALITY_TRANS':
+      return buildEqualityTransProofObject(claim, source, step, ctx);
     case 'EQUALITY_SUBST':
       return buildEqualitySubstProofObject(claim, source, step, ctx);
     case 'UNION_INTRO':
@@ -1565,6 +1626,41 @@ function buildSubsetTransProofObject(claim: string, source: 'assertion' | 'concl
     source,
     step,
     rule: 'SUBSET_TRANS' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildEqualityReflProofObject(claim: string, source: 'assertion' | 'conclusion', step: number) {
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'EQUALITY_REFL' as const,
+    dependsOn: [],
+    dependsOnIds: [],
+  };
+}
+
+function buildEqualitySymmProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findEqualitySymmDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'EQUALITY_SYMM' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildEqualityTransProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findEqualityTransDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'EQUALITY_TRANS' as const,
     dependsOn: dependency?.claims ?? [],
     dependsOnIds: dependency?.ids ?? [],
   };
@@ -1875,6 +1971,42 @@ function findSubsetTransDependency(
         return {
           claims: [first.claim, second.claim],
           ids: uniqueIds([first.id, second.id]),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function findEqualitySymmDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  const target = parseEqualityProp(claim);
+  if (!target) return null;
+  const sourceClaim = `${target.right} = ${target.left}`;
+  const source = findLatestProofObjectByClaim(ctx, sourceClaim);
+  if (!source) return null;
+  return {
+    claims: [source.claim],
+    ids: [source.id],
+  };
+}
+
+function findEqualityTransDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const left = ctx.proofObjects[i];
+    if (!parseEqualityProp(left.claim)) continue;
+    for (let j = ctx.proofObjects.length - 1; j >= 0; j--) {
+      const right = ctx.proofObjects[j];
+      if (!parseEqualityProp(right.claim)) continue;
+      if (supportsEqualityTransitivity(left.claim, right.claim, claim)) {
+        return {
+          claims: [left.claim, right.claim],
+          ids: uniqueIds([left.id, right.id]),
         };
       }
     }
@@ -2371,6 +2503,9 @@ function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null
   const subsetTrans = checkSubsetTransDerivedClaim(claim, ctx);
   if (subsetTrans?.valid) return subsetTrans;
 
+  const equalityDirect = checkEqualityDerivedClaim(claim, ctx);
+  if (equalityDirect?.valid) return equalityDirect;
+
   const equalitySubst = checkEqualitySubstDerivedClaim(claim, ctx);
   if (equalitySubst?.valid) return equalitySubst;
 
@@ -2452,6 +2587,33 @@ function checkSubsetTransDerivedClaim(claim: string, ctx: ProofContext): CheckRe
       }
     }
   }
+  return null;
+}
+
+function checkEqualityDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const equality = parseEqualityProp(claim);
+  if (!equality) return null;
+
+  if (sameProp(equality.left, equality.right)) {
+    return checkEqualityRefl(claim);
+  }
+
+  const symmetricSource = `${equality.right} = ${equality.left}`;
+  if (visibleEstablishedClaims(ctx).some(item => sameProp(item.content, symmetricSource))) {
+    const result = checkEqualitySymm(symmetricSource, claim, ctx);
+    if (result.valid) return result;
+  }
+
+  const established = visibleEstablishedClaims(ctx);
+  for (const leftItem of established) {
+    for (const rightItem of established) {
+      if (supportsEqualityTransitivity(leftItem.content, rightItem.content, claim)) {
+        const result = checkEqualityTrans(leftItem.content, rightItem.content, claim, ctx);
+        if (result.valid) return result;
+      }
+    }
+  }
+
   return null;
 }
 
@@ -2718,6 +2880,33 @@ function supportsEqualitySubstitution(equalityClaim: string, membershipClaim: st
   });
 }
 
+function supportsEqualityTransitivity(leftEqualityClaim: string, rightEqualityClaim: string, target: string): boolean {
+  const left = parseEqualityProp(leftEqualityClaim);
+  const right = parseEqualityProp(rightEqualityClaim);
+  const output = parseEqualityProp(target);
+  if (!left || !right || !output) return false;
+
+  const leftVariants: Array<[string, string]> = [
+    [left.left, left.right],
+    [left.right, left.left],
+  ];
+  const rightVariants: Array<[string, string]> = [
+    [right.left, right.right],
+    [right.right, right.left],
+  ];
+
+  for (const [a, b] of leftVariants) {
+    for (const [c, d] of rightVariants) {
+      if (sameProp(b, c) &&
+          sameProp(output.left, a) &&
+          sameProp(output.right, d)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function instantiateBoundedQuantifier(
   quantifier: { variable: string; body: string },
   witness: string,
@@ -2867,12 +3056,7 @@ function kernelSubsetGap(value: string): { rule: string; hint: string } | null {
     return null;
   }
   if (parseSubsetProp(value)) return null;
-  if (parseEqualityProp(value)) {
-    return {
-      rule: 'EQUALITY_REASONING',
-      hint: 'Direct equality claims can appear in source, but only membership substitution from an established equality is kernel-checked today.',
-    };
-  }
+  if (parseEqualityProp(value)) return null;
   if (/[∪∩]/.test(value)) {
     return {
       rule: 'SET_OPERATOR_REASONING',

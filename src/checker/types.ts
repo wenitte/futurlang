@@ -30,6 +30,9 @@ export type InferenceRule =
   // Set-theoretic
   | 'SUBSET_ELIM'       // have x ∈ A, have A ⊆ B, conclude x ∈ B
   | 'SUBSET_TRANS'      // have A ⊆ B, have B ⊆ C, conclude A ⊆ C
+  | 'EQUALITY_REFL'     // conclude x = x
+  | 'EQUALITY_SYMM'     // have x = y, conclude y = x
+  | 'EQUALITY_TRANS'    // have x = y, have y = z, conclude x = z
   | 'EQUALITY_SUBST'    // have x = y and x ∈ A, conclude y ∈ A
   | 'UNION_INTRO'       // have x ∈ A, conclude x ∈ A ∪ B
   | 'INTERSECTION_INTRO'// have x ∈ A and x ∈ B, conclude x ∈ A ∩ B
@@ -199,4 +202,8 @@ export interface FileReport {
   reports: ProofReport[];
   diagnostics: Diagnostic[];  // file-level diagnostics
   score: number;              // 0-100, training data quality score
+}
+
+export interface CheckOptions {
+  strict?: boolean;
 }
