@@ -111,6 +111,8 @@ Their roles are different:
 
 Missing connectives between adjacent top-level blocks are syntax errors. If two blocks are related, the relationship must be visible in source.
 
+For the explicit construct-by-construct and rule-by-rule reference, see `docs/language-reference.md`.
+
 ## MI-Style Surface
 
 FuturLang is moving toward the repository-style MI syntax rather than Lean-style tactic syntax.
@@ -165,6 +167,9 @@ The current kernel subset also validates:
 - equality substitution on membership claims: from `x = y` and `x ∈ A`, derive `y ∈ A`
 - union introduction: from `x ∈ A`, derive `x ∈ A ∪ B`
 - intersection introduction and elimination: from `x ∈ A` and `x ∈ B`, derive `x ∈ A ∩ B`; from `x ∈ A ∩ B`, derive either side
+- bounded universal elimination: from `∀x ∈ A, P(x)` and `a ∈ A`, derive `P(a)`
+- bounded existential introduction: from `a ∈ A` and `P(a)`, derive `∃x ∈ A, P(x)`
+- bounded existential elimination in an explicit witness scope: from `∃x ∈ A, P(x)`, open witness `a` with `a ∈ A` and `P(a)`, then discharge a witness-free conclusion
 
 ## What The Evaluator Supports
 
@@ -199,7 +204,7 @@ Advanced mathematical notation is no longer silently accepted by the JS backend.
 Examples that should go through `fl verify` instead of plain `fl`:
 
 - `∀(n: ℕ) ⇒ n = n`
-- `forall x in A, x in A`
+- `forall(x: A) implies P(x)`
 - `|G| divides |H|`
 - set-builder notation
 - richer algebraic or typed mathematical syntax
@@ -217,6 +222,7 @@ This is deliberate. If FuturLang cannot justify a claim in the strict evaluator,
 - kernel-checked subset transitivity
 - kernel-checked equality substitution on membership claims
 - kernel-checked union/intersection membership reasoning
+- kernel-checked bounded quantifier elimination/introduction over set membership
 - simple contradiction discharge
 - contradiction and induction heuristics
 - proof richness metrics
@@ -260,6 +266,7 @@ That currently covers:
 Additional documentation now lives in `docs/`:
 
 - `docs/spec.md`
+- `docs/language-reference.md`
 - `docs/kernel.md`
 - `docs/checker.md`
 - `docs/verify.md`

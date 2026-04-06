@@ -9,14 +9,15 @@ import {
 import {
   ProofContext, ProofReport, FileReport, Diagnostic,
   Claim, Variable, ClaimSet, ProofMethod, CheckResult, ProofStepTrace, ProofObject,
-  DerivationNode,
+  DerivationNode, ScopeFrame,
 } from './types';
 import {
   checkAssumption, checkContradiction, checkLemmaApplication,
   checkTheoremProofPairing, checkInduction, checkAndIntro,
   checkAndElim, checkImpliesIntro, checkModusPonens, checkSubsetElim,
   checkSubsetTrans, checkEqualitySubst, checkUnionIntro,
-  checkIntersectionIntro, checkIntersectionElim,
+  checkIntersectionIntro, checkIntersectionElim, checkForallInElim,
+  checkForallInIntro, checkExistsInIntro, checkExistsInElim,
 } from './rules';
 import {
   exprToProp, sameProp, splitConjunction as splitGoalConjunction,
@@ -187,6 +188,7 @@ function checkProofBlock(
     content,
     source: 'premise' as const,
     step: -(index + 1),
+    scopeIds: [] as string[],
     proofObjectId: makeProofObjectId(-(index + 1), 'premise', content),
   }));
   const ctx: ProofContext = {
@@ -197,11 +199,13 @@ function checkProofBlock(
       rule: 'PREMISE',
       source: claim.source,
       step: claim.step,
+      scopeIds: claim.scopeIds,
       dependsOn: [],
       dependsOnIds: [],
     })),
     derivations: [],
     variables: [],
+    currentScopes: [],
     lemmas: new Map(globalLemmas),
     method,
     inContradiction: false,
@@ -336,9 +340,10 @@ function checkProofBlock(
         const kernelDiagnostic = kernelSubsetDiagnostic(n.expr, `Step ${step} conclusion '${claim}'`, step);
         if (kernelDiagnostic) diagnostics.push(kernelDiagnostic);
         const contradictionDischarge = checkContradictionDischarge(claim, ctx);
+        const forallDischarge = checkForallGoalDischarge(claim, ctx);
         const derivation = isConjunction(n.expr)
           ? checkAndIntro(...splitConjunction(n.expr), ctx)
-          : contradictionDischarge ?? checkDerivedClaim(claim, ctx) ?? checkImplicationGoalDischarge(claim, ctx);
+          : contradictionDischarge ?? checkDerivedClaim(claim, ctx) ?? forallDischarge ?? checkImplicationGoalDischarge(claim, ctx);
         if (derivation && !derivation.valid) {
           diagnostics.push({ severity: 'error', message: derivation.message, step, hint: derivation.hint, rule: derivation.rule });
         }
@@ -403,7 +408,8 @@ function checkProofBlock(
 
       case 'SetVar': {
         const n = node as SetVarNode;
-        ctx.variables.push({ name: n.varName, type: n.varType, step });
+        const scope = openScope(ctx, 'variable', n.varName, step);
+        ctx.variables.push({ name: n.varName, type: n.varType, step, scopeId: scope.id });
         // Variables are always valid introductions
         if (n.varType) {
           registerVariableClaim(ctx, `${n.varName}: ${n.varType}`, step);
@@ -671,6 +677,8 @@ function registerClaim(
     source: Claim['source'];
     step: number;
     rule: CheckResult['rule'];
+    scopeIds?: string[];
+    dischargedScopeIds?: string[];
     dependsOn: string[];
     dependsOnIds?: string[];
     imports?: string[];
@@ -682,6 +690,7 @@ function registerClaim(
     content: input.content,
     source: input.source,
     step: input.step,
+    scopeIds: input.scopeIds ?? currentScopeIds(ctx),
     proofObjectId,
   };
   ctx.established.push(claim);
@@ -691,17 +700,26 @@ function registerClaim(
     rule: input.rule,
     source: input.source,
     step: input.step,
+    scopeIds: claim.scopeIds,
+    dischargedScopeIds: input.dischargedScopeIds && input.dischargedScopeIds.length > 0 ? uniqueIds(input.dischargedScopeIds) : undefined,
     dependsOn: uniqueProps(input.dependsOn),
     dependsOnIds: uniqueIds(input.dependsOnIds ?? resolveClaimIds(ctx, input.dependsOn)),
     imports: input.imports && input.imports.length > 0 ? uniqueProps(input.imports) : undefined,
   });
   if (input.emitDerivation !== false) {
-    ctx.derivations.push(makeDerivationNode(input.step, input.rule, uniqueIds(input.dependsOnIds ?? resolveClaimIds(ctx, input.dependsOn)), proofObjectId));
+    ctx.derivations.push(makeDerivationNode(
+      input.step,
+      input.rule,
+      uniqueIds(input.dependsOnIds ?? resolveClaimIds(ctx, input.dependsOn)),
+      proofObjectId,
+      input.dischargedScopeIds,
+    ));
   }
   return claim;
 }
 
 function registerAssumptionClaim(ctx: ProofContext, claim: string, step: number, rule: CheckResult['rule']): Claim {
+  openScope(ctx, 'assumption', claim, step);
   return registerClaim(ctx, {
     content: claim,
     source: 'assumption',
@@ -784,6 +802,7 @@ function registerDerivedClaim(
     ...builder,
     emitDerivation: Boolean(input.derivation?.valid) && !graphValidation,
   });
+  applyDischargedScopes(ctx, builder.dischargedScopeIds);
   return { claim, result };
 }
 
@@ -791,13 +810,20 @@ function makeProofObjectId(step: number, source: string, claim: string): string 
   return `${source}:${step}:${normalizeName(claim)}`;
 }
 
-function makeDerivationNode(step: number, rule: CheckResult['rule'], inputIds: string[], outputId: string): DerivationNode {
+function makeDerivationNode(
+  step: number,
+  rule: CheckResult['rule'],
+  inputIds: string[],
+  outputId: string,
+  dischargedScopeIds?: string[],
+): DerivationNode {
   return {
     id: `derivation:${step}:${normalizeName(outputId)}`,
     step,
     rule,
     inputIds,
     outputId,
+    dischargedScopeIds: dischargedScopeIds && dischargedScopeIds.length > 0 ? uniqueIds(dischargedScopeIds) : undefined,
   };
 }
 
@@ -876,6 +902,14 @@ function validateDerivationNode(
       return validateIntersectionIntroNode(node, inputs, output);
     case 'INTERSECTION_ELIM':
       return validateIntersectionElimNode(node, inputs, output);
+    case 'FORALL_IN_ELIM':
+      return validateForallInElimNode(node, inputs, output);
+    case 'FORALL_IN_INTRO':
+      return validateForallInIntroNode(node, inputs, output);
+    case 'EXISTS_IN_INTRO':
+      return validateExistsInIntroNode(node, inputs, output);
+    case 'EXISTS_IN_ELIM':
+      return validateExistsInElimNode(node, inputs, output);
     case 'IMPLIES_INTRO':
       return validateImpliesIntroNode(node, inputs, output, goal);
     case 'CONTRADICTION':
@@ -1067,6 +1101,92 @@ function validateIntersectionElimNode(node: DerivationNode, inputs: ProofObject[
   return null;
 }
 
+function validateForallInElimNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 2) {
+    return { severity: 'error', message: `FORALL_IN_ELIM '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+  }
+  const quantified = inputs.find(input => parseBoundedQuantifierProp(input.claim, 'forall'));
+  const membership = inputs.find(input => parseMembershipProp(input.claim));
+  if (!quantified || !membership) {
+    return { severity: 'error', message: `FORALL_IN_ELIM '${node.id}' must reference a bounded universal claim and a witness membership`, step: node.step, rule: node.rule };
+  }
+  const quantifier = parseBoundedQuantifierProp(quantified.claim, 'forall');
+  const witness = parseMembershipProp(membership.claim);
+  if (!quantifier || !witness) {
+    return { severity: 'error', message: `FORALL_IN_ELIM '${node.id}' has malformed bounded-quantifier inputs`, step: node.step, rule: node.rule };
+  }
+  const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
+  if (!sameProp(quantifier.set, witness.set) || !instantiated || !sameProp(instantiated, output.claim)) {
+    return { severity: 'error', message: `FORALL_IN_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateForallInIntroNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 2) {
+    return { severity: 'error', message: `FORALL_IN_INTRO '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+  }
+  const quantifier = parseBoundedQuantifierProp(output.claim, 'forall');
+  const membership = inputs.find(input => parseMembershipProp(input.claim) && input.source === 'assumption');
+  const bodyInput = inputs.find(input => input.id !== membership?.id);
+  if (!quantifier || !membership || !bodyInput) {
+    return { severity: 'error', message: `FORALL_IN_INTRO '${node.id}' must produce a bounded universal claim from witness assumptions`, step: node.step, rule: node.rule };
+  }
+  const membershipProp = parseMembershipProp(membership.claim);
+  if (!membershipProp) {
+    return { severity: 'error', message: `FORALL_IN_INTRO '${node.id}' has malformed witness membership`, step: node.step, rule: node.rule };
+  }
+  const instantiated = instantiateBoundedQuantifier(quantifier, membershipProp.element);
+  if (!sameProp(membershipProp.set, quantifier.set) || !instantiated || !sameProp(instantiated, bodyInput.claim)) {
+    return { severity: 'error', message: `FORALL_IN_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  if (!isFreshScopedWitness(membershipProp.element, quantifier, output.claim)) {
+    return { severity: 'error', message: `FORALL_IN_INTRO '${node.id}' does not use a fresh witness scope`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateExistsInIntroNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 2) {
+    return { severity: 'error', message: `EXISTS_IN_INTRO '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+  }
+  const quantified = parseBoundedQuantifierProp(output.claim, 'exists');
+  const membership = inputs.find(input => parseMembershipProp(input.claim));
+  if (!quantified || !membership) {
+    return { severity: 'error', message: `EXISTS_IN_INTRO '${node.id}' must produce a bounded existential claim from witness inputs`, step: node.step, rule: node.rule };
+  }
+  const witness = parseMembershipProp(membership.claim);
+  const bodyInput = inputs.find(input => input.id !== membership.id);
+  if (!witness || !bodyInput) {
+    return { severity: 'error', message: `EXISTS_IN_INTRO '${node.id}' has malformed witness inputs`, step: node.step, rule: node.rule };
+  }
+  const instantiated = instantiateBoundedQuantifier(quantified, witness.element);
+  if (!sameProp(quantified.set, witness.set) || !instantiated || !sameProp(instantiated, bodyInput.claim)) {
+    return { severity: 'error', message: `EXISTS_IN_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
+function validateExistsInElimNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject): Diagnostic | null {
+  if (inputs.length !== 3) {
+    return { severity: 'error', message: `EXISTS_IN_ELIM '${node.id}' requires 3 inputs`, step: node.step, rule: node.rule };
+  }
+  const existential = inputs.find(input => parseBoundedQuantifierProp(input.claim, 'exists'));
+  const memberships = inputs.filter(input => parseMembershipProp(input.claim) && input.source === 'assumption');
+  if (!existential || memberships.length < 2) {
+    return { severity: 'error', message: `EXISTS_IN_ELIM '${node.id}' must reference an existential claim plus witness membership and body assumptions`, step: node.step, rule: node.rule };
+  }
+  const quantifier = parseBoundedQuantifierProp(existential.claim, 'exists');
+  if (!quantifier) {
+    return { severity: 'error', message: `EXISTS_IN_ELIM '${node.id}' has malformed existential input`, step: node.step, rule: node.rule };
+  }
+  const scope = resolveExistsElimScopeFromInputs(quantifier, memberships.map(input => input.claim), output.claim);
+  if (!scope) {
+    return { severity: 'error', message: `EXISTS_IN_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+  }
+  return null;
+}
+
 function validateImpliesIntroNode(node: DerivationNode, inputs: ProofObject[], output: ProofObject, goal: string | null): Diagnostic | null {
   if (inputs.length < 1) {
     return { severity: 'error', message: `IMPLIES_INTRO '${node.id}' requires proof inputs`, step: node.step, rule: node.rule };
@@ -1105,6 +1225,8 @@ function buildProofObjectInput(
   source: Claim['source'];
   step: number;
   rule: CheckResult['rule'];
+  scopeIds?: string[];
+  dischargedScopeIds?: string[];
   dependsOn: string[];
   dependsOnIds?: string[];
   imports?: string[];
@@ -1115,6 +1237,7 @@ function buildProofObjectInput(
       source,
       step,
       rule: derivation?.rule ?? 'STRUCTURAL',
+      scopeIds: currentScopeIds(ctx),
       dependsOn: [],
     };
   }
@@ -1140,6 +1263,14 @@ function buildProofObjectInput(
       return buildIntersectionIntroProofObject(claim, source, step, ctx);
     case 'INTERSECTION_ELIM':
       return buildIntersectionElimProofObject(claim, source, step, ctx);
+    case 'FORALL_IN_ELIM':
+      return buildForallInElimProofObject(claim, source, step, ctx);
+    case 'FORALL_IN_INTRO':
+      return buildForallInIntroProofObject(claim, source, step, ctx);
+    case 'EXISTS_IN_INTRO':
+      return buildExistsInIntroProofObject(claim, source, step, ctx);
+    case 'EXISTS_IN_ELIM':
+      return buildExistsInElimProofObject(claim, source, step, ctx);
     case 'IMPLIES_INTRO':
       return buildImpliesIntroProofObject(claim, source, step, ctx);
     case 'CONTRADICTION':
@@ -1150,6 +1281,7 @@ function buildProofObjectInput(
         source,
         step,
         rule: derivation.rule,
+        scopeIds: currentScopeIds(ctx),
         dependsOn: [],
       };
   }
@@ -1171,6 +1303,12 @@ function implicationOutputClaim(claim: string, ctx: ProofContext): string {
   const implication = ctx.goal ? parseImplicationProp(ctx.goal) : parseImplicationProp(claim);
   if (!implication) return claim;
   return `${implication[0]} → ${implication[1]}`;
+}
+
+function forallOutputClaim(claim: string, ctx: ProofContext): string {
+  const quantifier = ctx.goal ? parseBoundedQuantifierProp(ctx.goal, 'forall') : parseBoundedQuantifierProp(claim, 'forall');
+  if (!quantifier || !ctx.goal) return claim;
+  return ctx.goal;
 }
 
 function buildImpliesElimProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
@@ -1281,14 +1419,72 @@ function buildIntersectionElimProofObject(claim: string, source: 'assertion' | '
   };
 }
 
+function buildForallInElimProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findForallInElimDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'FORALL_IN_ELIM' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildForallInIntroProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const outputClaim = forallOutputClaim(claim, ctx);
+  const dependency = findForallInIntroDependency(outputClaim, ctx);
+  const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
+  return {
+    content: outputClaim,
+    source,
+    step,
+    rule: 'FORALL_IN_INTRO' as const,
+    scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+    dischargedScopeIds,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildExistsInIntroProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findExistsInIntroDependency(claim, ctx);
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'EXISTS_IN_INTRO' as const,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
+function buildExistsInElimProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
+  const dependency = findExistsInElimDependency(claim, ctx);
+  const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
+  return {
+    content: claim,
+    source,
+    step,
+    rule: 'EXISTS_IN_ELIM' as const,
+    scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+    dischargedScopeIds,
+    dependsOn: dependency?.claims ?? [],
+    dependsOnIds: dependency?.ids ?? [],
+  };
+}
+
 function buildImpliesIntroProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
   const dependency = findImplicationIntroDependency(claim, ctx);
   const outputClaim = implicationOutputClaim(claim, ctx);
+  const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
   return {
     content: outputClaim,
     source,
     step,
     rule: 'IMPLIES_INTRO' as const,
+    scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+    dischargedScopeIds,
     dependsOn: dependency?.claims ?? [],
     dependsOnIds: dependency?.ids ?? [],
   };
@@ -1296,11 +1492,14 @@ function buildImpliesIntroProofObject(claim: string, source: 'assertion' | 'conc
 
 function buildContradictionDischargeProofObject(claim: string, source: 'assertion' | 'conclusion', step: number, ctx: ProofContext) {
   const dependency = findContradictionDependency(ctx);
+  const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
   return {
     content: claim,
     source,
     step,
     rule: 'CONTRADICTION' as const,
+    scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+    dischargedScopeIds,
     dependsOn: dependency?.claims ?? [],
     dependsOnIds: dependency?.ids ?? [],
   };
@@ -1484,27 +1683,116 @@ function findIntersectionElimDependency(
   return { claims: [candidate.claim], ids: [candidate.id] };
 }
 
-function findImplicationIntroDependency(
+function findForallInElimDependency(
   claim: string,
   ctx: ProofContext,
 ): { claims: string[]; ids: string[] } | null {
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const quantified = ctx.proofObjects[i];
+    const quantifier = parseBoundedQuantifierProp(quantified.claim, 'forall');
+    if (!quantifier) continue;
+    for (let j = ctx.proofObjects.length - 1; j >= 0; j--) {
+      const membership = ctx.proofObjects[j];
+      const witness = parseMembershipProp(membership.claim);
+      if (!witness || !sameProp(witness.set, quantifier.set)) continue;
+      const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
+      if (instantiated && sameProp(instantiated, claim)) {
+        return {
+          claims: [quantified.claim, membership.claim],
+          ids: uniqueIds([quantified.id, membership.id]),
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function findForallInIntroDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[]; dischargedScopeIds: string[] } | null {
+  const quantifier = parseBoundedQuantifierProp(claim, 'forall');
+  if (!quantifier) return null;
+  const scope = findForallInIntroScope(quantifier, ctx);
+  if (!scope) return null;
+  return {
+    claims: [scope.membership.claim, scope.body.claim],
+    ids: uniqueIds([scope.membership.id, scope.body.id]),
+    dischargedScopeIds: scope.dischargedScopeIds,
+  };
+}
+
+function findExistsInIntroDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[] } | null {
+  const quantifier = parseBoundedQuantifierProp(claim, 'exists');
+  if (!quantifier) return null;
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const membership = ctx.proofObjects[i];
+    const witness = parseMembershipProp(membership.claim);
+    if (!witness || !sameProp(witness.set, quantifier.set)) continue;
+    const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
+    if (!instantiated) continue;
+    const body = findLatestProofObjectByClaim(ctx, instantiated);
+    if (body) {
+      return {
+        claims: [membership.claim, body.claim],
+        ids: uniqueIds([membership.id, body.id]),
+      };
+    }
+  }
+  return null;
+}
+
+function findExistsInElimDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[]; dischargedScopeIds: string[] } | null {
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const existential = ctx.proofObjects[i];
+    const quantifier = parseBoundedQuantifierProp(existential.claim, 'exists');
+    if (!quantifier) continue;
+    const scope = findExistsElimScope(quantifier, claim, ctx);
+    if (!scope) continue;
+    return {
+      claims: [existential.claim, scope.membership.claim, scope.body.claim],
+      ids: uniqueIds([existential.id, scope.membership.id, scope.body.id]),
+      dischargedScopeIds: scope.dischargedScopeIds,
+    };
+  }
+  return null;
+}
+
+function findImplicationIntroDependency(
+  claim: string,
+  ctx: ProofContext,
+): { claims: string[]; ids: string[]; dischargedScopeIds: string[] } | null {
   const implication = ctx.goal ? parseImplicationProp(ctx.goal) : parseImplicationProp(claim);
   if (!implication) return null;
   const antecedentObject = findLatestProofObjectByClaim(ctx, implication[0], object => object.source === 'assumption');
   const consequentObject = findLatestProofObjectByClaim(ctx, implication[1]);
   if (!antecedentObject || !consequentObject) return null;
+  const dischargedScopeIds = scopesThrough(ctx, antecedentObject.scopeIds[antecedentObject.scopeIds.length - 1]);
   return {
     claims: [implication[0], implication[1]],
     ids: uniqueIds([antecedentObject.id, consequentObject.id]),
+    dischargedScopeIds,
   };
 }
 
-function findContradictionDependency(ctx: ProofContext): { claims: string[]; ids: string[] } | null {
+function findContradictionDependency(ctx: ProofContext): { claims: string[]; ids: string[]; dischargedScopeIds: string[] } | null {
   const contradiction = findContradictionProofObjects(ctx);
   if (!contradiction) return null;
+  const dischargedScopeIds = contradiction.a.source === 'assumption'
+    ? scopesThrough(ctx, contradiction.a.scopeIds[contradiction.a.scopeIds.length - 1])
+    : contradiction.b.source === 'assumption'
+      ? scopesThrough(ctx, contradiction.b.scopeIds[contradiction.b.scopeIds.length - 1])
+      : [];
   return {
     claims: [contradiction.a.claim, contradiction.b.claim],
     ids: uniqueIds([contradiction.a.id, contradiction.b.id]),
+    dischargedScopeIds,
   };
 }
 
@@ -1553,10 +1841,49 @@ function uniqueIds(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+function openScope(ctx: ProofContext, kind: ScopeFrame['kind'], label: string, step: number): ScopeFrame {
+  const scope: ScopeFrame = {
+    id: `scope:${kind}:${step}:${normalizeName(label)}`,
+    kind,
+    label,
+    step,
+  };
+  ctx.currentScopes.push(scope);
+  return scope;
+}
+
+function currentScopeIds(ctx: ProofContext): string[] {
+  return ctx.currentScopes.map(scope => scope.id);
+}
+
+function dischargeScopeIds(ctx: ProofContext, dischargedScopeIds: string[]): string[] {
+  const discharged = new Set(dischargedScopeIds);
+  return currentScopeIds(ctx).filter(id => !discharged.has(id));
+}
+
+function applyDischargedScopes(ctx: ProofContext, dischargedScopeIds?: string[]) {
+  if (!dischargedScopeIds || dischargedScopeIds.length === 0) return;
+  const discharged = new Set(dischargedScopeIds);
+  ctx.currentScopes = ctx.currentScopes.filter(scope => !discharged.has(scope.id));
+}
+
+function scopesThrough(ctx: ProofContext, scopeId?: string): string[] {
+  if (!scopeId) return [];
+  const index = ctx.currentScopes.findIndex(scope => scope.id === scopeId);
+  if (index === -1) return [];
+  return ctx.currentScopes.slice(index).map(scope => scope.id);
+}
+
+function isVisibleInCurrentScope(scopeIds: string[], ctx: ProofContext): boolean {
+  const active = currentScopeIds(ctx);
+  if (scopeIds.length > active.length) return false;
+  return scopeIds.every((id, index) => active[index] === id);
+}
+
 function resolveClaimIds(ctx: ProofContext, claims: string[]): string[] {
   const resolved: string[] = [];
   for (const claim of claims) {
-    const matches = ctx.established.filter(item => sameProp(item.content, claim) && item.proofObjectId);
+    const matches = ctx.established.filter(item => sameProp(item.content, claim) && item.proofObjectId && isVisibleInCurrentScope(item.scopeIds, ctx));
     if (matches.length > 0) {
       resolved.push(matches[matches.length - 1].proofObjectId!);
     }
@@ -1571,7 +1898,7 @@ function findLatestProofObjectByClaim(
 ): ProofObject | null {
   for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
     const object = ctx.proofObjects[i];
-    if (sameProp(object.claim, claim) && (!predicate || predicate(object))) {
+    if (sameProp(object.claim, claim) && isVisibleInCurrentScope(object.scopeIds, ctx) && (!predicate || predicate(object))) {
       return object;
     }
   }
@@ -1584,7 +1911,7 @@ function findLatestProofObject(
 ): ProofObject | null {
   for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
     const object = ctx.proofObjects[i];
-    if (predicate(object)) return object;
+    if (isVisibleInCurrentScope(object.scopeIds, ctx) && predicate(object)) return object;
   }
   return null;
 }
@@ -1628,6 +1955,14 @@ function minimumDependencyCount(rule: CheckResult['rule'], dependsOn: string[]):
     case 'INTERSECTION_INTRO':
       return uniqueProps(dependsOn).length;
     case 'INTERSECTION_ELIM':
+      return uniqueProps(dependsOn).length;
+    case 'FORALL_IN_ELIM':
+      return uniqueProps(dependsOn).length;
+    case 'FORALL_IN_INTRO':
+      return uniqueProps(dependsOn).length;
+    case 'EXISTS_IN_INTRO':
+      return uniqueProps(dependsOn).length;
+    case 'EXISTS_IN_ELIM':
       return uniqueProps(dependsOn).length;
     case 'IMPLIES_INTRO':
       return uniqueProps(dependsOn).length;
@@ -1747,6 +2082,18 @@ function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null
   const intersectionElim = checkIntersectionElimDerivedClaim(claim, ctx);
   if (intersectionElim?.valid) return intersectionElim;
 
+  const forallElim = checkForallInElimDerivedClaim(claim, ctx);
+  if (forallElim?.valid) return forallElim;
+
+  const forallIntro = checkForallInIntroDerivedClaim(claim, ctx);
+  if (forallIntro?.valid) return forallIntro;
+
+  const existsIntro = checkExistsInIntroDerivedClaim(claim, ctx);
+  if (existsIntro?.valid) return existsIntro;
+
+  const existsElim = checkExistsInElimDerivedClaim(claim, ctx);
+  if (existsElim?.valid) return existsElim;
+
   if (ctx.goal && sameProp(ctx.goal, claim)) {
     return {
       valid: false as const,
@@ -1846,6 +2193,60 @@ function checkIntersectionElimDerivedClaim(claim: string, ctx: ProofContext): Ch
   return null;
 }
 
+function checkForallInElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  for (const quantifiedItem of ctx.established) {
+    const quantifier = parseBoundedQuantifierProp(quantifiedItem.content, 'forall');
+    if (!quantifier) continue;
+    for (const membershipItem of ctx.established) {
+      const witness = parseMembershipProp(membershipItem.content);
+      if (!witness || !sameProp(witness.set, quantifier.set)) continue;
+      const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
+      if (instantiated && sameProp(instantiated, claim)) {
+        const result = checkForallInElim(quantifiedItem.content, membershipItem.content, claim, ctx);
+        if (result.valid) return result;
+      }
+    }
+  }
+  return null;
+}
+
+function checkForallInIntroDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const quantifier = parseBoundedQuantifierProp(claim, 'forall');
+  if (!quantifier) return null;
+  const scope = findForallInIntroScope(quantifier, ctx);
+  if (!scope) return null;
+  const result = checkForallInIntro(scope.membership.claim, scope.body.claim, claim, ctx);
+  return result.valid ? result : null;
+}
+
+function checkExistsInIntroDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  const quantifier = parseBoundedQuantifierProp(claim, 'exists');
+  if (!quantifier) return null;
+  for (const membershipItem of ctx.established) {
+    const witness = parseMembershipProp(membershipItem.content);
+    if (!witness || !sameProp(witness.set, quantifier.set)) continue;
+    const instantiated = instantiateBoundedQuantifier(quantifier, witness.element);
+    if (!instantiated) continue;
+    if (ctx.established.some(item => sameProp(item.content, instantiated))) {
+      const result = checkExistsInIntro(membershipItem.content, instantiated, claim, ctx);
+      if (result.valid) return result;
+    }
+  }
+  return null;
+}
+
+function checkExistsInElimDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  for (const existentialItem of ctx.established) {
+    const quantifier = parseBoundedQuantifierProp(existentialItem.content, 'exists');
+    if (!quantifier) continue;
+    const scope = findExistsElimScope(quantifier, claim, ctx);
+    if (!scope) continue;
+    const result = checkExistsInElim(existentialItem.content, scope.membership.claim, scope.body.claim, claim, ctx);
+    if (result.valid) return result;
+  }
+  return null;
+}
+
 function checkImplicationGoalDischarge(claim: string, ctx: ProofContext): CheckResult | null {
   if (!ctx.goal) return null;
   const implication = parseImplicationProp(ctx.goal);
@@ -1859,6 +2260,16 @@ function checkImplicationGoalDischarge(claim: string, ctx: ProofContext): CheckR
   );
   const consequentEstablished = ctx.established.some(item => sameProp(item.content, consequent));
   return checkImpliesIntro(antecedent, consequent, antecedentAssumed, consequentEstablished);
+}
+
+function checkForallGoalDischarge(claim: string, ctx: ProofContext): CheckResult | null {
+  if (!ctx.goal) return null;
+  const quantifier = parseBoundedQuantifierProp(ctx.goal, 'forall');
+  if (!quantifier) return null;
+  const scope = findForallInIntroScope(quantifier, ctx);
+  if (!scope) return null;
+  if (!sameProp(scope.body.claim, claim)) return null;
+  return checkForallInIntro(scope.membership.claim, scope.body.claim, ctx.goal, ctx);
 }
 
 function checkContradictionDischarge(claim: string, ctx: ProofContext): CheckResult | null {
@@ -1911,13 +2322,42 @@ function parseEqualityProp(prop: string): { left: string; right: string } | null
 }
 
 function parseMembershipProp(prop: string): { element: string; set: string } | null {
-  const match = stripParens(prop).match(/^(.+?)\s*(∈|∉)\s*(.+)$/);
+  const value = stripParens(prop);
+  if (value.startsWith('∀') || value.startsWith('∃')) return null;
+  const match = value.match(/^(.+?)\s*(∈|∉)\s*(.+)$/);
   if (!match) return null;
   return { element: stripParens(match[1].trim()), set: stripParens(match[3].trim()) };
 }
 
 function parseBinarySetProp(prop: string, operator: '∪' | '∩'): [string, string] | null {
   return splitTopLevel(stripParens(prop), operator);
+}
+
+function parseBoundedQuantifierProp(
+  prop: string,
+  kind: 'forall' | 'exists',
+): { kind: 'forall' | 'exists'; variable: string; set: string; body: string } | null {
+  const value = stripParens(prop);
+  const symbol = kind === 'forall' ? '∀' : '∃';
+  const match = value.match(new RegExp(`^${symbol}\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*(.+?)\\s*,\\s*(.+)$`));
+  if (match) {
+    return {
+      kind,
+      variable: match[1].trim(),
+      set: stripParens(match[2].trim()),
+      body: stripParens(match[3].trim()),
+    };
+  }
+  const parenMatch = value.match(new RegExp(`^${symbol}\\s*\\(\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*([^)]+)\\)\\s*,\\s*(.+)$`));
+  if (parenMatch) {
+    return {
+      kind,
+      variable: parenMatch[1].trim(),
+      set: stripParens(parenMatch[2].trim()),
+      body: stripParens(parenMatch[3].trim()),
+    };
+  }
+  return null;
 }
 
 function splitTopLevel(prop: string, operator: '→' | '∧' | '∪' | '∩'): [string, string] | null {
@@ -1957,6 +2397,108 @@ function supportsEqualitySubstitution(equalityClaim: string, membershipClaim: st
   });
 }
 
+function instantiateBoundedQuantifier(
+  quantifier: { variable: string; body: string },
+  witness: string,
+): string | null {
+  const variablePattern = new RegExp(`(^|[^\\w₀-₉ₐ-ₙ])${escapeRegExp(quantifier.variable)}([^\\w₀-₉ₐ-ₙ]|$)`, 'g');
+  if (!variablePattern.test(quantifier.body) && !sameProp(quantifier.body, quantifier.variable)) {
+    return null;
+  }
+  variablePattern.lastIndex = 0;
+  return quantifier.body.replace(variablePattern, (_, left, right) => `${left}${witness}${right}`);
+}
+
+function findExistsElimScope(
+  quantifier: { variable: string; set: string; body: string },
+  target: string,
+  ctx: ProofContext,
+): { witness: string; membership: ProofObject; body: ProofObject; dischargedScopeIds: string[] } | null {
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const membership = ctx.proofObjects[i];
+    const membershipProp = parseMembershipProp(membership.claim);
+    if (!membershipProp || membership.source !== 'assumption' || !sameProp(membershipProp.set, quantifier.set)) continue;
+    const witness = membershipProp.element;
+    if (!ctx.variables.some(variable => sameProp(variable.name, witness))) continue;
+    const instantiatedBody = instantiateBoundedQuantifier(quantifier, witness);
+    if (!instantiatedBody) continue;
+    const body = findLatestProofObjectByClaim(ctx, instantiatedBody, object => object.source === 'assumption');
+    if (!body) continue;
+    if (!containsFreeLikeVariable(target, witness)) {
+      return {
+        witness,
+        membership,
+        body,
+        dischargedScopeIds: scopesThrough(ctx, membership.scopeIds[membership.scopeIds.length - 1]),
+      };
+    }
+  }
+  return null;
+}
+
+function findForallInIntroScope(
+  quantifier: { variable: string; set: string; body: string },
+  ctx: ProofContext,
+): { witness: string; membership: ProofObject; body: ProofObject; dischargedScopeIds: string[] } | null {
+  const target = `∀ ${quantifier.variable} ∈ ${quantifier.set}, ${quantifier.body}`;
+  for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+    const membership = ctx.proofObjects[i];
+    const membershipProp = parseMembershipProp(membership.claim);
+    if (!membershipProp || membership.source !== 'assumption' || !sameProp(membershipProp.set, quantifier.set)) continue;
+    const witness = membershipProp.element;
+    if (!ctx.variables.some(variable => sameProp(variable.name, witness))) continue;
+    const instantiatedBody = instantiateBoundedQuantifier(quantifier, witness);
+    if (!instantiatedBody) continue;
+    const body = findLatestProofObjectByClaim(ctx, instantiatedBody);
+    if (!body) continue;
+    if (isFreshScopedWitness(witness, quantifier, target)) {
+      return {
+        witness,
+        membership,
+        body,
+        dischargedScopeIds: scopesThrough(ctx, membership.scopeIds[membership.scopeIds.length - 1]),
+      };
+    }
+  }
+  return null;
+}
+
+function resolveExistsElimScopeFromInputs(
+  quantifier: { variable: string; set: string; body: string },
+  claims: string[],
+  target: string,
+): { witness: string } | null {
+  for (const claim of claims) {
+    const membership = parseMembershipProp(claim);
+    if (!membership || !sameProp(membership.set, quantifier.set)) continue;
+    const instantiatedBody = instantiateBoundedQuantifier(quantifier, membership.element);
+    if (!instantiatedBody) continue;
+    if (claims.some(other => sameProp(other, instantiatedBody)) && !containsFreeLikeVariable(target, membership.element)) {
+      return { witness: membership.element };
+    }
+  }
+  return null;
+}
+
+function containsFreeLikeVariable(value: string, variable: string): boolean {
+  const pattern = new RegExp(`(^|[^\\w₀-₉ₐ-ₙ])${escapeRegExp(variable)}([^\\w₀-₉ₐ-ₙ]|$)`);
+  return pattern.test(value);
+}
+
+function isFreshScopedWitness(
+  witness: string,
+  quantifier: { variable: string; body: string },
+  target: string,
+): boolean {
+  if (sameProp(witness, quantifier.variable)) return false;
+  if (containsFreeLikeVariable(target, witness)) return false;
+  return instantiateBoundedQuantifier(quantifier, witness) !== null;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function isKernelCheckableAtom(value: string): boolean {
   return kernelSubsetGap(value) === null;
 }
@@ -1975,16 +2517,24 @@ function kernelSubsetDiagnostic(expr: ExprNode, label: string, step?: number): D
 }
 
 function kernelSubsetGap(value: string): { rule: string; hint: string } | null {
+  const forall = parseBoundedQuantifierProp(value, 'forall');
+  if (forall) {
+    return null;
+  }
+  const exists = parseBoundedQuantifierProp(value, 'exists');
+  if (exists) {
+    return null;
+  }
   if (/∀\s*[^,]*∈/.test(value) || /^∀/.test(value)) {
     return {
-      rule: 'FORALL_IN',
-      hint: 'Bounded universal quantifiers are parsed, but they are not kernel-checked in the fast checker subset.',
+      rule: 'FORALL_BINDER',
+      hint: 'Only bounded universal quantifiers in the form `∀x ∈ A, P(x)` are kernel-checked today.',
     };
   }
   if (/∃\s*[^,]*∈/.test(value) || /^∃/.test(value)) {
     return {
-      rule: 'EXISTS_IN',
-      hint: 'Bounded existential quantifiers are parsed, but they are not kernel-checked in the fast checker subset.',
+      rule: 'EXISTS_BINDER',
+      hint: 'Only bounded existential quantifiers in the form `∃x ∈ A, P(x)` are kernel-checked today.',
     };
   }
   const membership = parseMembershipProp(value);

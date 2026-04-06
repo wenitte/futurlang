@@ -107,6 +107,69 @@ proof UnionIntro() {
 }
 ```
 
+## Bounded Universal Elimination
+
+```fl
+theorem ForallInElim() {
+  given(∀ x ∈ A, x ∈ B) →
+  given(a ∈ A) →
+  assert(a ∈ B)
+} ↔
+
+proof ForallInElim() {
+  conclude(a ∈ B)
+}
+```
+
+## Bounded Universal Introduction
+
+```fl
+theorem ForallInIntro() {
+  assert(∀ x ∈ A, x ∈ B)
+} ↔
+
+proof ForallInIntro() {
+  setVar(a) →
+  assume(a ∈ A) →
+  assert(a ∈ B) →
+  conclude(∀ x ∈ A, x ∈ B)
+}
+```
+
+This is the current narrow introduction rule for bounded universals: the witness is introduced explicitly in source, the body is first derived for that witness as an intermediate fact, and the final quantified conclusion binds a different surface variable.
+
+## Bounded Existential Introduction
+
+```fl
+theorem ExistsInIntro() {
+  given(a ∈ A) →
+  given(a ∈ B) →
+  assert(∃ x ∈ A, x ∈ B)
+} ↔
+
+proof ExistsInIntro() {
+  conclude(∃ x ∈ A, x ∈ B)
+}
+```
+
+## Bounded Existential Elimination
+
+```fl
+theorem ExistsInElim() {
+  given(∃ x ∈ A, x ∈ B) →
+  assert(q)
+} ↔
+
+proof ExistsInElim() {
+  setVar(a) →
+  assume(a ∈ A) →
+  assume(a ∈ B) →
+  conclude(q)
+}
+```
+
+This is a narrow explicit witness-scope rule in the current checker: the witness variable must be introduced visibly, the witness assumptions must be explicit, and the final conclusion must not mention the witness.
+
 ## Intersection Left Projection
 
 ```fl
@@ -278,7 +341,7 @@ For the current math-focused demo path, tighten that slightly:
 
 That can now be stated more precisely:
 
-"FuturLang already validates a small kernel-backed subset of Unicode and word-form mathematical proofs, including subset transport, subset transitivity, equality substitution on membership claims, and basic union/intersection membership reasoning, all written as a single visible truth chain."
+"FuturLang already validates a small kernel-backed subset of Unicode and word-form mathematical proofs, including subset transport, subset transitivity, equality substitution on membership claims, basic union/intersection membership reasoning, and bounded quantifier elimination/introduction over set membership, all written as a single visible truth chain."
 
 For wording during demos:
 

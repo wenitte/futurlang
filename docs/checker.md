@@ -26,6 +26,14 @@
 - intersection membership introduction and elimination are validated:
   from `x ∈ A` and `x ∈ B`, the checker can derive `x ∈ A ∩ B`
   from `x ∈ A ∩ B`, the checker can derive either component membership
+- bounded universal elimination is validated:
+  from `∀x ∈ A, P(x)` and `a ∈ A`, the checker can derive `P(a)`
+- bounded universal introduction is validated in a narrow witness-scope form:
+  from `setVar(a)`, `a ∈ A`, and an explicit derived `P(a)`, the checker can derive `∀x ∈ A, P(x)` when the witness is used as a fresh scoped stand-in
+- bounded existential introduction is validated:
+  from `a ∈ A` and `P(a)`, the checker can derive `∃x ∈ A, P(x)`
+- bounded existential elimination is validated in a narrow witness-scope form:
+  from `∃x ∈ A, P(x)`, plus explicit assumptions `a ∈ A` and `P(a)` for a `setVar(a)` witness, the checker can discharge a conclusion that does not mention `a`
 - chained set-membership transport proofs are accepted when each step is justified by prior membership and subset facts
 - lemma application checks required hypotheses before adding lemma conclusions
 - `apply(...)` traces show both consumed lemma hypotheses and imported conclusions
@@ -39,7 +47,8 @@
 - dependent typing
 - definitional equality
 - normalization
-- rich binder elaboration, including kernel-checked `∀x ∈ A` and `∃x ∈ A`
+- rich binder elaboration beyond bounded `∀x ∈ A` elimination and bounded `∃x ∈ A` introduction
+- full quantified scope discipline beyond the current narrow `EXISTS_IN_ELIM` witness-shape check
 - complete lemma application semantics
 - a trusted contradiction kernel
 

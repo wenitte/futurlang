@@ -153,19 +153,19 @@ proof QuantifiedIdentity() {
     assert_1.strict.match(messages, /outside the current parser\/checker subset/i);
     assert_1.strict.match(messages, /opaque symbolic claim/i);
 });
-runTest('checker diagnoses bounded quantifiers as parsed but outside the kernel subset', () => {
+runTest('checker diagnoses unsupported quantified binder forms with a specific missing-rule hint', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem BoundedQuantifierDemo() {
-  assert(forall x in A, x in A)
+  assert(forall x, x in A)
 } ↔
 
 proof BoundedQuantifierDemo() {
-  assert(forall x in A, x in A)
+  assert(forall x, x in A)
 }
 `));
     const report = (0, checker_1.checkFile)(ast);
     const messages = report.reports.flatMap(r => r.diagnostics.map(d => `${d.message}\n${d.hint ?? ''}`)).join('\n');
-    assert_1.strict.match(messages, /FORALL_IN/);
+    assert_1.strict.match(messages, /FORALL_BINDER/);
     assert_1.strict.match(messages, /fl verify/);
 });
 runTest('checker accepts conjunction goals when both parts are established', () => {
@@ -371,6 +371,116 @@ proof IntersectionRight() {
     assert_1.strict.equal(elimReport.valid, true);
     assert_1.strict.equal(elimReport.reports[0].proofSteps[0].rule, 'INTERSECTION_ELIM');
     assert_1.strict.equal(elimReport.reports[0].derivedConclusion, 'x ∈ B');
+});
+runTest('checker validates bounded universal elimination', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ForallInElim() {
+  given(forall x in A, x in B) →
+  given(a in A) →
+  assert(a in B)
+} ↔
+
+proof ForallInElim() {
+  conclude(a in B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'FORALL_IN_ELIM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'a ∈ B');
+});
+runTest('checker validates bounded universal introduction with explicit witness scope', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ForallInIntro() {
+  assert(forall x in A, x in B)
+} ↔
+
+proof ForallInIntro() {
+  setVar(a) →
+  assume(a in A) →
+  assert(a in B) →
+  conclude(forall x in A, x in B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[3].rule, 'FORALL_IN_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, '∀ x ∈ A, x ∈ B');
+});
+runTest('checker rejects bounded universal introduction when the witness is reused as the binder', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ForallInIntroNotFresh() {
+  assert(forall a in A, a in B)
+} ↔
+
+proof ForallInIntroNotFresh() {
+  setVar(a) →
+  assume(a in A) →
+  assert(a in B) →
+  conclude(forall a in A, a in B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
+});
+runTest('checker validates bounded existential introduction', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ExistsInIntro() {
+  given(a in A) →
+  given(a in B) →
+  assert(exists x in A, x in B)
+} ↔
+
+proof ExistsInIntro() {
+  conclude(exists x in A, x in B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'EXISTS_IN_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, '∃ x ∈ A, x ∈ B');
+});
+runTest('checker validates bounded existential elimination with explicit witness scope', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ExistsInElim() {
+  given(exists x in A, x in B) →
+  assert(q)
+} ↔
+
+proof ExistsInElim() {
+  setVar(a) →
+  assume(a in A) →
+  assume(a in B) →
+  conclude(q)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[3].rule, 'EXISTS_IN_ELIM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'q');
+});
+runTest('checker rejects existential elimination when the witness leaks into the conclusion', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ExistsInElimLeak() {
+  given(exists x in A, x in B) →
+  assert(a in C)
+} ↔
+
+proof ExistsInElimLeak() {
+  setVar(a) →
+  assume(a in A) →
+  assume(a in B) →
+  conclude(a in C)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
 });
 runTest('checker enforces lemma hypotheses before apply', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`

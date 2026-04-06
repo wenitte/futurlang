@@ -12,6 +12,10 @@ exports.checkEqualitySubst = checkEqualitySubst;
 exports.checkUnionIntro = checkUnionIntro;
 exports.checkIntersectionIntro = checkIntersectionIntro;
 exports.checkIntersectionElim = checkIntersectionElim;
+exports.checkForallInElim = checkForallInElim;
+exports.checkForallInIntro = checkForallInIntro;
+exports.checkExistsInIntro = checkExistsInIntro;
+exports.checkExistsInElim = checkExistsInElim;
 exports.checkContradiction = checkContradiction;
 exports.checkLemmaApplication = checkLemmaApplication;
 exports.checkTheoremProofPairing = checkTheoremProofPairing;
@@ -172,6 +176,99 @@ function checkIntersectionElim(intersectionClaim, target, ctx) {
         rule: 'INTERSECTION_ELIM',
         message: `Cannot use intersection elimination: '${intersectionClaim}' not yet established`,
         hint: `Establish '${intersectionClaim}' before deriving '${target}'`,
+    };
+}
+function checkForallInElim(quantifiedClaim, witnessMembership, target, ctx) {
+    const hasQuantified = isEstablished(quantifiedClaim, ctx);
+    const hasMembership = isEstablished(witnessMembership, ctx);
+    if (hasQuantified && hasMembership) {
+        return { valid: true, rule: 'FORALL_IN_ELIM', message: `Bounded universal elimination: ${quantifiedClaim}, ${witnessMembership} ⊢ ${target}` };
+    }
+    if (!hasQuantified) {
+        return {
+            valid: false,
+            rule: 'FORALL_IN_ELIM',
+            message: `Cannot use bounded universal elimination: '${quantifiedClaim}' not yet established`,
+            hint: `Establish '${quantifiedClaim}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'FORALL_IN_ELIM',
+        message: `Cannot use bounded universal elimination: '${witnessMembership}' not yet established`,
+        hint: `Establish '${witnessMembership}' before deriving '${target}'`,
+    };
+}
+function checkForallInIntro(witnessMembership, instantiatedBody, target, ctx) {
+    const hasMembership = isEstablished(witnessMembership, ctx);
+    const hasBody = isEstablished(instantiatedBody, ctx);
+    if (hasMembership && hasBody) {
+        return { valid: true, rule: 'FORALL_IN_INTRO', message: `Bounded universal introduction: ${witnessMembership}, ${instantiatedBody} ⊢ ${target}` };
+    }
+    if (!hasMembership) {
+        return {
+            valid: false,
+            rule: 'FORALL_IN_INTRO',
+            message: `Cannot use bounded universal introduction: '${witnessMembership}' not yet established`,
+            hint: `Open an explicit witness scope and establish '${witnessMembership}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'FORALL_IN_INTRO',
+        message: `Cannot use bounded universal introduction: '${instantiatedBody}' not yet established`,
+        hint: `Establish '${instantiatedBody}' inside the witness scope before deriving '${target}'`,
+    };
+}
+function checkExistsInIntro(witnessMembership, instantiatedBody, target, ctx) {
+    const hasMembership = isEstablished(witnessMembership, ctx);
+    const hasBody = isEstablished(instantiatedBody, ctx);
+    if (hasMembership && hasBody) {
+        return { valid: true, rule: 'EXISTS_IN_INTRO', message: `Bounded existential introduction: ${witnessMembership}, ${instantiatedBody} ⊢ ${target}` };
+    }
+    if (!hasMembership) {
+        return {
+            valid: false,
+            rule: 'EXISTS_IN_INTRO',
+            message: `Cannot use bounded existential introduction: '${witnessMembership}' not yet established`,
+            hint: `Establish '${witnessMembership}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'EXISTS_IN_INTRO',
+        message: `Cannot use bounded existential introduction: '${instantiatedBody}' not yet established`,
+        hint: `Establish '${instantiatedBody}' before deriving '${target}'`,
+    };
+}
+function checkExistsInElim(existentialClaim, witnessMembership, instantiatedBody, target, ctx) {
+    const hasExistential = isEstablished(existentialClaim, ctx);
+    const hasMembership = isEstablished(witnessMembership, ctx);
+    const hasBody = isEstablished(instantiatedBody, ctx);
+    if (hasExistential && hasMembership && hasBody) {
+        return { valid: true, rule: 'EXISTS_IN_ELIM', message: `Bounded existential elimination: ${existentialClaim}, ${witnessMembership}, ${instantiatedBody} ⊢ ${target}` };
+    }
+    if (!hasExistential) {
+        return {
+            valid: false,
+            rule: 'EXISTS_IN_ELIM',
+            message: `Cannot use bounded existential elimination: '${existentialClaim}' not yet established`,
+            hint: `Establish '${existentialClaim}' before deriving '${target}'`,
+        };
+    }
+    if (!hasMembership) {
+        return {
+            valid: false,
+            rule: 'EXISTS_IN_ELIM',
+            message: `Cannot use bounded existential elimination: '${witnessMembership}' not yet established`,
+            hint: `Open an explicit witness scope and establish '${witnessMembership}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'EXISTS_IN_ELIM',
+        message: `Cannot use bounded existential elimination: '${instantiatedBody}' not yet established`,
+        hint: `Establish '${instantiatedBody}' inside the witness scope before deriving '${target}'`,
     };
 }
 // ── Rule: CONTRADICTION ───────────────────────────────────────────────────────

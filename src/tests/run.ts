@@ -128,19 +128,19 @@ proof QuantifiedIdentity() {
   assert.match(messages, /opaque symbolic claim/i);
 });
 
-runTest('checker diagnoses bounded quantifiers as parsed but outside the kernel subset', () => {
+runTest('checker diagnoses unsupported quantified binder forms with a specific missing-rule hint', () => {
   const ast = parseLinesToAST(lexFL(`
 theorem BoundedQuantifierDemo() {
-  assert(forall x in A, x in A)
+  assert(forall x, x in A)
 } ↔
 
 proof BoundedQuantifierDemo() {
-  assert(forall x in A, x in A)
+  assert(forall x, x in A)
 }
 `));
   const report = checkFile(ast);
   const messages = report.reports.flatMap(r => r.diagnostics.map(d => `${d.message}\n${d.hint ?? ''}`)).join('\n');
-  assert.match(messages, /FORALL_IN/);
+  assert.match(messages, /FORALL_BINDER/);
   assert.match(messages, /fl verify/);
 });
 
@@ -357,6 +357,122 @@ proof IntersectionRight() {
   assert.equal(elimReport.valid, true);
   assert.equal(elimReport.reports[0].proofSteps[0].rule, 'INTERSECTION_ELIM');
   assert.equal(elimReport.reports[0].derivedConclusion, 'x ∈ B');
+});
+
+runTest('checker validates bounded universal elimination', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ForallInElim() {
+  given(forall x in A, x in B) →
+  given(a in A) →
+  assert(a in B)
+} ↔
+
+proof ForallInElim() {
+  conclude(a in B)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[0].rule, 'FORALL_IN_ELIM');
+  assert.equal(theoremReport.derivedConclusion, 'a ∈ B');
+});
+
+runTest('checker validates bounded universal introduction with explicit witness scope', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ForallInIntro() {
+  assert(forall x in A, x in B)
+} ↔
+
+proof ForallInIntro() {
+  setVar(a) →
+  assume(a in A) →
+  assert(a in B) →
+  conclude(forall x in A, x in B)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[3].rule, 'FORALL_IN_INTRO');
+  assert.equal(theoremReport.derivedConclusion, '∀ x ∈ A, x ∈ B');
+});
+
+runTest('checker rejects bounded universal introduction when the witness is reused as the binder', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ForallInIntroNotFresh() {
+  assert(forall a in A, a in B)
+} ↔
+
+proof ForallInIntroNotFresh() {
+  setVar(a) →
+  assume(a in A) →
+  assert(a in B) →
+  conclude(forall a in A, a in B)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+  assert.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
+});
+
+runTest('checker validates bounded existential introduction', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsInIntro() {
+  given(a in A) →
+  given(a in B) →
+  assert(exists x in A, x in B)
+} ↔
+
+proof ExistsInIntro() {
+  conclude(exists x in A, x in B)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[0].rule, 'EXISTS_IN_INTRO');
+  assert.equal(theoremReport.derivedConclusion, '∃ x ∈ A, x ∈ B');
+});
+
+runTest('checker validates bounded existential elimination with explicit witness scope', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsInElim() {
+  given(exists x in A, x in B) →
+  assert(q)
+} ↔
+
+proof ExistsInElim() {
+  setVar(a) →
+  assume(a in A) →
+  assume(a in B) →
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.proofSteps[3].rule, 'EXISTS_IN_ELIM');
+  assert.equal(theoremReport.derivedConclusion, 'q');
+});
+
+runTest('checker rejects existential elimination when the witness leaks into the conclusion', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExistsInElimLeak() {
+  given(exists x in A, x in B) →
+  assert(a in C)
+} ↔
+
+proof ExistsInElimLeak() {
+  setVar(a) →
+  assume(a in A) →
+  assume(a in B) →
+  conclude(a in C)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+  assert.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
 });
 
 runTest('checker enforces lemma hypotheses before apply', () => {

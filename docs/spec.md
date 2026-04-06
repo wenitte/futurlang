@@ -18,6 +18,8 @@ Visible chaining is mandatory.
 
 This is a core language law, not just an implementation detail.
 
+For the explicit current construct list and composability rules, see `docs/language-reference.md`.
+
 ## Current Proof Surface
 
 Official chained surface:
@@ -122,5 +124,13 @@ Today, FuturLang is strongest on simple propositional demos:
 - intersection membership introduction and elimination:
   from `x ∈ A` and `x ∈ B`, derive `x ∈ A ∩ B`
   from `x ∈ A ∩ B`, derive `x ∈ A` or `x ∈ B`
+- bounded universal elimination:
+  from `∀x ∈ A, P(x)` and `a ∈ A`, derive `P(a)`
+- bounded universal introduction:
+  from explicit witness scope `a ∈ A` and an established `P(a)`, derive `∀x ∈ A, P(x)`
+- bounded existential introduction:
+  from `a ∈ A` and `P(a)`, derive `∃x ∈ A, P(x)`
+- bounded existential elimination in an explicit witness scope:
+  from `∃x ∈ A, P(x)`, open witness `a` with assumptions `a ∈ A` and `P(a)`, then derive a conclusion that does not mention `a`
 
 Advanced mathematics is not treated as proven by the JS evaluator. It must go through `fl verify`.

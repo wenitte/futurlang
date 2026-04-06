@@ -15,6 +15,7 @@ The next trustworthy core should check derivations over:
 - subset transitivity
 - equality substitution on membership claims
 - union/intersection membership rules
+- bounded quantifier elimination/introduction over set membership
 - theorem and lemma application
 
 ## Current State
@@ -72,6 +73,10 @@ That includes:
 - `UNION_INTRO`
 - `INTERSECTION_INTRO`
 - `INTERSECTION_ELIM`
+- `FORALL_IN_ELIM`
+- `FORALL_IN_INTRO`
+- `EXISTS_IN_INTRO`
+- `EXISTS_IN_ELIM`
 - `IMPLIES_INTRO`
 - `CONTRADICTION`
 - `BY_LEMMA` input resolution
@@ -93,6 +98,10 @@ The same internal proof-object model now covers a small cluster of additional se
 - `UNION_INTRO`: `x ∈ A` yields `x ∈ A ∪ B`
 - `INTERSECTION_INTRO`: `x ∈ A`, `x ∈ B` yields `x ∈ A ∩ B`
 - `INTERSECTION_ELIM`: `x ∈ A ∩ B` yields `x ∈ A` or `x ∈ B`
+- `FORALL_IN_ELIM`: `∀x ∈ A, P(x)`, `a ∈ A` yields `P(a)`
+- `FORALL_IN_INTRO`: explicit witness scope `a ∈ A`, together with an established `P(a)`, yields `∀x ∈ A, P(x)`
+- `EXISTS_IN_INTRO`: `a ∈ A`, `P(a)` yields `∃x ∈ A, P(x)`
+- `EXISTS_IN_ELIM`: `∃x ∈ A, P(x)` plus explicit witness assumptions `a ∈ A` and `P(a)` yields a witness-free conclusion
 
 `IMPLIES_INTRO` is now also self-sufficient in the internal model:
 
@@ -118,7 +127,7 @@ So this is not yet a trusted kernel, but it is a real move away from pure trace 
 The current checker is still not a trusted kernel for several reasons:
 
 - many mathematical statements outside the demo subset still fall back to structural acceptance
-- bounded quantifier surface like `∀x ∈ A` and `∃x ∈ A` is parsed, but still not kernel-checked
+- richer quantified reasoning is still missing, including bounded introduction for `∀`, stronger elimination for `∃`, and a deeper scoped proof object model
 - some proof meanings are still reconstructed from current context rather than carried explicitly in source
 - there is no dependent type theory underneath
 - there is no normalization or definitional equality engine

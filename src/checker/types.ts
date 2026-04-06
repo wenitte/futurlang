@@ -23,6 +23,10 @@ export type InferenceRule =
   | 'UNION_INTRO'       // have x ∈ A, conclude x ∈ A ∪ B
   | 'INTERSECTION_INTRO'// have x ∈ A and x ∈ B, conclude x ∈ A ∩ B
   | 'INTERSECTION_ELIM' // have x ∈ A ∩ B, conclude x ∈ A or x ∈ B
+  | 'FORALL_IN_ELIM'    // have ∀x ∈ A, P(x) and a ∈ A, conclude P(a)
+  | 'FORALL_IN_INTRO'   // open fresh witness a with a ∈ A and derive P(a), conclude ∀x ∈ A, P(x)
+  | 'EXISTS_IN_INTRO'   // have a ∈ A and P(a), conclude ∃x ∈ A, P(x)
+  | 'EXISTS_IN_ELIM'    // have ∃x ∈ A, P(x), open witness a with a ∈ A and P(a), conclude witness-free Q
   | 'OR_INTRO'          // have P, conclude P ∨ Q
   | 'IFF_INTRO'         // prove P → Q and Q → P, conclude P ↔ Q
   // Proof methods
@@ -43,6 +47,8 @@ export interface ProofContext {
   derivations: DerivationNode[];
   // Variables in scope
   variables: Variable[];
+  // Explicit nested proof scopes currently open.
+  currentScopes: ScopeFrame[];
   // Lemmas available (from earlier in the file or inline)
   lemmas: Map<string, ClaimSet>;
   // The current proof method (contradiction, induction, direct)
@@ -57,6 +63,7 @@ export interface Claim {
   content: string;       // the claim text
   source: ClaimSource;   // how it was established
   step: number;          // which step introduced it
+  scopeIds: string[];
   proofObjectId?: string;
 }
 
@@ -72,6 +79,14 @@ export type ClaimSource =
 export interface Variable {
   name: string;
   type: string | null;
+  step: number;
+  scopeId: string;
+}
+
+export interface ScopeFrame {
+  id: string;
+  kind: 'variable' | 'assumption';
+  label: string;
   step: number;
 }
 
@@ -89,6 +104,8 @@ export interface ProofObject {
   rule: InferenceRule;
   source: ClaimSource;
   step: number;
+  scopeIds: string[];
+  dischargedScopeIds?: string[];
   dependsOn: string[];
   dependsOnIds: string[];
   imports?: string[];
@@ -100,6 +117,7 @@ export interface DerivationNode {
   rule: InferenceRule;
   inputIds: string[];
   outputId: string;
+  dischargedScopeIds?: string[];
 }
 
 // A diagnostic message from the checker
