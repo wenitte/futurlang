@@ -67,12 +67,36 @@ function runCheck(file: string) {
     const icon   = r.valid ? '✓' : '✗';
     const method = r.method !== 'unknown' ? ` [${r.method}]` : '';
     console.log(`  ${icon} ${r.name}${method}  (${r.stepCount} steps, depth ${r.metrics.dependencyDepth})`);
+    if (r.premises.length > 0) {
+      console.log(`      premises: ${r.premises.join(' ; ')}`);
+    }
+    if (r.goal) {
+      console.log(`      goal: ${r.goal}`);
+    }
+    if (r.derivedConclusion) {
+      console.log(`      final: ${r.derivedConclusion}`);
+    }
+    for (const step of r.proofSteps) {
+      const stepIcon = step.valid ? '✓' : '✗';
+      console.log(`      ${stepIcon} step ${step.step} [${step.rule}] ${step.kind} ${step.claim}`);
+      if (step.uses && step.uses.length > 0) {
+        console.log(`        uses: ${step.uses.join(' ; ')}`);
+      }
+      if (step.imports && step.imports.length > 0) {
+        console.log(`        imports: ${step.imports.join(' ; ')}`);
+      }
+      if (step.establishesAs) {
+        console.log(`        establishes-as: ${step.establishesAs}`);
+      }
+    }
     for (const d of r.diagnostics) {
       if (d.severity === 'error') {
         console.log(`      ✗ ${d.message}`);
         if (d.hint) console.log(`        hint: ${d.hint}`);
       } else if (d.severity === 'warning') {
         console.log(`      ⚠ ${d.message}`);
+      } else if (d.severity === 'info' && d.rule && d.rule !== 'THEOREM_PROOF') {
+        console.log(`      ℹ ${d.message}`);
       }
     }
   }

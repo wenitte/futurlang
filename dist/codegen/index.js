@@ -14,14 +14,17 @@ function generateJSFromAST(nodes, runtime) {
 }
 // ── Fold a list of nodes into one nested JS expression ──────────────────────
 function foldNodes(nodes) {
+    return foldNodesWithMode(nodes, false);
+}
+function foldNodesWithMode(nodes, symbolicMode) {
     const meaningful = nodes.filter(n => !(n.type === 'Raw' && n.content.trim().length === 0));
     if (meaningful.length === 0)
         return 'atom(true, "∅")';
-    let acc = nodeToExpr(meaningful[meaningful.length - 1]);
+    let acc = nodeToExpr(meaningful[meaningful.length - 1], symbolicMode);
     for (let i = meaningful.length - 2; i >= 0; i--) {
         const node = meaningful[i];
         const conn = node.connective ?? '→';
-        const left = nodeToExpr(node);
+        const left = nodeToExpr(node, symbolicMode);
         acc = applyConnective(conn, left, acc);
     }
     return acc;
@@ -35,16 +38,23 @@ function applyConnective(conn, left, right) {
     }
 }
 // ── Convert a single node to a JS expression string ─────────────────────────
-function nodeToExpr(node) {
+function nodeToExpr(node, symbolicMode = false) {
     switch (node.type) {
         case 'Theorem': return generateTheorem(node);
         case 'Proof': return generateProof(node);
         case 'Lemma': return generateLemma(node);
         case 'Definition': return generateDefinition(node);
         case 'Struct': return generateStruct(node);
-        case 'Assert': return `assertExpr(${generateExpr(node.expr)})`;
-        case 'Assume': return `assumeExpr(${generateExpr(node.expr)})`;
-        case 'Conclude': return `concludeExpr(${generateExpr(node.expr)})`;
+        case 'Assert':
+            return symbolicMode
+                ? `assertExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
+                : `assertExpr(${generateExpr(node.expr)})`;
+        case 'Given': return `assumeExpr(${JSON.stringify(renderExprSource(node.expr))})`;
+        case 'Assume': return `assumeExpr(${JSON.stringify(renderExprSource(node.expr))})`;
+        case 'Conclude':
+            return symbolicMode
+                ? `concludeExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
+                : `concludeExpr(${generateExpr(node.expr)})`;
         case 'Apply': return `applyLemma(${JSON.stringify(node.target)})`;
         case 'SetVar': return generateSetVar(node);
         case 'Raw': return `atom(true, ${JSON.stringify(node.content)})`;
@@ -56,15 +66,15 @@ function nodeToExpr(node) {
 }
 // ── Block generators ─────────────────────────────────────────────────────────
 function generateTheorem(node) {
-    const inner = foldNodes(node.body);
+    const inner = foldNodesWithMode(node.body, blockUsesSymbolicProofMode(node.body));
     return `theorem(${JSON.stringify(node.name)}, () => ${inner})`;
 }
 function generateProof(node) {
-    const inner = foldNodes(node.body);
+    const inner = foldNodesWithMode(node.body, blockUsesSymbolicProofMode(node.body));
     return `proof(${JSON.stringify(node.name)}, () => ${inner})`;
 }
 function generateLemma(node) {
-    const inner = foldNodes(node.body);
+    const inner = foldNodesWithMode(node.body, blockUsesSymbolicProofMode(node.body));
     return `lemma(${JSON.stringify(node.name)}, () => ${inner})`;
 }
 function generateDefinition(node) {
@@ -135,6 +145,32 @@ function generateAtom(node) {
     }
     // Bare identifier
     return `atom(() => !!${c}, ${lbl})`;
+}
+function renderExprSource(node) {
+    switch (node.type) {
+        case 'Atom':
+            return node.condition;
+        case 'And':
+            return `(${renderExprSource(node.left)} ∧ ${renderExprSource(node.right)})`;
+        case 'Or':
+            return `(${renderExprSource(node.left)} ∨ ${renderExprSource(node.right)})`;
+        case 'Implies':
+            return `(${renderExprSource(node.left)} → ${renderExprSource(node.right)})`;
+        case 'Iff':
+            return `(${renderExprSource(node.left)} ↔ ${renderExprSource(node.right)})`;
+        case 'Not':
+            return `¬${renderExprSource(node.operand)}`;
+        default: {
+            const _ = node;
+            throw new Error('Unhandled expr node type');
+        }
+    }
+}
+function blockUsesSymbolicProofMode(nodes) {
+    return nodes.some(node => node.type === 'Given' ||
+        node.type === 'Assume' ||
+        node.type === 'Apply' ||
+        node.type === 'Conclude');
 }
 // keep for compatibility
 function generateNode(node) { return nodeToExpr(node); }

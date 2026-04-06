@@ -61,6 +61,8 @@ proof Identity() {
   assert.equal(report.pairedCount, 1);
   assert.equal(report.reports[0].goal, 'p → p');
   assert.equal(report.reports[0].derivedConclusion, 'p');
+  assert.equal(report.reports[0].proofSteps[0].rule, 'ASSUMPTION');
+  assert.equal(report.reports[0].proofSteps[1].rule, 'IMPLIES_INTRO');
 });
 
 runTest('checker rejects proofs that do not establish theorem goal', () => {
@@ -87,11 +89,214 @@ theorem Pair() {
 
 proof Pair() {
   assume(p) →
-  assert(q)
+  assert(q) →
+  conclude(p && q)
 }
 `));
   const report = checkFile(ast);
   assert.equal(report.valid, true);
+  assert.equal(report.reports[0].proofSteps[2].rule, 'AND_INTRO');
+});
+
+runTest('checker accepts modus ponens style derivations', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ModusPonens() {
+  given(p -> q)
+  assert(q)
+} ↔
+
+proof ModusPonens() {
+  assume(p) →
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  assert.equal(report.reports[0].premises[0], 'p → q');
+  assert.equal(report.reports[0].proofSteps[1].rule, 'IMPLIES_ELIM');
+});
+
+runTest('checker accepts conjunction elimination derivations', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem LeftProjection() {
+  assert((p && q) -> p)
+} ↔
+
+proof LeftProjection() {
+  assume(p && q) →
+  conclude(p)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  assert.equal(report.reports[0].proofSteps[1].rule, 'AND_ELIM');
+});
+
+runTest('checker enforces lemma hypotheses before apply', () => {
+  const ast = parseLinesToAST(lexFL(`
+lemma NeedsP() {
+  given(p)
+  assert(q)
+} ↔
+
+proof NeedsP() {
+  conclude(q)
+} →
+
+theorem UsesLemma() {
+  assert(q)
+} ↔
+
+proof UsesLemma() {
+  apply(NeedsP)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, false);
+  assert.match(report.reports.map(r => r.diagnostics.map(d => d.message).join('\n')).join('\n'), /missing hypotheses p/);
+});
+
+runTest('checker accepts chained lemma application with satisfied hypotheses', () => {
+  const ast = parseLinesToAST(lexFL(`
+lemma ForwardStep() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof ForwardStep() {
+  assume(p) →
+  conclude(q)
+} →
+
+theorem UsesForwardStep() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof UsesForwardStep() {
+  assume(p) →
+  apply(ForwardStep)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports.find(r => r.name === 'UsesForwardStep');
+  assert.ok(theoremReport);
+  assert.equal(theoremReport!.proofSteps[1].rule, 'BY_LEMMA');
+  assert.equal(theoremReport!.proofSteps[1].uses?.[0], 'p → q');
+  assert.equal(theoremReport!.proofSteps[1].imports?.[0], 'q');
+  const importedFact = theoremReport!.proofObjects.find(object => object.source === 'lemma_application' && object.claim === 'q');
+  assert.ok(importedFact);
+  assert.equal(importedFact!.dependsOn[0], 'p → q');
+  assert.equal(importedFact!.imports?.[0], 'q');
+});
+
+runTest('checker accepts chained multi-premise implication demo', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ChainImplication() {
+  given(p -> q) →
+  given(q -> r) →
+  assert(r)
+} ↔
+
+proof ChainImplication() {
+  assume(p) →
+  assert(q) →
+  conclude(r)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+});
+
+runTest('checker accepts chained conjunction premise demo', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem RightProjection() {
+  given(p && q) →
+  assert(q)
+} ↔
+
+proof RightProjection() {
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+});
+
+runTest('checker accepts contradiction discharge in the current demo subset', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ExplosionDemo() {
+  given(p) →
+  given(¬p) →
+  assert(q)
+} ↔
+
+proof ExplosionDemo() {
+  assume(¬q) →
+  contradiction() →
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.equal(theoremReport.method, 'contradiction');
+  assert.equal(theoremReport.proofSteps[1].rule, 'CONTRADICTION');
+  assert.equal(theoremReport.proofSteps[2].rule, 'CONTRADICTION');
+  const contradictionFact = theoremReport.proofObjects.find(object => object.claim === 'contradiction');
+  assert.ok(contradictionFact);
+  assert.match(contradictionFact!.dependsOn.join(' '), /p/);
+  assert.match(contradictionFact!.dependsOn.join(' '), /¬p/);
+});
+
+runTest('checker records implication proof objects for derived facts', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem ModusPonens() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof ModusPonens() {
+  assume(p) →
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  const theoremReport = report.reports[0];
+  const conclusionObject = theoremReport.proofObjects.find(object => object.source === 'conclusion' && object.claim === 'q');
+  assert.ok(conclusionObject);
+  assert.equal(conclusionObject!.rule, 'IMPLIES_ELIM');
+  assert.equal(conclusionObject!.dependsOn.length, 2);
+  assert.match(conclusionObject!.dependsOn.join(' '), /p/);
+  assert.match(conclusionObject!.dependsOn.join(' '), /q/);
+});
+
+runTest('parser rejects missing connective between top-level blocks', () => {
+  assert.throws(
+    () => parseLinesToAST(lexFL(`
+lemma ForwardStep() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof ForwardStep() {
+  assume(p) →
+  conclude(q)
+}
+
+theorem UsesForwardStep() {
+  given(p -> q) →
+  assert(q)
+} ↔
+
+proof UsesForwardStep() {
+  assume(p) →
+  apply(ForwardStep)
+}
+`)),
+    /Missing connective between top-level blocks/,
+  );
 });
 
 runTest('eval backend rejects unsupported mathematical notation', () => {

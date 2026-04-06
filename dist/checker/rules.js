@@ -5,6 +5,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkAssumption = checkAssumption;
 exports.checkModusPonens = checkModusPonens;
 exports.checkAndIntro = checkAndIntro;
+exports.checkAndElim = checkAndElim;
 exports.checkContradiction = checkContradiction;
 exports.checkLemmaApplication = checkLemmaApplication;
 exports.checkTheoremProofPairing = checkTheoremProofPairing;
@@ -53,6 +54,19 @@ function checkAndIntro(left, right, ctx) {
         hint: `Establish '${missing}' before asserting the conjunction`
     };
 }
+// ── Rule: AND_ELIM ───────────────────────────────────────────────────────────
+// If P ∧ Q is established, then either P or Q may be concluded.
+function checkAndElim(target, conjunction, ctx) {
+    const hasConjunction = isEstablished(conjunction, ctx);
+    if (!hasConjunction) {
+        return {
+            valid: false, rule: 'AND_ELIM',
+            message: `Cannot eliminate conjunction: '${conjunction}' not yet established`,
+            hint: `Establish '${conjunction}' before deriving '${target}'`
+        };
+    }
+    return { valid: true, rule: 'AND_ELIM', message: `Conjunction elimination: ${conjunction} ⊢ ${target}` };
+}
 // ── Rule: CONTRADICTION ───────────────────────────────────────────────────────
 // If we have assume(¬P) (or assume(P) then derive its negation), the
 // contradiction is valid and we can conclude P (or anything).
@@ -84,7 +98,17 @@ function checkContradiction(ctx) {
 // or as an inline lemma block in this proof).
 function checkLemmaApplication(lemmaName, ctx) {
     const key = lemmaName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-    if (ctx.lemmas.has(key)) {
+    const lemma = ctx.lemmas.get(key);
+    if (lemma) {
+        const missing = lemma.hypotheses.filter(h => !isEstablished(h, ctx));
+        if (missing.length > 0) {
+            return {
+                valid: false,
+                rule: 'BY_LEMMA',
+                message: `Cannot apply ${lemmaName}: missing hypotheses ${missing.join(', ')}`,
+                hint: `Establish the required hypotheses before apply(${lemmaName})`,
+            };
+        }
         return { valid: true, rule: 'BY_LEMMA', message: `Applied lemma: ${lemmaName}` };
     }
     // Not found — warning not error (lemma may be a known mathematical result)

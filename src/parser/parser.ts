@@ -10,7 +10,7 @@ import { parseExpr } from './expr';
 import {
   ASTNode, BlockConnective,
   TheoremNode, DefinitionNode, StructNode, ProofNode, LemmaNode,
-  AssertNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode,
+  AssertNode, GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode,
 } from './ast';
 
 type BlockNode = TheoremNode | DefinitionNode | StructNode | ProofNode | LemmaNode;
@@ -61,37 +61,22 @@ export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
 
       // ── Statement nodes ────────────────────────────────────────────────────
       case 'assert': {
-        const body = extractCallBody(line.content, 'assert');
-        let expr;
-        try {
-          expr = parseExpr(body);
-        } catch {
-          // Preserve unsupported claims for non-JS backends, but do not
-          // silently turn them into provable string assertions.
-          expr = { type: 'Atom' as const, condition: body, atomKind: 'opaque' as const };
-        }
+        const expr = parseCallExpr(line.content, 'assert');
         const node: AssertNode = { type: 'Assert', expr, connective: line.connective };
         pushOrTop(stack, ast, node); break;
       }
+      case 'given': {
+        const expr = parseCallExpr(line.content, 'given');
+        const node: GivenNode = { type: 'Given', expr, connective: line.connective };
+        pushOrTop(stack, ast, node); break;
+      }
       case 'assume': {
-        const body = extractCallBody(line.content, 'assume');
-        let expr;
-        try {
-          expr = parseExpr(body);
-        } catch {
-          expr = { type: 'Atom' as const, condition: body, atomKind: 'opaque' as const };
-        }
+        const expr = parseCallExpr(line.content, 'assume');
         const node: AssumeNode = { type: 'Assume', expr, connective: line.connective };
         pushOrTop(stack, ast, node); break;
       }
       case 'conclude': {
-        const body = extractCallBody(line.content, 'conclude');
-        let expr;
-        try {
-          expr = parseExpr(body);
-        } catch {
-          expr = { type: 'Atom' as const, condition: body, atomKind: 'opaque' as const };
-        }
+        const expr = parseCallExpr(line.content, 'conclude');
         const node: ConcludeNode = { type: 'Conclude', expr, connective: line.connective };
         pushOrTop(stack, ast, node); break;
       }
@@ -119,6 +104,7 @@ export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
   }
 
   if (stack.length > 0) throw new Error(`Unclosed block: ${stack[stack.length - 1].type}`);
+  validateTopLevelConnectives(ast);
   return ast;
 }
 
@@ -173,4 +159,41 @@ function parseSetVar(content: string, connective: BlockConnective): SetVarNode {
   }
   // Bare name
   return { type: 'SetVar', varName: inner.trim(), varType: null, value: null, connective };
+}
+
+function parseCallExpr(content: string, keyword: string) {
+  const body = extractCallBody(content, keyword);
+  try {
+    return parseExpr(body);
+  } catch {
+    return { type: 'Atom' as const, condition: body, atomKind: 'opaque' as const };
+  }
+}
+
+function validateTopLevelConnectives(ast: ASTNode[]) {
+  for (let i = 0; i < ast.length - 1; i++) {
+    const node = ast[i];
+    if (isTopLevelBlock(node) && node.connective === null) {
+      throw new Error(`Missing connective between top-level blocks after ${describeTopLevelNode(node)}`);
+    }
+  }
+}
+
+function isTopLevelBlock(node: ASTNode): node is BlockNode {
+  return node.type === 'Theorem' ||
+    node.type === 'Definition' ||
+    node.type === 'Struct' ||
+    node.type === 'Proof' ||
+    node.type === 'Lemma';
+}
+
+function describeTopLevelNode(node: BlockNode): string {
+  switch (node.type) {
+    case 'Theorem':
+    case 'Definition':
+    case 'Struct':
+    case 'Proof':
+    case 'Lemma':
+      return `${node.type.toLowerCase()} '${node.name}'`;
+  }
 }

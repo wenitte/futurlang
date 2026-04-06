@@ -1,0 +1,11 @@
+theorem ChainImplication() {
+  given(p -> q) →
+  given(q -> r) →
+  assert(r)
+} ↔
+
+proof ChainImplication() {
+  assume(p) →
+  assert(q) →
+  conclude(r)
+}

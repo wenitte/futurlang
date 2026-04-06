@@ -3,16 +3,17 @@
 
 import {
   ASTNode, TheoremNode, ProofNode, LemmaNode, DefinitionNode,
-  AssertNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode,
+  AssertNode, GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode,
   ExprNode,
 } from '../parser/ast';
 import {
   ProofContext, ProofReport, FileReport, Diagnostic,
-  Claim, Variable, ClaimSet, ProofMethod,
+  Claim, Variable, ClaimSet, ProofMethod, CheckResult, ProofStepTrace, ProofObject,
 } from './types';
 import {
   checkAssumption, checkContradiction, checkLemmaApplication,
   checkTheoremProofPairing, checkInduction, checkAndIntro,
+  checkAndElim, checkImpliesIntro, checkModusPonens,
 } from './rules';
 import {
   exprToProp, sameProp, splitConjunction as splitGoalConjunction,
@@ -31,6 +32,7 @@ export function checkFile(nodes: ASTNode[]): FileReport {
 
   // Pass 2: find and check theorem↔proof pairs
   const pairs = findPairs(nodes);
+  const pairedNames = new Set(pairs.map(pair => normalizeName(pair.theorem.name)));
 
   let theoremCount = 0, proofCount = 0, pairedCount = 0;
 
@@ -39,8 +41,10 @@ export function checkFile(nodes: ASTNode[]): FileReport {
     if (node.type === 'Proof')   proofCount++;
     if (node.type === 'Lemma')   {
       theoremCount++;
-      const report = checkProofBlock(node.name, node.body, globalLemmas, 'unknown');
-      reports.push(report);
+      if (!pairedNames.has(normalizeName(node.name))) {
+        const report = checkProofBlock(node.name, node.body, globalLemmas, 'unknown');
+        reports.push(report);
+      }
     }
   }
 
@@ -70,7 +74,7 @@ export function checkFile(nodes: ASTNode[]): FileReport {
 // ── Pair finding ──────────────────────────────────────────────────────────────
 
 interface TheoremProofPair {
-  theorem: TheoremNode;
+  theorem: TheoremNode | LemmaNode;
   proof:   ProofNode;
 }
 
@@ -78,7 +82,7 @@ function findPairs(nodes: ASTNode[]): TheoremProofPair[] {
   const pairs: TheoremProofPair[] = [];
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
-    if (node.type === 'Theorem' && node.connective === '↔') {
+    if ((node.type === 'Theorem' || node.type === 'Lemma') && node.connective === '↔') {
       // Look for matching proof
       for (let j = i + 1; j < nodes.length; j++) {
         if (nodes[j].type === 'Proof') {
@@ -98,8 +102,11 @@ function findPairs(nodes: ASTNode[]): TheoremProofPair[] {
 
 // ── Check a theorem↔proof pair ────────────────────────────────────────────────
 
-function checkPair(thm: TheoremNode, proof: ProofNode, globalLemmas: Map<string, ClaimSet>): ProofReport {
+function checkPair(thm: TheoremNode | LemmaNode, proof: ProofNode, globalLemmas: Map<string, ClaimSet>): ProofReport {
   const diagnostics: Diagnostic[] = [];
+  const theoremPremises = thm.body
+    .filter((n): n is GivenNode => n.type === 'Given')
+    .map(node => exprToProp(node.expr));
   const theoremGoalExpr = thm.body.find((n): n is AssertNode => n.type === 'Assert')?.expr ?? null;
   const theoremGoal = theoremGoalExpr ? exprToProp(theoremGoalExpr) : null;
 
@@ -120,7 +127,7 @@ function checkPair(thm: TheoremNode, proof: ProofNode, globalLemmas: Map<string,
   const method = detectProofMethod(proof.body);
 
   // Check the proof body
-  const proofReport = checkProofBlock(proof.name, proof.body, globalLemmas, method, theoremGoal);
+  const proofReport = checkProofBlock(proof.name, proof.body, globalLemmas, method, theoremGoal, theoremPremises);
   diagnostics.push(...proofReport.diagnostics);
 
   if (theoremGoalExpr) {
@@ -146,7 +153,10 @@ function checkPair(thm: TheoremNode, proof: ProofNode, globalLemmas: Map<string,
     method,
     stepCount: proof.body.length,
     goal: theoremGoal,
+    premises: theoremPremises,
     derivedConclusion: proofReport.derivedConclusion,
+    proofSteps: proofReport.proofSteps,
+    proofObjects: proofReport.proofObjects,
     diagnostics,
     metrics: proofReport.metrics,
   };
@@ -159,11 +169,26 @@ function checkProofBlock(
   body: ASTNode[],
   globalLemmas: Map<string, ClaimSet>,
   method: ProofMethod,
-  goal: string | null = null
+  goal: string | null = null,
+  premises: string[] = []
 ): ProofReport {
   const diagnostics: Diagnostic[] = [];
+  const premiseClaims = premises.map((content, index) => ({
+    content,
+    source: 'premise' as const,
+    step: -(index + 1),
+    proofObjectId: makeProofObjectId(-(index + 1), 'premise', content),
+  }));
   const ctx: ProofContext = {
-    established: [],
+    established: premiseClaims,
+    proofObjects: premiseClaims.map(claim => ({
+      id: claim.proofObjectId!,
+      claim: claim.content,
+      rule: 'PREMISE',
+      source: claim.source,
+      step: claim.step,
+      dependsOn: [],
+    })),
     variables: [],
     lemmas: new Map(globalLemmas),
     method,
@@ -175,6 +200,7 @@ function checkProofBlock(
   let assumptionCount = 0, assertionCount = 0, lemmaCount = 0;
   let hasConclusion = false, hasSorry = false;
   let maxDepth = 0, currentDepth = 0;
+  const proofSteps: ProofStepTrace[] = [];
 
   for (const node of body) {
     step++;
@@ -187,7 +213,22 @@ function checkProofBlock(
         if (!result.valid) {
           diagnostics.push({ severity: 'error', message: result.message, step, rule: result.rule });
         }
-        ctx.established.push({ content: claim, source: 'assumption', step });
+        const established = registerClaim(ctx, {
+          content: claim,
+          source: 'assumption',
+          step,
+          rule: result.rule,
+          dependsOn: [],
+        });
+        proofSteps.push({
+          step,
+          kind: 'assume',
+          claim,
+          rule: result.rule,
+          valid: result.valid,
+          message: result.message,
+          establishesAs: 'assumption',
+        });
         // If assumption is negated something, we're in contradiction mode
         if (claim.startsWith('¬') || claim.startsWith('not ') ||
             claim.includes('contradiction') || claim.toLowerCase().includes('bycontradiction')) {
@@ -207,21 +248,62 @@ function checkProofBlock(
         if (claim.toLowerCase().includes('sorry')) {
           hasSorry = true;
           diagnostics.push({ severity: 'info', message: `Step ${step}: sorry placeholder`, rule: 'SORRY' });
-          ctx.established.push({ content: claim, source: 'assertion', step });
+          registerClaim(ctx, {
+            content: claim,
+            source: 'assertion',
+            step,
+            rule: 'SORRY',
+            dependsOn: [],
+          });
+          proofSteps.push({
+            step,
+            kind: 'assert',
+            claim,
+            rule: 'SORRY',
+            valid: true,
+            message: 'sorry placeholder',
+          });
           break;
         }
 
         // Check and/intro: if claim is a conjunction, verify both sides
+        let stepRule: CheckResult | null = null;
         if (isConjunction(n.expr)) {
           const [left, right] = splitConjunction(n.expr);
           const andResult = checkAndIntro(left, right, ctx);
+          stepRule = andResult;
           if (!andResult.valid) {
             // Warning not error — the conjunction may be introducing new facts
             diagnostics.push({ severity: 'info', message: andResult.message, step, hint: andResult.hint });
           }
+        } else {
+          const premise = checkPremiseClaim(claim, ctx);
+          if (premise) {
+            stepRule = premise;
+          } else {
+            const derivation = checkDerivedClaim(claim, ctx);
+            if (derivation?.valid) {
+              stepRule = derivation;
+            }
+          }
         }
 
-        ctx.established.push({ content: claim, source: 'assertion', step });
+        registerClaim(ctx, {
+          content: claim,
+          source: 'assertion',
+          step,
+          rule: stepRule?.rule ?? 'STRUCTURAL',
+          dependsOn: inferDependencies(claim, stepRule, ctx),
+        });
+        proofSteps.push({
+          step,
+          kind: 'assert',
+          claim,
+          rule: stepRule?.rule ?? 'STRUCTURAL',
+          valid: stepRule?.valid ?? true,
+          message: stepRule?.message ?? 'Assertion accepted',
+          establishesAs: 'assertion',
+        });
         assertionCount++;
 
         // Each assert deepens the chain
@@ -233,7 +315,29 @@ function checkProofBlock(
       case 'Conclude': {
         const n = node as ConcludeNode;
         const claim = exprToString(n.expr);
-        ctx.established.push({ content: claim, source: 'conclusion', step });
+        const contradictionDischarge = checkContradictionDischarge(claim, ctx);
+        const derivation = isConjunction(n.expr)
+          ? checkAndIntro(...splitConjunction(n.expr), ctx)
+          : contradictionDischarge ?? checkDerivedClaim(claim, ctx) ?? checkImplicationGoalDischarge(claim, ctx);
+        if (derivation && !derivation.valid) {
+          diagnostics.push({ severity: 'error', message: derivation.message, step, hint: derivation.hint, rule: derivation.rule });
+        }
+        registerClaim(ctx, {
+          content: claim,
+          source: 'conclusion',
+          step,
+          rule: derivation?.rule ?? 'STRUCTURAL',
+          dependsOn: inferDependencies(claim, derivation, ctx),
+        });
+        proofSteps.push({
+          step,
+          kind: 'conclude',
+          claim,
+          rule: derivation?.rule ?? 'STRUCTURAL',
+          valid: derivation?.valid ?? true,
+          message: derivation?.message ?? 'Conclusion accepted',
+          establishesAs: 'conclusion',
+        });
         hasConclusion = true;
 
         // If we're in a contradiction block, the contradiction result is valid
@@ -250,16 +354,40 @@ function checkProofBlock(
         const n = node as ApplyNode;
         const result = checkLemmaApplication(n.target, ctx);
         const lemma = ctx.lemmas.get(normalizeName(n.target));
-        if (lemma && lemma.conclusions.length > 0) {
+        if (result.valid && lemma && lemma.conclusions.length > 0) {
           for (const conclusion of lemma.conclusions) {
-            ctx.established.push({ content: conclusion, source: 'lemma_application', step });
+            registerClaim(ctx, {
+              content: conclusion,
+              source: 'lemma_application',
+              step,
+              rule: result.rule,
+              dependsOn: lemma.hypotheses,
+              imports: lemma.conclusions,
+            });
           }
-        } else {
-          ctx.established.push({ content: `applied(${n.target})`, source: 'lemma_application', step });
+        } else if (result.valid) {
+          registerClaim(ctx, {
+            content: `applied(${n.target})`,
+            source: 'lemma_application',
+            step,
+            rule: result.rule,
+            dependsOn: [],
+          });
         }
         if (!result.valid) {
-          diagnostics.push({ severity: 'warning', message: result.message, step, rule: result.rule });
+          diagnostics.push({ severity: 'error', message: result.message, step, rule: result.rule, hint: result.hint });
         }
+        proofSteps.push({
+          step,
+          kind: 'apply',
+          claim: n.target,
+          rule: result.rule,
+          valid: result.valid,
+          message: result.message,
+          uses: result.valid && lemma ? lemma.hypotheses : [],
+          imports: result.valid && lemma ? lemma.conclusions : [],
+          establishesAs: 'lemma_application',
+        });
         lemmaCount++;
         break;
       }
@@ -269,11 +397,23 @@ function checkProofBlock(
         ctx.variables.push({ name: n.varName, type: n.varType, step });
         // Variables are always valid introductions
         if (n.varType) {
-          ctx.established.push({
+          registerClaim(ctx, {
             content: `${n.varName}: ${n.varType}`,
-            source: 'variable', step
+            source: 'variable',
+            step,
+            rule: 'VARIABLE',
+            dependsOn: [],
           });
         }
+        proofSteps.push({
+          step,
+          kind: 'setVar',
+          claim: n.varType ? `${n.varName}: ${n.varType}` : n.varName,
+          rule: 'VARIABLE',
+          valid: true,
+          message: 'Variable introduced into context',
+          establishesAs: 'variable',
+        });
         break;
       }
 
@@ -287,7 +427,31 @@ function checkProofBlock(
           if (!result.valid) {
             diagnostics.push({ severity: 'error', message: result.message, step, hint: result.hint });
           }
-          ctx.established.push({ content: 'contradiction', source: 'assertion', step });
+          registerClaim(ctx, {
+            content: 'contradiction',
+            source: 'assertion',
+            step,
+            rule: result.rule,
+            dependsOn: contradictionDependencies(ctx),
+          });
+          proofSteps.push({
+            step,
+            kind: 'raw',
+            claim: 'contradiction',
+            rule: result.rule,
+            valid: result.valid,
+            message: result.message,
+            establishesAs: 'assertion',
+          });
+        } else {
+          proofSteps.push({
+            step,
+            kind: 'raw',
+            claim: n.content,
+            rule: 'STRUCTURAL',
+            valid: true,
+            message: 'Raw proof step preserved',
+          });
         }
         break;
       }
@@ -302,7 +466,22 @@ function checkProofBlock(
           conclusions: innerReport.derivedConclusion ? [innerReport.derivedConclusion] : [],
         });
         diagnostics.push(...innerReport.diagnostics.map(d => ({ ...d, message: `[${n.name}] ${d.message}` })));
-        ctx.established.push({ content: `lemma(${n.name})`, source: 'lemma_application', step });
+        registerClaim(ctx, {
+          content: `lemma(${n.name})`,
+          source: 'lemma_application',
+          step,
+          rule: 'BY_LEMMA',
+          dependsOn: innerReport.derivedConclusion ? [innerReport.derivedConclusion] : [],
+        });
+        proofSteps.push({
+          step,
+          kind: 'lemma',
+          claim: n.name,
+          rule: 'BY_LEMMA',
+          valid: innerReport.valid,
+          message: innerReport.valid ? 'Inline lemma checked' : 'Inline lemma has errors',
+          establishesAs: 'lemma_application',
+        });
         lemmaCount++;
         break;
       }
@@ -337,7 +516,10 @@ function checkProofBlock(
     method,
     stepCount: step,
     goal: ctx.goal,
+    premises,
     derivedConclusion,
+    proofSteps,
+    proofObjects: ctx.proofObjects,
     diagnostics,
     metrics: {
       assumptionCount,
@@ -369,11 +551,14 @@ function collectLemmaNames(nodes: ASTNode[], map: Map<string, ClaimSet>) {
     if (node.type === 'Lemma' || node.type === 'Theorem') {
       const key = normalizeName(node.name);
       const statement = node.body.find((child): child is AssertNode => child.type === 'Assert');
-      map.set(key, { hypotheses: [], conclusions: statement ? [exprToProp(statement.expr)] : [] });
+      const hypotheses = node.body
+        .filter((child): child is GivenNode => child.type === 'Given')
+        .map(child => exprToProp(child.expr));
+      map.set(key, { name: node.name, hypotheses, conclusions: statement ? [exprToProp(statement.expr)] : [] });
     }
     if (node.type === 'Definition') {
       const key = normalizeName(node.name);
-      map.set(key, { hypotheses: [], conclusions: ['defined'] });
+      map.set(key, { name: node.name, hypotheses: [], conclusions: ['defined'] });
     }
   }
 }
@@ -384,6 +569,7 @@ function exprToString(expr: ExprNode): string {
 
 function nodeToString(node: ASTNode): string {
   switch (node.type) {
+    case 'Given':    return exprToString((node as GivenNode).expr);
     case 'Assert':   return exprToString((node as AssertNode).expr);
     case 'Assume':   return exprToString((node as AssumeNode).expr);
     case 'Conclude': return exprToString((node as ConcludeNode).expr);
@@ -477,6 +663,127 @@ function findDerivedConclusion(established: Claim[]): string | null {
   return null;
 }
 
+function registerClaim(
+  ctx: ProofContext,
+  input: {
+    content: string;
+    source: Claim['source'];
+    step: number;
+    rule: CheckResult['rule'];
+    dependsOn: string[];
+    imports?: string[];
+  }
+): Claim {
+  const proofObjectId = makeProofObjectId(input.step, input.source, input.content);
+  const claim: Claim = {
+    content: input.content,
+    source: input.source,
+    step: input.step,
+    proofObjectId,
+  };
+  ctx.established.push(claim);
+  ctx.proofObjects.push({
+    id: proofObjectId,
+    claim: input.content,
+    rule: input.rule,
+    source: input.source,
+    step: input.step,
+    dependsOn: uniqueProps(input.dependsOn),
+    imports: input.imports && input.imports.length > 0 ? uniqueProps(input.imports) : undefined,
+  });
+  return claim;
+}
+
+function makeProofObjectId(step: number, source: string, claim: string): string {
+  return `${source}:${step}:${normalizeName(claim)}`;
+}
+
+function inferDependencies(claim: string, derivation: CheckResult | null, ctx: ProofContext): string[] {
+  if (!derivation?.valid) return [];
+  switch (derivation.rule) {
+    case 'PREMISE':
+      return [claim];
+    case 'IMPLIES_ELIM':
+      return dependenciesForImplicationElim(claim, ctx);
+    case 'AND_INTRO':
+      return dependenciesForAndIntro(claim);
+    case 'AND_ELIM':
+      return dependenciesForAndElim(claim, ctx);
+    case 'IMPLIES_INTRO':
+      return dependenciesForImplicationIntro(claim, ctx);
+    case 'CONTRADICTION':
+      return contradictionDependencies(ctx);
+    default:
+      return [];
+  }
+}
+
+function dependenciesForImplicationElim(claim: string, ctx: ProofContext): string[] {
+  for (const item of ctx.established) {
+    const implication = parseImplicationProp(item.content);
+    if (!implication) continue;
+    const [antecedent, consequent] = implication;
+    if (sameProp(consequent, claim) && ctx.established.some(established => sameProp(established.content, antecedent))) {
+      return [antecedent, item.content];
+    }
+  }
+  return [];
+}
+
+function dependenciesForAndIntro(claim: string): string[] {
+  const conjunction = parseConjunctionProp(claim);
+  return conjunction ? [conjunction[0], conjunction[1]] : [];
+}
+
+function dependenciesForAndElim(claim: string, ctx: ProofContext): string[] {
+  for (const item of ctx.established) {
+    const conjunction = parseConjunctionProp(item.content);
+    if (!conjunction) continue;
+    const [left, right] = conjunction;
+    if (sameProp(left, claim) || sameProp(right, claim)) {
+      return [item.content];
+    }
+  }
+  return [];
+}
+
+function dependenciesForImplicationIntro(claim: string, ctx: ProofContext): string[] {
+  const implication = ctx.goal ? parseImplicationProp(ctx.goal) : parseImplicationProp(claim);
+  return implication ? [implication[0], implication[1]] : [];
+}
+
+function contradictionDependencies(ctx: ProofContext): string[] {
+  const contradiction = findContradictionPair(ctx.established);
+  return contradiction ? [contradiction.a, contradiction.b] : [];
+}
+
+function findContradictionPair(established: Claim[]): { a: string; b: string } | null {
+  for (const claim of established) {
+    const negated = negateProp(claim.content);
+    if (established.some(other => sameProp(other.content, negated))) {
+      return { a: claim.content, b: negated };
+    }
+  }
+  return null;
+}
+
+function negateProp(claim: string): string {
+  const value = claim.trim();
+  if (value.startsWith('¬')) return value.slice(1).trim();
+  if (value.startsWith('not ')) return value.slice(4).trim();
+  return `¬${value}`;
+}
+
+function uniqueProps(values: string[]): string[] {
+  const unique: string[] = [];
+  for (const value of values) {
+    if (!unique.some(existing => sameProp(existing, value))) {
+      unique.push(value);
+    }
+  }
+  return unique;
+}
+
 function theoremGoalHint(goalExpr: ExprNode): string {
   const implication = splitImplication(goalExpr);
   if (implication) {
@@ -505,4 +812,129 @@ function isCheckableGoal(expr: ExprNode): boolean {
     default:
       return false;
   }
+}
+
+function checkDerivedClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  if (ctx.established.some(item => sameProp(item.content, claim))) {
+    return null;
+  }
+
+  for (const item of ctx.established) {
+    const implication = parseImplicationProp(item.content);
+    if (!implication) continue;
+    const [antecedent, consequent] = implication;
+    if (!sameProp(consequent, claim)) continue;
+    const result = checkModusPonens(antecedent, consequent, ctx);
+    if (result.valid) return result;
+  }
+
+  for (const item of ctx.established) {
+    const conjunction = parseConjunctionProp(item.content);
+    if (!conjunction) continue;
+    const [left, right] = conjunction;
+    if (sameProp(left, claim) || sameProp(right, claim)) {
+      const result = checkAndElim(claim, item.content, ctx);
+      if (result.valid) return result;
+    }
+  }
+
+  if (ctx.goal && sameProp(ctx.goal, claim)) {
+    return {
+      valid: false as const,
+      rule: 'STRUCTURAL',
+      message: `Conclusion '${claim}' is not yet derived from the current context`,
+      hint: `Add assumptions or intermediate proof steps that derive '${claim}' from earlier claims.`,
+    };
+  }
+
+  return null;
+}
+
+function checkImplicationGoalDischarge(claim: string, ctx: ProofContext): CheckResult | null {
+  if (!ctx.goal) return null;
+  const implication = parseImplicationProp(ctx.goal);
+  if (!implication) return null;
+
+  const [antecedent, consequent] = implication;
+  if (!sameProp(consequent, claim)) return null;
+
+  const antecedentAssumed = ctx.established.some(
+    item => item.source === 'assumption' && sameProp(item.content, antecedent)
+  );
+  const consequentEstablished = ctx.established.some(item => sameProp(item.content, consequent));
+  return checkImpliesIntro(antecedent, consequent, antecedentAssumed, consequentEstablished);
+}
+
+function checkContradictionDischarge(claim: string, ctx: ProofContext): CheckResult | null {
+  const contradictionEstablished = ctx.established.some(item => sameProp(item.content, 'contradiction'));
+  if (!contradictionEstablished) return null;
+  const contradiction = checkContradiction(ctx);
+  if (!contradiction.valid) return contradiction;
+  return {
+    valid: true,
+    rule: 'CONTRADICTION',
+    message: `Contradiction discharges the current goal: ${claim}`,
+  };
+}
+
+function checkPremiseClaim(claim: string, ctx: ProofContext): CheckResult | null {
+  if (!ctx.goal) return null;
+  if (!sameProp(claim, ctx.goal) && !ctx.established.some(item => item.source === 'premise' && sameProp(item.content, claim))) {
+    return null;
+  }
+  return {
+    valid: true,
+    rule: 'PREMISE',
+    message: `Premise available in context: ${claim}`,
+  };
+}
+
+function parseImplicationProp(prop: string): [string, string] | null {
+  const parts = splitTopLevel(prop, '→');
+  if (!parts) return null;
+  return parts;
+}
+
+function parseConjunctionProp(prop: string): [string, string] | null {
+  const parts = splitTopLevel(prop, '∧');
+  if (!parts) return null;
+  return parts;
+}
+
+function splitTopLevel(prop: string, operator: '→' | '∧'): [string, string] | null {
+  let depth = 0;
+  for (let i = 0; i < prop.length; i++) {
+    const ch = prop[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && prop.slice(i, i + operator.length) === operator) {
+      const left = stripParens(prop.slice(0, i).trim());
+      const right = stripParens(prop.slice(i + operator.length).trim());
+      if (left && right) return [left, right];
+    }
+  }
+  return null;
+}
+
+function stripParens(value: string): string {
+  let result = value.trim();
+  while (result.startsWith('(') && result.endsWith(')')) {
+    const inner = result.slice(1, -1).trim();
+    if (!inner) break;
+    if (!hasBalancedParens(inner)) break;
+    result = inner;
+  }
+  return result;
+}
+
+function hasBalancedParens(value: string): boolean {
+  let depth = 0;
+  for (const ch of value) {
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
 }

@@ -15,12 +15,14 @@ FuturLang treats programs as logical structure first:
 
 That means FuturLang is not “proof-themed syntax” layered on top of a normal imperative language. The chain is the program.
 
+Visible chaining is a language law. FuturLang should not evolve toward hidden theorem headers, tactic scripts, or non-chained declaration syntax. If it cannot be written as a visibly connected chain in source, it is not FuturLang.
+
 ## Current Architecture
 
 FuturLang currently has three distinct execution modes:
 
 - `fl <file.fl>`
-  Runs the JavaScript evaluator for the strict supported subset. This is the fast path for boolean logic, simple variables, string claims, and proof-shaped control flow.
+  Runs the JavaScript evaluator for the strict supported subset. This is the fast path for boolean logic, simple variables, string claims, and proof-shaped control flow. Symbolic proof-style files may run in a limited symbolic mode, but `fl check` remains the primary command for theorem-prover demos.
 - `fl check <file.fl>`
   Runs the structural checker. This validates theorem/proof pairing and basic proof-shape rules without claiming full semantic verification.
 - `fl verify <file.fl>`
@@ -32,6 +34,7 @@ The important boundary is intentional:
 
 - the JS evaluator is strict and fails closed on unsupported mathematical notation
 - the checker is structural, not fully semantic
+- the checker now records explicit derivation objects for the small supported subset, but this is still not a trusted kernel
 - Lean verification is the path for richer formal claims
 
 ## Installation
@@ -84,14 +87,27 @@ These blocks are chained together with inter-block connectives:
 
 Inside blocks, the main statements are:
 
+- `given(...)`
 - `assert(...)`
 - `assume(...)`
 - `conclude(...)`
 - `apply(...)`
 - `setVar(...)`
 - `let ...`
+- `contradiction()`
 
 Each statement also participates in the truth chain.
+
+Their roles are different:
+
+- `given(...)` declares a theorem or lemma premise. It is available to the paired proof from the start.
+- `assume(...)` introduces a local proof assumption inside the proof body.
+- `assert(...)` states a claim. In theorem and lemma bodies it expresses the claimed result; in proof bodies it expresses an intermediate derived step.
+- `conclude(...)` marks the explicit result the proof is discharging.
+- `apply(...)` consumes a previously established lemma or theorem when its `given(...)` hypotheses are already in context.
+- `contradiction()` marks an explicit contradiction step inside a contradiction-style proof chain.
+
+Missing connectives between adjacent top-level blocks are syntax errors. If two blocks are related, the relationship must be visible in source.
 
 ## What The Evaluator Supports
 
@@ -139,6 +155,7 @@ This is deliberate. If FuturLang cannot justify a claim in the strict evaluator,
 - theorem/proof pairing
 - assumptions and assertions
 - simple conjunction checks
+- simple contradiction discharge
 - contradiction and induction heuristics
 - proof richness metrics
 

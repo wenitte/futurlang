@@ -1,0 +1,8 @@
+theorem RightProjection() {
+  given(p && q) →
+  assert(q)
+} ↔
+
+proof RightProjection() {
+  conclude(q)
+}

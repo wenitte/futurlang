@@ -55,6 +55,20 @@ export function checkAndIntro(left: string, right: string, ctx: ProofContext): C
   };
 }
 
+// ── Rule: AND_ELIM ───────────────────────────────────────────────────────────
+// If P ∧ Q is established, then either P or Q may be concluded.
+export function checkAndElim(target: string, conjunction: string, ctx: ProofContext): CheckResult {
+  const hasConjunction = isEstablished(conjunction, ctx);
+  if (!hasConjunction) {
+    return {
+      valid: false, rule: 'AND_ELIM',
+      message: `Cannot eliminate conjunction: '${conjunction}' not yet established`,
+      hint: `Establish '${conjunction}' before deriving '${target}'`
+    };
+  }
+  return { valid: true, rule: 'AND_ELIM', message: `Conjunction elimination: ${conjunction} ⊢ ${target}` };
+}
+
 // ── Rule: CONTRADICTION ───────────────────────────────────────────────────────
 // If we have assume(¬P) (or assume(P) then derive its negation), the
 // contradiction is valid and we can conclude P (or anything).
@@ -87,7 +101,17 @@ export function checkContradiction(ctx: ProofContext): CheckResult {
 // or as an inline lemma block in this proof).
 export function checkLemmaApplication(lemmaName: string, ctx: ProofContext): CheckResult {
   const key = lemmaName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-  if (ctx.lemmas.has(key)) {
+  const lemma = ctx.lemmas.get(key);
+  if (lemma) {
+    const missing = lemma.hypotheses.filter(h => !isEstablished(h, ctx));
+    if (missing.length > 0) {
+      return {
+        valid: false,
+        rule: 'BY_LEMMA',
+        message: `Cannot apply ${lemmaName}: missing hypotheses ${missing.join(', ')}`,
+        hint: `Establish the required hypotheses before apply(${lemmaName})`,
+      };
+    }
     return { valid: true, rule: 'BY_LEMMA', message: `Applied lemma: ${lemmaName}` };
   }
   // Not found — warning not error (lemma may be a known mathematical result)

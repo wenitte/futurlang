@@ -1,0 +1,11 @@
+theorem ExplosionDemo() {
+  given(p) →
+  given(¬p) →
+  assert(q)
+} ↔
+
+proof ExplosionDemo() {
+  assume(¬q) →
+  contradiction() →
+  conclude(q)
+}

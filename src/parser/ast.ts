@@ -85,6 +85,12 @@ export interface AssertNode {
   connective: BlockConnective; // for assert(...) → inside proof bodies
 }
 
+export interface GivenNode {
+  type: 'Given';
+  expr: ExprNode;
+  connective: BlockConnective;
+}
+
 export interface AssumeNode {
   type: 'Assume';
   expr: ExprNode;
@@ -124,6 +130,7 @@ export type ASTNode =
   | ProofNode
   | LemmaNode
   | AssertNode
+  | GivenNode
   | AssumeNode
   | ConcludeNode
   | ApplyNode

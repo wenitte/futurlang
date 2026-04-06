@@ -9,6 +9,7 @@ export type CheckResult =
 export type InferenceRule =
   // Structural
   | 'ASSUMPTION'        // assume(P) introduces P into context
+  | 'PREMISE'           // theorem/lemma premise available in the current proof context
   | 'DEFINITION'        // define(X) ↔ ... introduces X into context
   | 'VARIABLE'          // setVar(x: T) introduces typed variable
   // Propositional
@@ -30,6 +31,8 @@ export type InferenceRule =
 export interface ProofContext {
   // What we've established so far in this proof
   established: Claim[];
+  // Internal proof objects for established facts in this proof.
+  proofObjects: ProofObject[];
   // Variables in scope
   variables: Variable[];
   // Lemmas available (from earlier in the file or inline)
@@ -46,10 +49,12 @@ export interface Claim {
   content: string;       // the claim text
   source: ClaimSource;   // how it was established
   step: number;          // which step introduced it
+  proofObjectId?: string;
 }
 
 export type ClaimSource =
   | 'assumption'
+  | 'premise'
   | 'definition'
   | 'variable'
   | 'assertion'
@@ -67,6 +72,17 @@ export type ProofMethod = 'direct' | 'contradiction' | 'induction' | 'constructi
 export interface ClaimSet {
   hypotheses: string[];
   conclusions: string[];
+  name?: string;
+}
+
+export interface ProofObject {
+  id: string;
+  claim: string;
+  rule: InferenceRule;
+  source: ClaimSource;
+  step: number;
+  dependsOn: string[];
+  imports?: string[];
 }
 
 // A diagnostic message from the checker
@@ -78,6 +94,18 @@ export interface Diagnostic {
   rule?: InferenceRule;
 }
 
+export interface ProofStepTrace {
+  step: number;
+  kind: 'assume' | 'assert' | 'conclude' | 'apply' | 'setVar' | 'raw' | 'lemma';
+  claim: string;
+  rule: InferenceRule;
+  valid: boolean;
+  message: string;
+  uses?: string[];
+  imports?: string[];
+  establishesAs?: ClaimSource;
+}
+
 // Full check report for one theorem+proof pair
 export interface ProofReport {
   name: string;
@@ -85,7 +113,10 @@ export interface ProofReport {
   method: ProofMethod;
   stepCount: number;
   goal: string | null;
+  premises: string[];
   derivedConclusion: string | null;
+  proofSteps: ProofStepTrace[];
+  proofObjects: ProofObject[];
   diagnostics: Diagnostic[];
   // Structural metrics useful as training signal
   metrics: {

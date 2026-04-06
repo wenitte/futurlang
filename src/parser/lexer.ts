@@ -5,7 +5,7 @@ import { BlockConnective } from './ast';
 export interface ParsedLine {
   type:
     | 'theorem' | 'definition' | 'struct' | 'proof' | 'lemma'
-    | 'assert'  | 'assume'     | 'conclude' | 'apply'
+    | 'assert'  | 'given'      | 'assume'   | 'conclude' | 'apply'
     | 'setVar'  | 'blockEnd'   | 'level'    | 'return' | 'raw';
   content: string;
   name?: string;
@@ -112,6 +112,17 @@ export function lexFL(text: string): ParsedLine[] {
       }
       const [cleaned, conn] = extractConnective(combined);
       parsed.push({ type: 'assert', content: cleaned, connective: conn });
+      continue;
+    }
+
+    // ── given(...) — theorem/lemma premises, possibly multi-line ────────────
+    if (/^given\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'given', content: cleaned, connective: conn });
       continue;
     }
 
