@@ -73,8 +73,14 @@ function canonicalizeProp(s) {
     }
 }
 function parseCanonicalExpr(input) {
-    const parsed = (0, expr_1.parseExpr)(input.trim());
-    return canonicalizeExpr(parsed);
+    const trimmed = input.trim();
+    try {
+        const parsed = (0, expr_1.parseExpr)(trimmed);
+        return canonicalizeExpr(parsed);
+    }
+    catch {
+        return canonicalizeAtom(trimmed);
+    }
 }
 function canonicalizeExpr(expr) {
     if (expr.type !== 'Atom')

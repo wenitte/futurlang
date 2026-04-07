@@ -1,0 +1,19 @@
+theorem UnionMembershipIff() {
+  assert((x in A union B) <-> ((x in A) || (x in B)))
+} ↔
+
+proof UnionMembershipIff() {
+  assume(x in A union B) →
+  assert((x in A) || (x in B)) →
+  assert((x in A union B) -> ((x in A) || (x in B))) →
+  assume((x in A) || (x in B)) →
+  assume(x in A) →
+  assert(x in A union B) →
+  assert((x in A) -> (x in A union B)) →
+  assume(x in B) →
+  assert(x in A union B) →
+  assert((x in B) -> (x in A union B)) →
+  assert(x in A union B) →
+  assert(((x in A) || (x in B)) -> (x in A union B)) →
+  conclude((x in A union B) <-> ((x in A) || (x in B)))
+}

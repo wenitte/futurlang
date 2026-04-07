@@ -89,8 +89,13 @@ export function canonicalizeProp(s: string): string {
 }
 
 export function parseCanonicalExpr(input: string): ExprNode | CanonicalProp {
-  const parsed = parseExpr(input.trim());
-  return canonicalizeExpr(parsed);
+  const trimmed = input.trim();
+  try {
+    const parsed = parseExpr(trimmed);
+    return canonicalizeExpr(parsed);
+  } catch {
+    return canonicalizeAtom(trimmed);
+  }
 }
 
 function canonicalizeExpr(expr: ExprNode): ExprNode | CanonicalProp {

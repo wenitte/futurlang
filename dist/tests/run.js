@@ -630,6 +630,24 @@ proof SubsetTransitivity() {
     assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SUBSET_TRANS');
     assert_1.strict.equal(theoremReport.derivedConclusion, 'A ⊆ C');
 });
+runTest('checker validates subset antisymmetry', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem SubsetAntisymmetry() {
+  given(A subset B) →
+  given(B subset A) →
+  assert(A = B)
+} ↔
+
+proof SubsetAntisymmetry() {
+  conclude(A = B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SUBSET_ANTISYM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'A = B');
+});
 runTest('checker validates equality substitution on membership claims', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem EqualitySubstitution() {
@@ -707,6 +725,52 @@ proof UnionIntro() {
     assert_1.strict.equal(report.reports[0].proofSteps[0].rule, 'UNION_INTRO');
     assert_1.strict.equal(report.reports[0].derivedConclusion, 'x ∈ A ∪ B');
 });
+runTest('checker validates union elimination into disjunction', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UnionElim() {
+  given(x in A union B) →
+  assert((x in A) || (x in B))
+} ↔
+
+proof UnionElim() {
+  conclude((x in A) || (x in B))
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    assert_1.strict.equal(report.reports[0].proofSteps[0].rule, 'UNION_ELIM');
+    assert_1.strict.equal(report.reports[0].derivedConclusion, 'x ∈ A ∨ x ∈ B');
+});
+runTest('checker proves union membership biconditional from scratch', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UnionMembershipIff() {
+  assert((x in A union B) <-> ((x in A) || (x in B)))
+} ↔
+
+proof UnionMembershipIff() {
+  assume(x in A union B) →
+  assert((x in A) || (x in B)) →
+  assert((x in A union B) -> ((x in A) || (x in B))) →
+  assume((x in A) || (x in B)) →
+  assume(x in A) →
+  assert(x in A union B) →
+  assert((x in A) -> (x in A union B)) →
+  assume(x in B) →
+  assert(x in A union B) →
+  assert((x in B) -> (x in A union B)) →
+  assert(x in A union B) →
+  assert(((x in A) || (x in B)) -> (x in A union B)) →
+  conclude((x in A union B) <-> ((x in A) || (x in B)))
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'UNION_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'OR_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IFF_INTRO'));
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ A ∪ B ↔ x ∈ A ∨ x ∈ B');
+});
 runTest('checker validates intersection introduction and elimination', () => {
     const introAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem IntersectionIntro() {
@@ -737,6 +801,71 @@ proof IntersectionRight() {
     assert_1.strict.equal(elimReport.valid, true);
     assert_1.strict.equal(elimReport.reports[0].proofSteps[0].rule, 'INTERSECTION_ELIM');
     assert_1.strict.equal(elimReport.reports[0].derivedConclusion, 'x ∈ B');
+});
+runTest('checker validates preimage introduction and elimination', () => {
+    const introAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem PreimageIntro() {
+  given(f(x) ∈ B) →
+  assert(x ∈ preimage(f, B))
+} ↔
+
+proof PreimageIntro() {
+  conclude(x ∈ preimage(f, B))
+}
+`));
+    const introReport = (0, checker_1.checkFile)(introAst);
+    assert_1.strict.equal(introReport.valid, true);
+    assert_1.strict.equal(introReport.reports[0].proofSteps[0].rule, 'PREIMAGE_INTRO');
+    assert_1.strict.equal(introReport.reports[0].derivedConclusion, 'x ∈ preimage(f, B)');
+    const elimAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem PreimageElim() {
+  given(x ∈ preimage(f, B)) →
+  assert(f(x) ∈ B)
+} ↔
+
+proof PreimageElim() {
+  conclude(f(x) ∈ B)
+}
+`));
+    const elimReport = (0, checker_1.checkFile)(elimAst);
+    assert_1.strict.equal(elimReport.valid, true);
+    assert_1.strict.equal(elimReport.reports[0].proofSteps[0].rule, 'PREIMAGE_ELIM');
+    assert_1.strict.equal(elimReport.reports[0].derivedConclusion, 'f(x) ∈ B');
+});
+runTest('checker proves preimage distributes over intersection from scratch', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem PreimageIntersectionIff() {
+  assert((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+} ↔
+
+proof PreimageIntersectionIff() {
+  assume(x ∈ preimage(f, B ∩ C)) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert((x ∈ preimage(f, B ∩ C)) -> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C)))) →
+  assume((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(x ∈ preimage(f, B ∩ C)) →
+  assert(((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) -> (x ∈ preimage(f, B ∩ C))) →
+  conclude((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'PREIMAGE_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'PREIMAGE_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'INTERSECTION_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IFF_INTRO'));
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ preimage(f, B ∩ C) ↔ x ∈ preimage(f, B) ∧ x ∈ preimage(f, C)');
 });
 runTest('checker validates bounded universal elimination', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -1176,6 +1305,84 @@ proof UsesForwardStep() {
     assert_1.strict.ok(lemmaDerivation);
     assert_1.strict.equal(lemmaDerivation.inputIds.length, 1);
     assert_1.strict.equal(theoremReport.derivedFactIds.length, 1);
+});
+runTest('checker supports a small set-theory library file with reusable lemmas', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+lemma UnionMembershipIff() {
+  assert((x in A union B) <-> ((x in A) || (x in B)))
+} ↔
+
+proof UnionMembershipIff() {
+  assume(x in A union B) →
+  assert((x in A) || (x in B)) →
+  assert((x in A union B) -> ((x in A) || (x in B))) →
+  assume((x in A) || (x in B)) →
+  assume(x in A) →
+  assert(x in A union B) →
+  assert((x in A) -> (x in A union B)) →
+  assume(x in B) →
+  assert(x in A union B) →
+  assert((x in B) -> (x in A union B)) →
+  assert(x in A union B) →
+  assert(((x in A) || (x in B)) -> (x in A union B)) →
+  conclude((x in A union B) <-> ((x in A) || (x in B)))
+} →
+
+lemma IntersectionMembershipIff() {
+  assert((x in A intersection B) <-> ((x in A) && (x in B)))
+} ↔
+
+proof IntersectionMembershipIff() {
+  assume(x in A intersection B) →
+  assert((x in A) && (x in B)) →
+  assert((x in A intersection B) -> ((x in A) && (x in B))) →
+  assume((x in A) && (x in B)) →
+  assert(x in A intersection B) →
+  assert(((x in A) && (x in B)) -> (x in A intersection B)) →
+  conclude((x in A intersection B) <-> ((x in A) && (x in B)))
+} →
+
+lemma IntersectionMembershipLeft() {
+  given(x in A intersection B) →
+  assert(x in A)
+} ↔
+
+proof IntersectionMembershipLeft() {
+  apply(IntersectionMembershipIff) →
+  assert((x in A) && (x in B)) →
+  conclude(x in A)
+} →
+
+theorem UsesSetsBasicLibrary() {
+  given(x in A union B) →
+  assert((x in A) || (x in B))
+} ↔
+
+proof UsesSetsBasicLibrary() {
+  apply(UnionMembershipIff) →
+  conclude((x in A) || (x in B))
+} →
+
+theorem UsesIntersectionHelperLibrary() {
+  given(x in A intersection B) →
+  assert(x in A)
+} ↔
+
+proof UsesIntersectionHelperLibrary() {
+  apply(IntersectionMembershipLeft)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports.find(r => r.name === 'UsesSetsBasicLibrary');
+    assert_1.strict.ok(theoremReport);
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'BY_LEMMA'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IFF_ELIM'));
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ A ∨ x ∈ B');
+    const helperReport = report.reports.find(r => r.name === 'UsesIntersectionHelperLibrary');
+    assert_1.strict.ok(helperReport);
+    assert_1.strict.ok(helperReport.proofSteps.some(step => step.rule === 'BY_LEMMA'));
+    assert_1.strict.equal(helperReport.derivedConclusion, 'x ∈ A');
 });
 runTest('checker marks external lemma application as UNVERIFIED and non-trusted', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`

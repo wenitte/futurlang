@@ -32,12 +32,16 @@ export type InferenceRule =
   // Set-theoretic
   | 'SUBSET_ELIM'       // have x ∈ A, have A ⊆ B, conclude x ∈ B
   | 'SUBSET_TRANS'      // have A ⊆ B, have B ⊆ C, conclude A ⊆ C
+  | 'SUBSET_ANTISYM'    // have A ⊆ B and B ⊆ A, conclude A = B
   | 'EQUALITY_REFL'     // conclude x = x
   | 'EQUALITY_SYMM'     // have x = y, conclude y = x
   | 'EQUALITY_TRANS'    // have x = y, have y = z, conclude x = z
   | 'ARITHMETIC_COMM'   // have a = b · c, conclude a = c · b
   | 'EQUALITY_SUBST'    // have x = y and x ∈ A, conclude y ∈ A
+  | 'PREIMAGE_INTRO'    // have f(x) ∈ B, conclude x ∈ preimage(f, B)
+  | 'PREIMAGE_ELIM'     // have x ∈ preimage(f, B), conclude f(x) ∈ B
   | 'UNION_INTRO'       // have x ∈ A, conclude x ∈ A ∪ B
+  | 'UNION_ELIM'        // have x ∈ A ∪ B, conclude x ∈ A ∨ x ∈ B
   | 'SET_BUILDER_INTRO' // have a ∈ A, conclude T(a) ∈ {T(x) | x ∈ A}
   | 'INDEXED_UNION_INTRO' // have a ∈ A and y ∈ T(a), conclude y ∈ ∪{T(x) | x ∈ A}
   | 'INDEXED_UNION_ELIM' // have y ∈ ∪{T(x) | x ∈ A}, open a ∈ A and y ∈ T(a), conclude witness-free Q

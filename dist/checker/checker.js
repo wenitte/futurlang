@@ -257,14 +257,26 @@ function checkProofBlock(name, body, globalLemmas, method, goal = null, premises
                     stepRule = andResult.valid ? andResult : null;
                 }
                 else if (isDisjunction(n.expr)) {
-                    const [left, right] = splitDisjunction(n.expr);
-                    const orLeft = (0, rules_1.checkOrIntroLeft)(left, claim, ctx);
-                    if (orLeft.valid) {
-                        stepRule = orLeft;
+                    const premise = checkPremiseClaim(claim, ctx);
+                    if (premise) {
+                        stepRule = premise;
                     }
                     else {
-                        const orRight = (0, rules_1.checkOrIntroRight)(right, claim, ctx);
-                        stepRule = orRight.valid ? orRight : null;
+                        const derivation = checkDerivedClaim(claim, ctx);
+                        if (derivation?.valid) {
+                            stepRule = derivation;
+                        }
+                        else {
+                            const [left, right] = splitDisjunction(n.expr);
+                            const orLeft = (0, rules_1.checkOrIntroLeft)(left, claim, ctx);
+                            if (orLeft.valid) {
+                                stepRule = orLeft;
+                            }
+                            else {
+                                const orRight = (0, rules_1.checkOrIntroRight)(right, claim, ctx);
+                                stepRule = orRight.valid ? orRight : null;
+                            }
+                        }
                     }
                 }
                 else {
@@ -345,9 +357,12 @@ function checkProofBlock(name, body, globalLemmas, method, goal = null, premises
                     derivation = (0, rules_1.checkAndIntro)(...splitConjunction(n.expr), ctx);
                 }
                 else if (isDisjunction(n.expr)) {
-                    const [left, right] = splitDisjunction(n.expr);
-                    const orLeft = (0, rules_1.checkOrIntroLeft)(left, claim, ctx);
-                    derivation = orLeft.valid ? orLeft : (0, rules_1.checkOrIntroRight)(right, claim, ctx);
+                    derivation = contradictionDischarge ?? checkDerivedClaim(claim, ctx) ?? forallDischarge;
+                    if (!derivation?.valid) {
+                        const [left, right] = splitDisjunction(n.expr);
+                        const orLeft = (0, rules_1.checkOrIntroLeft)(left, claim, ctx);
+                        derivation = orLeft.valid ? orLeft : (0, rules_1.checkOrIntroRight)(right, claim, ctx);
+                    }
                 }
                 else {
                     derivation = contradictionDischarge ?? checkDerivedClaim(claim, ctx) ?? forallDischarge ?? checkImplicationGoalDischarge(claim, ctx);
@@ -940,6 +955,8 @@ function validateDerivationNode(node, inputs, output, goal) {
             return validateSubsetElimNode(node, inputs, output);
         case 'SUBSET_TRANS':
             return validateSubsetTransNode(node, inputs, output);
+        case 'SUBSET_ANTISYM':
+            return validateSubsetAntisymNode(node, inputs, output);
         case 'EQUALITY_REFL':
             return validateEqualityReflNode(node, inputs, output);
         case 'EQUALITY_SYMM':
@@ -950,8 +967,14 @@ function validateDerivationNode(node, inputs, output, goal) {
             return validateArithmeticCommNode(node, inputs, output);
         case 'EQUALITY_SUBST':
             return validateEqualitySubstNode(node, inputs, output);
+        case 'PREIMAGE_INTRO':
+            return validatePreimageIntroNode(node, inputs, output);
+        case 'PREIMAGE_ELIM':
+            return validatePreimageElimNode(node, inputs, output);
         case 'UNION_INTRO':
             return validateUnionIntroNode(node, inputs, output);
+        case 'UNION_ELIM':
+            return validateUnionElimNode(node, inputs, output);
         case 'SET_BUILDER_INTRO':
             return validateSetBuilderIntroNode(node, inputs, output);
         case 'INDEXED_UNION_INTRO':
@@ -1131,6 +1154,28 @@ function validateSubsetTransNode(node, inputs, output) {
     }
     return null;
 }
+function validateSubsetAntisymNode(node, inputs, output) {
+    if (inputs.length !== 2) {
+        return { severity: 'error', message: `SUBSET_ANTISYM '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+    }
+    const left = parseSubsetProp(inputs[0].claim);
+    const right = parseSubsetProp(inputs[1].claim);
+    const equality = parseEqualityProp(output.claim);
+    if (!left || !right || !equality) {
+        return { severity: 'error', message: `SUBSET_ANTISYM '${node.id}' has malformed subset/equality inputs`, step: node.step, rule: node.rule };
+    }
+    const valid = ((0, propositions_1.sameProp)(left.left, equality.left) &&
+        (0, propositions_1.sameProp)(left.right, equality.right) &&
+        (0, propositions_1.sameProp)(right.left, equality.right) &&
+        (0, propositions_1.sameProp)(right.right, equality.left)) || ((0, propositions_1.sameProp)(left.left, equality.right) &&
+        (0, propositions_1.sameProp)(left.right, equality.left) &&
+        (0, propositions_1.sameProp)(right.left, equality.left) &&
+        (0, propositions_1.sameProp)(right.right, equality.right));
+    if (!valid) {
+        return { severity: 'error', message: `SUBSET_ANTISYM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
 function validateEqualityReflNode(node, inputs, output) {
     if (inputs.length !== 0) {
         return { severity: 'error', message: `EQUALITY_REFL '${node.id}' requires 0 inputs`, step: node.step, rule: node.rule };
@@ -1186,6 +1231,44 @@ function validateEqualitySubstNode(node, inputs, output) {
     }
     return null;
 }
+function validatePreimageIntroNode(node, inputs, output) {
+    if (inputs.length !== 1) {
+        return { severity: 'error', message: `PREIMAGE_INTRO '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+    }
+    const inputParts = parseMembershipProp(inputs[0].claim);
+    const outputParts = parseMembershipProp(output.claim);
+    if (!inputParts || !outputParts) {
+        return { severity: 'error', message: `PREIMAGE_INTRO '${node.id}' has malformed membership inputs`, step: node.step, rule: node.rule };
+    }
+    const app = parseFunctionApplicationTerm(inputParts.element);
+    const preimage = parsePreimageTerm(outputParts.set);
+    if (!app || !preimage) {
+        return { severity: 'error', message: `PREIMAGE_INTRO '${node.id}' must derive preimage membership from function application membership`, step: node.step, rule: node.rule };
+    }
+    if (!(0, propositions_1.sameProp)(app.fn, preimage.fn) || !(0, propositions_1.sameProp)(app.arg, outputParts.element) || !(0, propositions_1.sameProp)(inputParts.set, preimage.set)) {
+        return { severity: 'error', message: `PREIMAGE_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validatePreimageElimNode(node, inputs, output) {
+    if (inputs.length !== 1) {
+        return { severity: 'error', message: `PREIMAGE_ELIM '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+    }
+    const inputParts = parseMembershipProp(inputs[0].claim);
+    const outputParts = parseMembershipProp(output.claim);
+    if (!inputParts || !outputParts) {
+        return { severity: 'error', message: `PREIMAGE_ELIM '${node.id}' has malformed membership inputs`, step: node.step, rule: node.rule };
+    }
+    const preimage = parsePreimageTerm(inputParts.set);
+    const app = parseFunctionApplicationTerm(outputParts.element);
+    if (!preimage || !app) {
+        return { severity: 'error', message: `PREIMAGE_ELIM '${node.id}' must consume preimage membership and produce function application membership`, step: node.step, rule: node.rule };
+    }
+    if (!(0, propositions_1.sameProp)(preimage.fn, app.fn) || !(0, propositions_1.sameProp)(inputParts.element, app.arg) || !(0, propositions_1.sameProp)(preimage.set, outputParts.set)) {
+        return { severity: 'error', message: `PREIMAGE_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
 function validateUnionIntroNode(node, inputs, output) {
     if (inputs.length !== 1) {
         return { severity: 'error', message: `UNION_INTRO '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
@@ -1202,6 +1285,29 @@ function validateUnionIntroNode(node, inputs, output) {
     if (!(0, propositions_1.sameProp)(outputParts.element, inputParts.element) ||
         !((0, propositions_1.sameProp)(inputParts.set, union[0]) || (0, propositions_1.sameProp)(inputParts.set, union[1]))) {
         return { severity: 'error', message: `UNION_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateUnionElimNode(node, inputs, output) {
+    if (inputs.length !== 1) {
+        return { severity: 'error', message: `UNION_ELIM '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+    }
+    const inputParts = parseMembershipProp(inputs[0].claim);
+    const outputDisjunction = parseDisjunctionProp(output.claim);
+    if (!inputParts || !outputDisjunction) {
+        return { severity: 'error', message: `UNION_ELIM '${node.id}' must reference union membership and produce a disjunction`, step: node.step, rule: node.rule };
+    }
+    const union = parseBinarySetProp(inputParts.set, '∪');
+    const leftMembership = parseMembershipProp(outputDisjunction[0]);
+    const rightMembership = parseMembershipProp(outputDisjunction[1]);
+    if (!union || !leftMembership || !rightMembership) {
+        return { severity: 'error', message: `UNION_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    if (!(0, propositions_1.sameProp)(inputParts.element, leftMembership.element)
+        || !(0, propositions_1.sameProp)(inputParts.element, rightMembership.element)
+        || !(0, propositions_1.sameProp)(leftMembership.set, union[0])
+        || !(0, propositions_1.sameProp)(rightMembership.set, union[1])) {
+        return { severity: 'error', message: `UNION_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
     }
     return null;
 }
@@ -1622,6 +1728,8 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             return buildSubsetElimProofObject(claim, source, step, ctx);
         case 'SUBSET_TRANS':
             return buildSubsetTransProofObject(claim, source, step, ctx);
+        case 'SUBSET_ANTISYM':
+            return buildSubsetAntisymProofObject(claim, source, step, ctx);
         case 'EQUALITY_REFL':
             return buildEqualityReflProofObject(claim, source, step);
         case 'EQUALITY_SYMM':
@@ -1632,8 +1740,14 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             return buildArithmeticCommProofObject(claim, source, step, ctx);
         case 'EQUALITY_SUBST':
             return buildEqualitySubstProofObject(claim, source, step, ctx);
+        case 'PREIMAGE_INTRO':
+            return buildPreimageIntroProofObject(claim, source, step, ctx);
+        case 'PREIMAGE_ELIM':
+            return buildPreimageElimProofObject(claim, source, step, ctx);
         case 'UNION_INTRO':
             return buildUnionIntroProofObject(claim, source, step, ctx);
+        case 'UNION_ELIM':
+            return buildUnionElimProofObject(claim, source, step, ctx);
         case 'SET_BUILDER_INTRO':
             return buildSetBuilderIntroProofObject(claim, source, step, ctx);
         case 'INDEXED_UNION_INTRO':
@@ -1795,6 +1909,17 @@ function buildSubsetTransProofObject(claim, source, step, ctx) {
         dependsOnIds: dependency?.ids ?? [],
     };
 }
+function buildSubsetAntisymProofObject(claim, source, step, ctx) {
+    const dependency = findSubsetAntisymDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'SUBSET_ANTISYM',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
 function buildEqualityReflProofObject(claim, source, step) {
     return {
         content: claim,
@@ -1849,6 +1974,28 @@ function buildEqualitySubstProofObject(claim, source, step, ctx) {
         dependsOnIds: dependency?.ids ?? [],
     };
 }
+function buildPreimageIntroProofObject(claim, source, step, ctx) {
+    const dependency = findPreimageIntroDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'PREIMAGE_INTRO',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildPreimageElimProofObject(claim, source, step, ctx) {
+    const dependency = findPreimageElimDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'PREIMAGE_ELIM',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
 function buildUnionIntroProofObject(claim, source, step, ctx) {
     const dependency = findUnionIntroDependency(claim, ctx);
     return {
@@ -1856,6 +2003,17 @@ function buildUnionIntroProofObject(claim, source, step, ctx) {
         source,
         step,
         rule: 'UNION_INTRO',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildUnionElimProofObject(claim, source, step, ctx) {
+    const dependency = findUnionElimDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'UNION_ELIM',
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -2248,6 +2406,21 @@ function findSubsetTransDependency(claim, ctx) {
     }
     return null;
 }
+function findSubsetAntisymDependency(claim, ctx) {
+    const equality = parseEqualityProp(claim);
+    if (!equality)
+        return null;
+    const leftSubset = `${equality.left} ⊆ ${equality.right}`;
+    const rightSubset = `${equality.right} ⊆ ${equality.left}`;
+    const leftObj = findLatestProofObjectByClaim(ctx, leftSubset);
+    const rightObj = findLatestProofObjectByClaim(ctx, rightSubset);
+    if (!leftObj || !rightObj)
+        return null;
+    return {
+        claims: [leftSubset, rightSubset],
+        ids: uniqueIds([leftObj.id, rightObj.id]),
+    };
+}
 function findEqualitySymmDependency(claim, ctx) {
     const target = parseEqualityProp(claim);
     if (!target)
@@ -2311,6 +2484,42 @@ function findEqualitySubstDependency(claim, ctx) {
     }
     return null;
 }
+function findPreimageIntroDependency(claim, ctx) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const preimage = parsePreimageTerm(output.set);
+    if (!preimage)
+        return null;
+    const candidate = findLatestProofObject(ctx, object => {
+        const membership = parseMembershipProp(object.claim);
+        if (!membership || !(0, propositions_1.sameProp)(membership.set, preimage.set))
+            return false;
+        const app = parseFunctionApplicationTerm(membership.element);
+        return app !== null && (0, propositions_1.sameProp)(app.fn, preimage.fn) && (0, propositions_1.sameProp)(app.arg, output.element);
+    });
+    if (!candidate)
+        return null;
+    return { claims: [candidate.claim], ids: [candidate.id] };
+}
+function findPreimageElimDependency(claim, ctx) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const app = parseFunctionApplicationTerm(output.element);
+    if (!app)
+        return null;
+    const candidate = findLatestProofObject(ctx, object => {
+        const membership = parseMembershipProp(object.claim);
+        if (!membership || !(0, propositions_1.sameProp)(membership.element, app.arg))
+            return false;
+        const preimage = parsePreimageTerm(membership.set);
+        return preimage !== null && (0, propositions_1.sameProp)(preimage.fn, app.fn) && (0, propositions_1.sameProp)(preimage.set, output.set);
+    });
+    if (!candidate)
+        return null;
+    return { claims: [candidate.claim], ids: [candidate.id] };
+}
 function findUnionIntroDependency(claim, ctx) {
     const output = parseMembershipProp(claim);
     if (!output)
@@ -2326,6 +2535,22 @@ function findUnionIntroDependency(claim, ctx) {
         }
     }
     return null;
+}
+function findUnionElimDependency(claim, ctx) {
+    const output = parseDisjunctionProp(claim);
+    if (!output)
+        return null;
+    const leftMembership = parseMembershipProp(output[0]);
+    const rightMembership = parseMembershipProp(output[1]);
+    if (!leftMembership || !rightMembership)
+        return null;
+    if (!(0, propositions_1.sameProp)(leftMembership.element, rightMembership.element))
+        return null;
+    const unionClaim = `${leftMembership.element} ∈ ${leftMembership.set} ∪ ${rightMembership.set}`;
+    const unionObject = findLatestProofObjectByClaim(ctx, unionClaim);
+    if (!unionObject)
+        return null;
+    return { claims: [unionClaim], ids: [unionObject.id] };
 }
 function findSetBuilderIntroDependency(claim, ctx) {
     const dependency = resolveSetBuilderIntroDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
@@ -2872,11 +3097,19 @@ function minimumDependencyCount(rule, dependsOn) {
             return uniqueProps(dependsOn).length;
         case 'SUBSET_TRANS':
             return uniqueProps(dependsOn).length;
+        case 'SUBSET_ANTISYM':
+            return uniqueProps(dependsOn).length;
         case 'ARITHMETIC_COMM':
             return uniqueProps(dependsOn).length;
         case 'EQUALITY_SUBST':
             return uniqueProps(dependsOn).length;
+        case 'PREIMAGE_INTRO':
+            return uniqueProps(dependsOn).length;
+        case 'PREIMAGE_ELIM':
+            return uniqueProps(dependsOn).length;
         case 'UNION_INTRO':
+            return uniqueProps(dependsOn).length;
+        case 'UNION_ELIM':
             return uniqueProps(dependsOn).length;
         case 'SET_BUILDER_INTRO':
             return uniqueProps(dependsOn).length;
@@ -2938,7 +3171,7 @@ function theoremGoalHint(goalExpr) {
 function isCheckableGoal(expr) {
     switch (expr.type) {
         case 'Atom':
-            return expr.atomKind !== 'opaque' && isKernelCheckableAtom(expr.condition);
+            return isKernelCheckableAtom(expr.condition);
         case 'Quantified':
             return isKernelCheckableAtom(exprToString(expr));
         case 'And':
@@ -2954,6 +3187,8 @@ function isCheckableGoal(expr) {
 }
 function parseFallbackDiagnostic(expr, label) {
     if (expr.type !== 'Atom' || expr.atomKind !== 'opaque')
+        return null;
+    if (isKernelCheckableAtom(expr.condition))
         return null;
     const atom = expr;
     const reason = atom.parseError
@@ -3021,6 +3256,9 @@ function checkDerivedClaim(claim, ctx) {
     const subsetTrans = checkSubsetTransDerivedClaim(claim, ctx);
     if (subsetTrans?.valid)
         return subsetTrans;
+    const subsetAntisym = checkSubsetAntisymDerivedClaim(claim, ctx);
+    if (subsetAntisym?.valid)
+        return subsetAntisym;
     const iffIntro = checkIffIntroDerivedClaim(claim, ctx);
     if (iffIntro?.valid)
         return iffIntro;
@@ -3033,9 +3271,18 @@ function checkDerivedClaim(claim, ctx) {
     const equalitySubst = checkEqualitySubstDerivedClaim(claim, ctx);
     if (equalitySubst?.valid)
         return equalitySubst;
+    const preimageIntro = checkPreimageIntroDerivedClaim(claim, ctx);
+    if (preimageIntro?.valid)
+        return preimageIntro;
+    const preimageElim = checkPreimageElimDerivedClaim(claim, ctx);
+    if (preimageElim?.valid)
+        return preimageElim;
     const unionIntro = checkUnionIntroDerivedClaim(claim, ctx);
     if (unionIntro?.valid)
         return unionIntro;
+    const unionElim = checkUnionElimDerivedClaim(claim, ctx);
+    if (unionElim?.valid)
+        return unionElim;
     const setBuilderIntro = checkSetBuilderIntroDerivedClaim(claim, ctx);
     if (setBuilderIntro?.valid)
         return setBuilderIntro;
@@ -3159,6 +3406,15 @@ function checkSubsetTransDerivedClaim(claim, ctx) {
     }
     return null;
 }
+function checkSubsetAntisymDerivedClaim(claim, ctx) {
+    const equality = parseEqualityProp(claim);
+    if (!equality)
+        return null;
+    const leftSubset = `${equality.left} ⊆ ${equality.right}`;
+    const rightSubset = `${equality.right} ⊆ ${equality.left}`;
+    const result = (0, rules_1.checkSubsetAntisym)(leftSubset, rightSubset, claim, ctx);
+    return result.valid ? result : null;
+}
 function checkIffIntroDerivedClaim(claim, ctx) {
     const iff = parseIffProp(claim);
     if (!iff)
@@ -3238,6 +3494,50 @@ function checkEqualitySubstDerivedClaim(claim, ctx) {
     }
     return null;
 }
+function checkPreimageIntroDerivedClaim(claim, ctx) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const preimage = parsePreimageTerm(output.set);
+    if (!preimage)
+        return null;
+    for (const item of visibleEstablishedClaims(ctx)) {
+        const membership = parseMembershipProp(item.content);
+        if (!membership || !(0, propositions_1.sameProp)(membership.set, preimage.set))
+            continue;
+        const app = parseFunctionApplicationTerm(membership.element);
+        if (!app)
+            continue;
+        if ((0, propositions_1.sameProp)(app.fn, preimage.fn) && (0, propositions_1.sameProp)(app.arg, output.element)) {
+            const result = (0, rules_1.checkPreimageIntro)(item.content, claim, ctx);
+            if (result.valid)
+                return result;
+        }
+    }
+    return null;
+}
+function checkPreimageElimDerivedClaim(claim, ctx) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const app = parseFunctionApplicationTerm(output.element);
+    if (!app)
+        return null;
+    for (const item of visibleEstablishedClaims(ctx)) {
+        const membership = parseMembershipProp(item.content);
+        if (!membership || !(0, propositions_1.sameProp)(membership.element, app.arg))
+            continue;
+        const preimage = parsePreimageTerm(membership.set);
+        if (!preimage)
+            continue;
+        if ((0, propositions_1.sameProp)(preimage.fn, app.fn) && (0, propositions_1.sameProp)(preimage.set, output.set)) {
+            const result = (0, rules_1.checkPreimageElim)(item.content, claim, ctx);
+            if (result.valid)
+                return result;
+        }
+    }
+    return null;
+}
 function checkUnionIntroDerivedClaim(claim, ctx) {
     const output = parseMembershipProp(claim);
     if (!output)
@@ -3252,6 +3552,20 @@ function checkUnionIntroDerivedClaim(claim, ctx) {
             return result;
     }
     return null;
+}
+function checkUnionElimDerivedClaim(claim, ctx) {
+    const output = parseDisjunctionProp(claim);
+    if (!output)
+        return null;
+    const leftMembership = parseMembershipProp(output[0]);
+    const rightMembership = parseMembershipProp(output[1]);
+    if (!leftMembership || !rightMembership)
+        return null;
+    if (!(0, propositions_1.sameProp)(leftMembership.element, rightMembership.element))
+        return null;
+    const unionMembership = `${leftMembership.element} ∈ ${leftMembership.set} ∪ ${rightMembership.set}`;
+    const result = (0, rules_1.checkUnionElim)(unionMembership, claim, ctx);
+    return result.valid ? result : null;
 }
 function checkSetBuilderIntroDerivedClaim(claim, ctx) {
     const dependency = resolveSetBuilderIntroDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
@@ -3563,6 +3877,36 @@ function parseMembershipProp(prop) {
     if (value.startsWith('∀') || value.startsWith('∃'))
         return null;
     return (0, propositions_1.parseMembershipCanonical)(value);
+}
+function parseFunctionApplicationTerm(term) {
+    const value = stripParens(term);
+    const match = value.match(/^([A-Za-z_][A-Za-z0-9_.]*)\((.+)\)$/);
+    if (!match)
+        return null;
+    return {
+        fn: stripParens(match[1]),
+        arg: stripParens(match[2]),
+    };
+}
+function parsePreimageTerm(term) {
+    const value = stripParens(term);
+    const wordForm = value.match(/^preimage\((.+)\)$/i);
+    if (wordForm) {
+        const parts = splitTopLevel(wordForm[1], ',');
+        if (!parts)
+            return null;
+        return {
+            fn: stripParens(parts[0]),
+            set: stripParens(parts[1]),
+        };
+    }
+    const symbolic = value.match(/^([A-Za-z_][A-Za-z0-9_.]*)(\^-1|⁻¹)\((.+)\)$/);
+    if (!symbolic)
+        return null;
+    return {
+        fn: stripParens(symbolic[1]),
+        set: stripParens(symbolic[3]),
+    };
 }
 function parseSetBuilderTerm(term) {
     return (0, propositions_1.parseSetBuilderCanonical)(term);
@@ -4269,13 +4613,20 @@ function extractSortScopeFromClaim(claim, sortScope) {
     // Membership: x ∈ A
     const membershipMatch = s.match(/^(.+?)\s*∈\s*(.+)$/);
     if (membershipMatch) {
-        const left = membershipMatch[1].trim().replace(/[()]/g, '').trim();
-        const right = membershipMatch[2].trim().replace(/[()]/g, '').trim();
-        const leftId = left.split(/\s/)[0];
-        if (/^[a-z][a-z0-9_]*$/.test(leftId))
-            sortScope.set(leftId, 'Element');
-        // Extract ALL uppercase identifiers from compound set expressions (A ∩ B, A ∪ B, etc.)
-        const rightIds = right.match(/[A-Z][A-Za-z0-9_]*/g) || [];
+        const left = membershipMatch[1].trim();
+        const right = membershipMatch[2].trim();
+        const app = parseFunctionApplicationTerm(left);
+        if (app) {
+            if (/^[a-z][a-z0-9_]*$/.test(app.arg))
+                sortScope.set(app.arg, 'Element');
+        }
+        else {
+            const leftId = left.replace(/[()]/g, '').trim().split(/\s/)[0];
+            if (/^[a-z][a-z0-9_]*$/.test(leftId))
+                sortScope.set(leftId, 'Element');
+        }
+        const preimage = parsePreimageTerm(right);
+        const rightIds = (preimage ? preimage.set : right).replace(/[()]/g, '').trim().match(/[A-Z][A-Za-z0-9_]*/g) || [];
         for (const id of rightIds)
             sortScope.set(id, 'Set');
         return;
@@ -4315,8 +4666,12 @@ function checkScopeForClaim(claim, ctx, step) {
         return null;
     const membershipMatch = s.match(/^(.+?)\s*∈\s*(.+)$/);
     if (membershipMatch) {
-        const leftId = membershipMatch[1].trim().replace(/[()]/g, '').trim().split(/\s/)[0];
-        const rightId = membershipMatch[2].trim().replace(/[()]/g, '').trim().split(/\s/)[0].replace(/[^A-Za-z0-9_]/g, '');
+        const left = membershipMatch[1].trim();
+        const right = membershipMatch[2].trim();
+        const app = parseFunctionApplicationTerm(left);
+        const leftId = app ? app.arg : left.replace(/[()]/g, '').trim().split(/\s/)[0];
+        const preimage = parsePreimageTerm(right);
+        const rightId = (preimage ? preimage.set : right).replace(/[()]/g, '').trim().split(/\s/)[0].replace(/[^A-Za-z0-9_]/g, '');
         const leftSort = (0, sorts_1.inferIdentifierSort)(leftId);
         const rightSort = (0, sorts_1.inferIdentifierSort)(rightId);
         if (leftSort === 'Element' && !ctx.sortScope.has(leftId)) {

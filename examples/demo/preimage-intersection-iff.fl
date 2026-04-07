@@ -1,0 +1,23 @@
+theorem PreimageIntersectionIff() {
+  assert((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+} ↔
+
+proof PreimageIntersectionIff() {
+  assume(x ∈ preimage(f, B ∩ C)) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert((x ∈ preimage(f, B ∩ C)) -> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C)))) →
+  assume((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(x ∈ preimage(f, B ∩ C)) →
+  assert(((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) -> (x ∈ preimage(f, B ∩ C))) →
+  conclude((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+}

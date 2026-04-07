@@ -11,26 +11,29 @@ All examples in this directory obey the core FuturLang rule that the source itse
 3. `subset-transport.fl`
 4. `subset-chain.fl`
 5. `subset-transitivity.fl`
-6. `equality-substitution.fl`
-7. `union-intro.fl`
-8. `forall-in-elim.fl`
-9. `forall-in-intro.fl`
-10. `exists-in-intro.fl`
-11. `exists-in-elim.fl`
-12. `intersection-left.fl`
-13. `intersection-intro.fl`
-14. `intersection-right.fl`
-15. `intersection-membership-iff.fl`
-16. `mi-order-identity.fl`
-17. `conjunction-intro.fl`
-18. `conjunction-elim.fl`
-19. `modus-ponens.fl`
-20. `right-projection.fl`
-21. `multi-premise-chain.fl`
-22. `iff-intro.fl`
-23. `iff-elim.fl`
-24. `lemma-apply.fl`
-25. `contradiction-demo.fl`
+6. `subset-antisymmetry.fl`
+7. `equality-substitution.fl`
+8. `union-intro.fl`
+9. `union-membership-iff.fl`
+10. `forall-in-elim.fl`
+11. `forall-in-intro.fl`
+12. `exists-in-intro.fl`
+13. `exists-in-elim.fl`
+14. `intersection-left.fl`
+15. `intersection-intro.fl`
+16. `intersection-right.fl`
+17. `intersection-membership-iff.fl`
+18. `preimage-intersection-iff.fl`
+19. `mi-order-identity.fl`
+20. `conjunction-intro.fl`
+21. `conjunction-elim.fl`
+22. `modus-ponens.fl`
+23. `right-projection.fl`
+24. `multi-premise-chain.fl`
+25. `iff-intro.fl`
+26. `iff-elim.fl`
+27. `lemma-apply.fl`
+28. `contradiction-demo.fl`
 
 ## Demo commands
 
@@ -40,8 +43,10 @@ fl check examples/demo/mi-membership-identity.fl
 fl check examples/demo/subset-transport.fl
 fl check examples/demo/subset-chain.fl
 fl check examples/demo/subset-transitivity.fl
+fl check examples/demo/subset-antisymmetry.fl
 fl check examples/demo/equality-substitution.fl
 fl check examples/demo/union-intro.fl
+fl check examples/demo/union-membership-iff.fl
 fl check examples/demo/forall-in-elim.fl
 fl check examples/demo/forall-in-intro.fl
 fl check examples/demo/exists-in-intro.fl
@@ -50,6 +55,7 @@ fl check examples/demo/intersection-left.fl
 fl check examples/demo/intersection-intro.fl
 fl check examples/demo/intersection-right.fl
 fl check examples/demo/intersection-membership-iff.fl
+fl check examples/demo/preimage-intersection-iff.fl
 fl check examples/demo/mi-order-identity.fl
 fl check examples/demo/conjunction-intro.fl
 fl check examples/demo/conjunction-elim.fl
@@ -72,9 +78,13 @@ These examples stay inside the current fast checker subset, so they are the righ
 
 `subset-transitivity.fl` shows a second genuinely mathematical subset rule in the current kernel: `A ⊆ B`, `B ⊆ C` yields `A ⊆ C`.
 
+`subset-antisymmetry.fl` shows a more mathematician-natural set equality rule: from `A ⊆ B` and `B ⊆ A`, the checker derives `A = B`.
+
 `equality-substitution.fl` shows equality-driven transport across membership claims: `x = y` plus `x ∈ A` yields `y ∈ A`.
 
 `union-intro.fl` shows kernel-checked union membership introduction: from `x ∈ A`, the checker derives `x ∈ A ∪ B`.
+
+`union-membership-iff.fl` is the union counterpart to the intersection theorem: it proves `x ∈ A ∪ B ↔ (x ∈ A ∨ x ∈ B)` from scratch by combining `UNION_ELIM`, `UNION_INTRO`, `OR_ELIM`, and `IFF_INTRO`.
 
 `forall-in-elim.fl` shows bounded universal elimination: from `∀ x ∈ A, x ∈ B` and `a ∈ A`, the checker derives `a ∈ B`.
 
@@ -91,6 +101,8 @@ These examples stay inside the current fast checker subset, so they are the righ
 `intersection-right.fl` shows kernel-checked intersection membership elimination in direct set notation: from `x ∈ A ∩ B`, the checker derives `x ∈ B`.
 
 `intersection-membership-iff.fl` is a stronger derived theorem built from the kernel rules: it proves `x ∈ A ∩ B ↔ (x ∈ A ∧ x ∈ B)` from scratch by deriving both implications and then applying `IFF_INTRO`.
+
+`preimage-intersection-iff.fl` is the first honest function-facing theorem in the kernel subset: it uses `PREIMAGE_INTRO`, `PREIMAGE_ELIM`, and intersection rules to prove `x ∈ preimage(f, B ∩ C) ↔ (x ∈ preimage(f, B) ∧ x ∈ preimage(f, C))`.
 
 The conjunction introduction demo now includes an explicit `conclude(p && q)` step so `fl check` can display `AND_INTRO` directly in the proof trace.
 

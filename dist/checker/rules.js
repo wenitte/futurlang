@@ -10,12 +10,16 @@ exports.checkIffIntro = checkIffIntro;
 exports.checkIffElim = checkIffElim;
 exports.checkSubsetElim = checkSubsetElim;
 exports.checkSubsetTrans = checkSubsetTrans;
+exports.checkSubsetAntisym = checkSubsetAntisym;
 exports.checkEqualityRefl = checkEqualityRefl;
 exports.checkEqualitySymm = checkEqualitySymm;
 exports.checkEqualityTrans = checkEqualityTrans;
 exports.checkArithmeticComm = checkArithmeticComm;
 exports.checkEqualitySubst = checkEqualitySubst;
+exports.checkPreimageIntro = checkPreimageIntro;
+exports.checkPreimageElim = checkPreimageElim;
 exports.checkUnionIntro = checkUnionIntro;
+exports.checkUnionElim = checkUnionElim;
 exports.checkSetBuilderIntro = checkSetBuilderIntro;
 exports.checkIndexedUnionIntro = checkIndexedUnionIntro;
 exports.checkSetEquality = checkSetEquality;
@@ -179,6 +183,20 @@ function checkSubsetTrans(leftSubset, rightSubset, target, ctx) {
         hint: `Establish '${rightSubset}' before deriving '${target}'`,
     };
 }
+function checkSubsetAntisym(leftSubset, rightSubset, target, ctx) {
+    const hasLeft = isEstablished(leftSubset, ctx);
+    const hasRight = isEstablished(rightSubset, ctx);
+    if (hasLeft && hasRight) {
+        return { valid: true, rule: 'SUBSET_ANTISYM', message: `Subset antisymmetry: ${leftSubset}, ${rightSubset} ⊢ ${target}` };
+    }
+    const missing = hasLeft ? rightSubset : leftSubset;
+    return {
+        valid: false,
+        rule: 'SUBSET_ANTISYM',
+        message: `Cannot use subset antisymmetry: '${missing}' not yet established`,
+        hint: `Establish both subset directions before deriving '${target}'`,
+    };
+}
 function checkEqualityRefl(target) {
     if (!target || target.trim() === '') {
         return { valid: false, rule: 'EQUALITY_REFL', message: 'Cannot prove empty equality' };
@@ -249,6 +267,28 @@ function checkEqualitySubst(equalityClaim, membershipClaim, target, ctx) {
         hint: `Establish '${membershipClaim}' before deriving '${target}'`,
     };
 }
+function checkPreimageIntro(imageMembership, target, ctx) {
+    if (isEstablished(imageMembership, ctx)) {
+        return { valid: true, rule: 'PREIMAGE_INTRO', message: `Preimage introduction: ${imageMembership} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'PREIMAGE_INTRO',
+        message: `Cannot use preimage introduction: '${imageMembership}' not yet established`,
+        hint: `Establish '${imageMembership}' before deriving '${target}'`,
+    };
+}
+function checkPreimageElim(preimageMembership, target, ctx) {
+    if (isEstablished(preimageMembership, ctx)) {
+        return { valid: true, rule: 'PREIMAGE_ELIM', message: `Preimage elimination: ${preimageMembership} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'PREIMAGE_ELIM',
+        message: `Cannot use preimage elimination: '${preimageMembership}' not yet established`,
+        hint: `Establish '${preimageMembership}' before deriving '${target}'`,
+    };
+}
 function checkUnionIntro(membershipClaim, target, ctx) {
     if (isEstablished(membershipClaim, ctx)) {
         return { valid: true, rule: 'UNION_INTRO', message: `Union introduction: ${membershipClaim} ⊢ ${target}` };
@@ -258,6 +298,17 @@ function checkUnionIntro(membershipClaim, target, ctx) {
         rule: 'UNION_INTRO',
         message: `Cannot use union introduction: '${membershipClaim}' not yet established`,
         hint: `Establish '${membershipClaim}' before deriving '${target}'`,
+    };
+}
+function checkUnionElim(unionMembership, target, ctx) {
+    if (isEstablished(unionMembership, ctx)) {
+        return { valid: true, rule: 'UNION_ELIM', message: `Union elimination: ${unionMembership} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'UNION_ELIM',
+        message: `Cannot use union elimination: '${unionMembership}' not yet established`,
+        hint: `Establish '${unionMembership}' before deriving '${target}'`,
     };
 }
 function checkSetBuilderIntro(membershipClaim, target, ctx) {

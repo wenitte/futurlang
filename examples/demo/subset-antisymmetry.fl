@@ -1,0 +1,9 @@
+theorem SubsetAntisymmetry() {
+  given(A subset B) →
+  given(B subset A) →
+  assert(A = B)
+} ↔
+
+proof SubsetAntisymmetry() {
+  conclude(A = B)
+}

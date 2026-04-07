@@ -14,14 +14,12 @@ The internal derivation kernel now covers full propositional logic and the set-t
 ## Stage 2 — Build a sound core
 
 - Eliminate remaining UNVERIFIED paths in the demos and examples
-- Add equality reasoning rules (x = y, y = z → x = z)
-- Add IFF_INTRO/ELIM rules
 - Improve theorem-to-proof source mapping and diagnostics
 
 ## Stage 3 — Elaboration and richer libraries
 
 - Equality, function application, and algebraic laws
-- Named lemma libraries for common mathematical facts
+- Expand the first named lemma libraries for common mathematical facts
 - Bounded quantifier introduction with auto-witnessed proofs
 
 ## Stage 4 — Expressive mathematics
