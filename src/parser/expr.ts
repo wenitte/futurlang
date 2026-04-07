@@ -12,7 +12,7 @@
 // Atoms: string literals, relational expressions (x == y), bare identifiers.
 
 import {
-  ExprNode, AtomNode, AndNode, OrNode, ImpliesNode, IffNode, NotNode, QuantifiedNode,
+  ExprNode, AtomNode, AndNode, OrNode, ImpliesNode, IffNode, NotNode, QuantifiedNode, SetBuilderNode, IndexedUnionNode,
 } from './ast';
 
 const WORD_NORMALIZATIONS: Array<[RegExp, string]> = [
@@ -368,6 +368,14 @@ class ExprParser {
 
 export function parseExpr(src: string): ExprNode {
   const normalized = normalizeSurfaceSyntax(src).trim();
+  const indexedUnion = parseIndexedUnionExpr(normalized);
+  if (indexedUnion) {
+    return indexedUnion;
+  }
+  const setBuilder = parseSetBuilderExpr(normalized);
+  if (setBuilder) {
+    return setBuilder;
+  }
   const quantified = parseQuantifiedExpr(normalized);
   if (quantified) {
     return quantified;
@@ -423,4 +431,27 @@ function findTopLevelComma(value: string, start: number): number {
     else if (depth === 0 && ch === ',') return i;
   }
   return -1;
+}
+
+function parseSetBuilderExpr(value: string): SetBuilderNode | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^\{\s*(.+?)\s*\|\s*([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)\s*\}$/);
+  if (!match) return null;
+  return {
+    type: 'SetBuilder',
+    element: match[1].trim(),
+    variable: match[2].trim(),
+    domain: match[3].trim(),
+  };
+}
+
+function parseIndexedUnionExpr(value: string): IndexedUnionNode | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('∪')) return null;
+  const builder = parseSetBuilderExpr(trimmed.slice(1).trim());
+  if (!builder) return null;
+  return {
+    type: 'IndexedUnion',
+    builder,
+  };
 }

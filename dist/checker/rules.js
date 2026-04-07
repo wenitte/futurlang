@@ -11,8 +11,13 @@ exports.checkSubsetTrans = checkSubsetTrans;
 exports.checkEqualityRefl = checkEqualityRefl;
 exports.checkEqualitySymm = checkEqualitySymm;
 exports.checkEqualityTrans = checkEqualityTrans;
+exports.checkArithmeticComm = checkArithmeticComm;
 exports.checkEqualitySubst = checkEqualitySubst;
 exports.checkUnionIntro = checkUnionIntro;
+exports.checkSetBuilderIntro = checkSetBuilderIntro;
+exports.checkIndexedUnionIntro = checkIndexedUnionIntro;
+exports.checkSetEquality = checkSetEquality;
+exports.checkIndexedUnionElim = checkIndexedUnionElim;
 exports.checkIntersectionIntro = checkIntersectionIntro;
 exports.checkIntersectionElim = checkIntersectionElim;
 exports.checkForallTypedElim = checkForallTypedElim;
@@ -21,6 +26,7 @@ exports.checkExistsTypedIntro = checkExistsTypedIntro;
 exports.checkExistsTypedElim = checkExistsTypedElim;
 exports.checkExistsUniqueIntro = checkExistsUniqueIntro;
 exports.checkExistsUniqueElim = checkExistsUniqueElim;
+exports.checkDividesIntro = checkDividesIntro;
 exports.checkForallInElim = checkForallInElim;
 exports.checkForallInIntro = checkForallInIntro;
 exports.checkExistsInIntro = checkExistsInIntro;
@@ -174,6 +180,17 @@ function checkEqualityTrans(leftEquality, rightEquality, target, ctx) {
         hint: `Establish '${rightEquality}' before deriving '${target}'`,
     };
 }
+function checkArithmeticComm(sourceEquality, target, ctx) {
+    if (isEstablished(sourceEquality, ctx)) {
+        return { valid: true, rule: 'ARITHMETIC_COMM', message: `Arithmetic commutativity: ${sourceEquality} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'ARITHMETIC_COMM',
+        message: `Cannot use arithmetic commutativity: '${sourceEquality}' not yet established`,
+        hint: `Establish '${sourceEquality}' before deriving '${target}'`,
+    };
+}
 function checkEqualitySubst(equalityClaim, membershipClaim, target, ctx) {
     const hasEquality = isEstablished(equalityClaim, ctx);
     const hasMembership = isEstablished(membershipClaim, ctx);
@@ -204,6 +221,75 @@ function checkUnionIntro(membershipClaim, target, ctx) {
         rule: 'UNION_INTRO',
         message: `Cannot use union introduction: '${membershipClaim}' not yet established`,
         hint: `Establish '${membershipClaim}' before deriving '${target}'`,
+    };
+}
+function checkSetBuilderIntro(membershipClaim, target, ctx) {
+    if (isEstablished(membershipClaim, ctx)) {
+        return { valid: true, rule: 'SET_BUILDER_INTRO', message: `Set-builder introduction: ${membershipClaim} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'SET_BUILDER_INTRO',
+        message: `Cannot use set-builder introduction: '${membershipClaim}' not yet established`,
+        hint: `Establish '${membershipClaim}' before deriving '${target}'`,
+    };
+}
+function checkIndexedUnionIntro(witnessMembership, bodyMembership, target, ctx) {
+    const hasWitness = isEstablished(witnessMembership, ctx);
+    const hasBody = isEstablished(bodyMembership, ctx);
+    if (hasWitness && hasBody) {
+        return { valid: true, rule: 'INDEXED_UNION_INTRO', message: `Indexed union introduction: ${witnessMembership}, ${bodyMembership} ⊢ ${target}` };
+    }
+    const missing = hasWitness ? bodyMembership : witnessMembership;
+    return {
+        valid: false,
+        rule: 'INDEXED_UNION_INTRO',
+        message: `Cannot use indexed union introduction: '${missing}' not yet established`,
+        hint: `Establish '${missing}' before deriving '${target}'`,
+    };
+}
+function checkSetEquality(leftQuantifier, rightQuantifier, target, ctx) {
+    const hasLeft = isEstablished(leftQuantifier, ctx);
+    const hasRight = isEstablished(rightQuantifier, ctx);
+    if (hasLeft && hasRight) {
+        return { valid: true, rule: 'SET_MEMBERSHIP_EQ', message: `Set membership equality: ${leftQuantifier}, ${rightQuantifier} ⊢ ${target}` };
+    }
+    const missing = hasLeft ? rightQuantifier : leftQuantifier;
+    return {
+        valid: false,
+        rule: 'SET_MEMBERSHIP_EQ',
+        message: `Cannot use set membership equality: '${missing}' not yet established`,
+        hint: `Establish both quantified membership claims before deriving '${target}'`,
+    };
+}
+function checkIndexedUnionElim(unionMembership, witnessMembership, bodyMembership, target, ctx) {
+    const hasUnion = isEstablished(unionMembership, ctx);
+    const hasWitness = isEstablished(witnessMembership, ctx);
+    const hasBody = isEstablished(bodyMembership, ctx);
+    if (hasUnion && hasWitness && hasBody) {
+        return { valid: true, rule: 'INDEXED_UNION_ELIM', message: `Indexed union elimination: ${unionMembership}, ${witnessMembership}, ${bodyMembership} ⊢ ${target}` };
+    }
+    if (!hasUnion) {
+        return {
+            valid: false,
+            rule: 'INDEXED_UNION_ELIM',
+            message: `Cannot use indexed union elimination: '${unionMembership}' not yet established`,
+            hint: `Establish '${unionMembership}' before deriving '${target}'`,
+        };
+    }
+    if (!hasWitness) {
+        return {
+            valid: false,
+            rule: 'INDEXED_UNION_ELIM',
+            message: `Cannot use indexed union elimination: '${witnessMembership}' not yet established`,
+            hint: `Open an explicit witness scope and establish '${witnessMembership}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'INDEXED_UNION_ELIM',
+        message: `Cannot use indexed union elimination: '${bodyMembership}' not yet established`,
+        hint: `Establish '${bodyMembership}' inside the witness scope before deriving '${target}'`,
     };
 }
 function checkIntersectionIntro(leftMembership, rightMembership, target, ctx) {
@@ -354,6 +440,17 @@ function checkExistsUniqueElim(uniqueClaim, target, ctx) {
         rule: 'EXISTS_UNIQUE_ELIM',
         message: `Cannot use unique existence elimination: '${uniqueClaim}' not yet established`,
         hint: `Establish '${uniqueClaim}' before deriving '${target}'`,
+    };
+}
+function checkDividesIntro(equalityClaim, target, ctx) {
+    if (isEstablished(equalityClaim, ctx)) {
+        return { valid: true, rule: 'DIVIDES_INTRO', message: `Divisibility introduction: ${equalityClaim} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'DIVIDES_INTRO',
+        message: `Cannot use divisibility introduction: '${equalityClaim}' not yet established`,
+        hint: `Establish '${equalityClaim}' before deriving '${target}'`,
     };
 }
 function checkForallInElim(quantifiedClaim, witnessMembership, target, ctx) {

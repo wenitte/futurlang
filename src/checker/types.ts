@@ -33,8 +33,13 @@ export type InferenceRule =
   | 'EQUALITY_REFL'     // conclude x = x
   | 'EQUALITY_SYMM'     // have x = y, conclude y = x
   | 'EQUALITY_TRANS'    // have x = y, have y = z, conclude x = z
+  | 'ARITHMETIC_COMM'   // have a = b · c, conclude a = c · b
   | 'EQUALITY_SUBST'    // have x = y and x ∈ A, conclude y ∈ A
   | 'UNION_INTRO'       // have x ∈ A, conclude x ∈ A ∪ B
+  | 'SET_BUILDER_INTRO' // have a ∈ A, conclude T(a) ∈ {T(x) | x ∈ A}
+  | 'INDEXED_UNION_INTRO' // have a ∈ A and y ∈ T(a), conclude y ∈ ∪{T(x) | x ∈ A}
+  | 'INDEXED_UNION_ELIM' // have y ∈ ∪{T(x) | x ∈ A}, open a ∈ A and y ∈ T(a), conclude witness-free Q
+  | 'SET_MEMBERSHIP_EQ' // have ∀z∈A, z∈B and ∀z∈B, z∈A, conclude A = B
   | 'INTERSECTION_INTRO'// have x ∈ A and x ∈ B, conclude x ∈ A ∩ B
   | 'INTERSECTION_ELIM' // have x ∈ A ∩ B, conclude x ∈ A or x ∈ B
   | 'FORALL_TYPED_ELIM' // have ∀x: T, P(x) and a: T, conclude P(a)
@@ -43,6 +48,7 @@ export type InferenceRule =
   | 'EXISTS_TYPED_ELIM' // have ∃x: T, P(x), open a: T and P(a), conclude witness-free Q
   | 'EXISTS_UNIQUE_INTRO' // have existence and uniqueness, conclude ∃!x, P(x)
   | 'EXISTS_UNIQUE_ELIM' // from ∃!x, P(x) recover existence or uniqueness component
+  | 'DIVIDES_INTRO' // have b = a · k (or b = k · a), conclude a divides b
   | 'FORALL_IN_ELIM'    // have ∀x ∈ A, P(x) and a ∈ A, conclude P(a)
   | 'FORALL_IN_INTRO'   // open fresh witness a with a ∈ A and derive P(a), conclude ∀x ∈ A, P(x)
   | 'EXISTS_IN_INTRO'   // have a ∈ A and P(a), conclude ∃x ∈ A, P(x)

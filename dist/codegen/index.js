@@ -98,6 +98,9 @@ function generateSetVar(node) {
 function generateExpr(node) {
     switch (node.type) {
         case 'Atom': return generateAtom(node);
+        case 'SetBuilder':
+        case 'IndexedUnion':
+            return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported set-builder notation in JS evaluator. Use 'fl verify' for formal support.")`;
         case 'And': return `and(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
         case 'Or': return `or(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
         case 'Implies': return `implies(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
@@ -152,6 +155,10 @@ function renderExprSource(node) {
     switch (node.type) {
         case 'Atom':
             return node.condition;
+        case 'SetBuilder':
+            return `{${node.element} | ${node.variable} ∈ ${node.domain}}`;
+        case 'IndexedUnion':
+            return `∪${renderExprSource(node.builder)}`;
         case 'And':
             return `(${renderExprSource(node.left)} ∧ ${renderExprSource(node.right)})`;
         case 'Or':

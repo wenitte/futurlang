@@ -335,6 +335,14 @@ class ExprParser {
 // ── Public API ────────────────────────────────────────────────────────────────
 function parseExpr(src) {
     const normalized = normalizeSurfaceSyntax(src).trim();
+    const indexedUnion = parseIndexedUnionExpr(normalized);
+    if (indexedUnion) {
+        return indexedUnion;
+    }
+    const setBuilder = parseSetBuilderExpr(normalized);
+    if (setBuilder) {
+        return setBuilder;
+    }
     const quantified = parseQuantifiedExpr(normalized);
     if (quantified) {
         return quantified;
@@ -391,4 +399,28 @@ function findTopLevelComma(value, start) {
             return i;
     }
     return -1;
+}
+function parseSetBuilderExpr(value) {
+    const trimmed = value.trim();
+    const match = trimmed.match(/^\{\s*(.+?)\s*\|\s*([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)\s*\}$/);
+    if (!match)
+        return null;
+    return {
+        type: 'SetBuilder',
+        element: match[1].trim(),
+        variable: match[2].trim(),
+        domain: match[3].trim(),
+    };
+}
+function parseIndexedUnionExpr(value) {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('∪'))
+        return null;
+    const builder = parseSetBuilderExpr(trimmed.slice(1).trim());
+    if (!builder)
+        return null;
+    return {
+        type: 'IndexedUnion',
+        builder,
+    };
 }

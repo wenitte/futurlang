@@ -3,6 +3,10 @@ import { ExprNode } from '../parser/ast';
 export function exprToProp(expr: ExprNode): string {
   switch (expr.type) {
     case 'Atom':    return expr.condition;
+    case 'SetBuilder':
+      return `{${expr.element} | ${expr.variable} ∈ ${expr.domain}}`;
+    case 'IndexedUnion':
+      return `∪${exprToProp(expr.builder)}`;
     case 'And':     return `${exprToProp(expr.left)} ∧ ${exprToProp(expr.right)}`;
     case 'Or':      return `${exprToProp(expr.left)} ∨ ${exprToProp(expr.right)}`;
     case 'Implies': return `${exprToProp(expr.left)} → ${exprToProp(expr.right)}`;

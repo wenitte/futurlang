@@ -100,6 +100,18 @@ function serializeExpr(expr) {
     switch (expr.type) {
         case 'Atom':
             return serializeAtom(expr);
+        case 'SetBuilder':
+            return {
+                type: expr.type,
+                element: expr.element,
+                variable: expr.variable,
+                domain: expr.domain,
+            };
+        case 'IndexedUnion':
+            return {
+                type: expr.type,
+                builder: serializeExpr(expr.builder),
+            };
         case 'Quantified':
             return {
                 type: expr.type,
@@ -237,6 +249,13 @@ function evaluateExpr(expr: ProgramNode, scope: Record<string, unknown>): EvalRe
   switch (expr.type) {
     case 'Atom':
       return evaluateAtom(expr, scope);
+    case 'SetBuilder':
+    case 'IndexedUnion':
+      return {
+        value: false,
+        label: renderExprLabel(expr),
+        detail: 'Set-builder and indexed-union expressions are outside the executable subset.',
+      };
     case 'Quantified':
       return {
         value: false,
@@ -276,6 +295,10 @@ function renderExprLabel(expr: ProgramNode): string {
   switch (expr.type) {
     case 'Atom':
       return expr.condition;
+    case 'SetBuilder':
+      return '{' + expr.element + ' | ' + expr.variable + ' ∈ ' + expr.domain + '}';
+    case 'IndexedUnion':
+      return '∪' + renderExprLabel(expr.builder);
     case 'Quantified': {
       const symbol = expr.quantifier === 'forall' ? '∀' : expr.quantifier === 'exists' ? '∃' : '∃!';
       const binder = expr.binderStyle === 'bounded'

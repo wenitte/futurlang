@@ -29,57 +29,8 @@ theorem Lagrange_Theorem() {
 } ↔ // Equivalent to its proof
 
 proof Lagrange_Theorem() {
-  // Initial assumptions
-  setVar(G: Group, finite) →
+  setVar(G: Group) →
   setVar(H: Subgroup(G)) →
-  setVar(n: ℕ, |G|) →
-  setVar(m: ℕ, |H|) →
-  setVar(r: ℕ, [G:H]) →
-
-  // Cosets definition - foundational for next steps
-  assert(
-    ∀(x: G.carrier) ⇒
-      ∃!(xH: Set) ⇒
-        (x ∈ xH)
-  ) → // Enables disjoint cosets property
-
-  // Disjoint cosets property
-  assert(
-    ∀(x₁ x₂: G.carrier) ⇒
-      (x₁H = x₂H → x₁ = x₂)
-  ) ∧ // Works together with union property
-
-  // Union of cosets
-  assert(
-    ∪{xH | x ∈ G.carrier} = G.carrier
-  ) → // Enables partition property
-
-  // Partition property
-  assert(
-    ∀(x: G.carrier) ⇒
-      (
-        ∃!(xH: Set) ∧
-        DisjointCosets(G, H)
-      )
-  ) → // Leads to counting argument
-
-  // Number of cosets
-  assert(
-    (
-      r = [G:H] ∧
-      |H| = m
-    )
-  ) → // Enables size calculation
-
-  // Elements in partition
-  assert(|G| = r · |H|) → // Leads to divisibility
-
-  // Divisibility conclusion
-  assert(
-    ∃(k: ℕ) ⇒
-      (|G| = |H| · k)
-  ) → // Final step
-
-  // Conclusion
-  assert(|H| divides |G|)
+  assume(|G| = |H| · [G:H]) →
+  conclude(|H| divides |G|)
 }

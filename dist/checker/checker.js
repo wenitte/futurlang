@@ -905,10 +905,20 @@ function validateDerivationNode(node, inputs, output, goal) {
             return validateEqualitySymmNode(node, inputs, output);
         case 'EQUALITY_TRANS':
             return validateEqualityTransNode(node, inputs, output);
+        case 'ARITHMETIC_COMM':
+            return validateArithmeticCommNode(node, inputs, output);
         case 'EQUALITY_SUBST':
             return validateEqualitySubstNode(node, inputs, output);
         case 'UNION_INTRO':
             return validateUnionIntroNode(node, inputs, output);
+        case 'SET_BUILDER_INTRO':
+            return validateSetBuilderIntroNode(node, inputs, output);
+        case 'INDEXED_UNION_INTRO':
+            return validateIndexedUnionIntroNode(node, inputs, output);
+        case 'INDEXED_UNION_ELIM':
+            return validateIndexedUnionElimNode(node, inputs, output);
+        case 'SET_MEMBERSHIP_EQ':
+            return validateSetMembershipEqualityNode(node, inputs, output);
         case 'INTERSECTION_INTRO':
             return validateIntersectionIntroNode(node, inputs, output);
         case 'INTERSECTION_ELIM':
@@ -925,6 +935,8 @@ function validateDerivationNode(node, inputs, output, goal) {
             return validateExistsUniqueIntroNode(node, inputs, output);
         case 'EXISTS_UNIQUE_ELIM':
             return validateExistsUniqueElimNode(node, inputs, output);
+        case 'DIVIDES_INTRO':
+            return validateDividesIntroNode(node, inputs, output);
         case 'FORALL_IN_ELIM':
             return validateForallInElimNode(node, inputs, output);
         case 'FORALL_IN_INTRO':
@@ -1076,6 +1088,15 @@ function validateEqualityTransNode(node, inputs, output) {
     }
     return null;
 }
+function validateArithmeticCommNode(node, inputs, output) {
+    if (inputs.length !== 1) {
+        return { severity: 'error', message: `ARITHMETIC_COMM '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+    }
+    if (!supportsArithmeticCommutativeEquality(inputs[0].claim, output.claim)) {
+        return { severity: 'error', message: `ARITHMETIC_COMM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
 function validateEqualitySubstNode(node, inputs, output) {
     if (inputs.length !== 2) {
         return { severity: 'error', message: `EQUALITY_SUBST '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
@@ -1106,6 +1127,59 @@ function validateUnionIntroNode(node, inputs, output) {
     if (!(0, propositions_1.sameProp)(outputParts.element, inputParts.element) ||
         !((0, propositions_1.sameProp)(inputParts.set, union[0]) || (0, propositions_1.sameProp)(inputParts.set, union[1]))) {
         return { severity: 'error', message: `UNION_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateSetBuilderIntroNode(node, inputs, output) {
+    if (inputs.length !== 1) {
+        return { severity: 'error', message: `SET_BUILDER_INTRO '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+    }
+    if (!resolveSetBuilderIntroDependency(output.claim, inputs.map(input => input.claim))) {
+        return { severity: 'error', message: `SET_BUILDER_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateIndexedUnionIntroNode(node, inputs, output) {
+    if (inputs.length !== 2) {
+        return { severity: 'error', message: `INDEXED_UNION_INTRO '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+    }
+    if (!resolveIndexedUnionIntroDependency(output.claim, inputs.map(input => input.claim))) {
+        return { severity: 'error', message: `INDEXED_UNION_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateIndexedUnionElimNode(node, inputs, output) {
+    if (inputs.length !== 3) {
+        return { severity: 'error', message: `INDEXED_UNION_ELIM '${node.id}' requires 3 inputs`, step: node.step, rule: node.rule };
+    }
+    const unionMembership = inputs.find(input => {
+        const membership = parseMembershipProp(input.claim);
+        return membership && parseIndexedUnionTerm(membership.set);
+    });
+    const assumptions = inputs.filter(input => parseMembershipProp(input.claim) && input.source === 'assumption');
+    if (!unionMembership || assumptions.length < 2) {
+        return { severity: 'error', message: `INDEXED_UNION_ELIM '${node.id}' must reference indexed-union membership plus witness assumptions`, step: node.step, rule: node.rule };
+    }
+    const unionProp = parseMembershipProp(unionMembership.claim);
+    if (!unionProp) {
+        return { severity: 'error', message: `INDEXED_UNION_ELIM '${node.id}' has malformed indexed-union membership`, step: node.step, rule: node.rule };
+    }
+    const indexedUnion = parseIndexedUnionTerm(unionProp.set);
+    if (!indexedUnion) {
+        return { severity: 'error', message: `INDEXED_UNION_ELIM '${node.id}' must consume indexed-union membership`, step: node.step, rule: node.rule };
+    }
+    const scope = resolveIndexedUnionElimScopeFromInputs(indexedUnion, unionProp.element, assumptions.map(input => input.claim), output.claim);
+    if (!scope) {
+        return { severity: 'error', message: `INDEXED_UNION_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateSetMembershipEqualityNode(node, inputs, output) {
+    if (inputs.length !== 2) {
+        return { severity: 'error', message: `SET_MEMBERSHIP_EQ '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+    }
+    if (!resolveSetEqualityScopeFromInputs(output.claim, inputs.map(input => input.claim))) {
+        return { severity: 'error', message: `SET_MEMBERSHIP_EQ '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
     }
     return null;
 }
@@ -1210,7 +1284,9 @@ function validateExistsTypedIntroNode(node, inputs, output) {
         return { severity: 'error', message: `EXISTS_TYPED_INTRO '${node.id}' has malformed typed witness`, step: node.step, rule: node.rule };
     }
     const instantiated = instantiateBoundedQuantifier({ variable: quantifier.variable, body: quantifier.body }, witnessProp.variable);
-    if (!sameTypeDomain(witnessProp.domain, quantifier.domain) || !instantiated || !(0, propositions_1.sameProp)(instantiated, bodyInput.claim)) {
+    const matchesInstantiatedBody = instantiated
+        && ((0, propositions_1.sameProp)(instantiated, bodyInput.claim) || supportsArithmeticCommutativeEquality(bodyInput.claim, instantiated));
+    if (!sameTypeDomain(witnessProp.domain, quantifier.domain) || !matchesInstantiatedBody) {
         return { severity: 'error', message: `EXISTS_TYPED_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
     }
     return null;
@@ -1256,6 +1332,15 @@ function validateExistsUniqueElimNode(node, inputs, output) {
     const lowered = lowerUniqueExistenceClaim(inputs[0].claim);
     if (!lowered || (!(0, propositions_1.sameProp)(output.claim, lowered.existenceClaim) && !(0, propositions_1.sameProp)(output.claim, lowered.uniquenessClaim))) {
         return { severity: 'error', message: `EXISTS_UNIQUE_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateDividesIntroNode(node, inputs, output) {
+    if (inputs.length !== 1) {
+        return { severity: 'error', message: `DIVIDES_INTRO '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+    }
+    if (!supportsDividesFromEquality(inputs[0].claim, output.claim)) {
+        return { severity: 'error', message: `DIVIDES_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
     }
     return null;
 }
@@ -1464,10 +1549,20 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             return buildEqualitySymmProofObject(claim, source, step, ctx);
         case 'EQUALITY_TRANS':
             return buildEqualityTransProofObject(claim, source, step, ctx);
+        case 'ARITHMETIC_COMM':
+            return buildArithmeticCommProofObject(claim, source, step, ctx);
         case 'EQUALITY_SUBST':
             return buildEqualitySubstProofObject(claim, source, step, ctx);
         case 'UNION_INTRO':
             return buildUnionIntroProofObject(claim, source, step, ctx);
+        case 'SET_BUILDER_INTRO':
+            return buildSetBuilderIntroProofObject(claim, source, step, ctx);
+        case 'INDEXED_UNION_INTRO':
+            return buildIndexedUnionIntroProofObject(claim, source, step, ctx);
+        case 'INDEXED_UNION_ELIM':
+            return buildIndexedUnionElimProofObject(claim, source, step, ctx);
+        case 'SET_MEMBERSHIP_EQ':
+            return buildSetMembershipEqualityProofObject(claim, source, step, ctx);
         case 'INTERSECTION_INTRO':
             return buildIntersectionIntroProofObject(claim, source, step, ctx);
         case 'INTERSECTION_ELIM':
@@ -1484,6 +1579,8 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             return buildExistsUniqueIntroProofObject(claim, source, step, ctx);
         case 'EXISTS_UNIQUE_ELIM':
             return buildExistsUniqueElimProofObject(claim, source, step, ctx);
+        case 'DIVIDES_INTRO':
+            return buildDividesIntroProofObject(claim, source, step, ctx);
         case 'FORALL_IN_ELIM':
             return buildForallInElimProofObject(claim, source, step, ctx);
         case 'FORALL_IN_INTRO':
@@ -1629,6 +1726,17 @@ function buildEqualityTransProofObject(claim, source, step, ctx) {
         dependsOnIds: dependency?.ids ?? [],
     };
 }
+function buildArithmeticCommProofObject(claim, source, step, ctx) {
+    const dependency = findArithmeticCommDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'ARITHMETIC_COMM',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
 function buildEqualitySubstProofObject(claim, source, step, ctx) {
     const dependency = findEqualitySubstDependency(claim, ctx);
     return {
@@ -1647,6 +1755,53 @@ function buildUnionIntroProofObject(claim, source, step, ctx) {
         source,
         step,
         rule: 'UNION_INTRO',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildSetBuilderIntroProofObject(claim, source, step, ctx) {
+    const dependency = findSetBuilderIntroDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'SET_BUILDER_INTRO',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildIndexedUnionIntroProofObject(claim, source, step, ctx) {
+    const dependency = findIndexedUnionIntroDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'INDEXED_UNION_INTRO',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildSetMembershipEqualityProofObject(claim, source, step, ctx) {
+    const dependency = findSetEqualityDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'SET_MEMBERSHIP_EQ',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildIndexedUnionElimProofObject(claim, source, step, ctx) {
+    const dependency = findIndexedUnionElimDependency(claim, ctx);
+    const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'INDEXED_UNION_ELIM',
+        scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+        dischargedScopeIds,
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -1737,6 +1892,17 @@ function buildExistsUniqueElimProofObject(claim, source, step, ctx) {
         source,
         step,
         rule: 'EXISTS_UNIQUE_ELIM',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildDividesIntroProofObject(claim, source, step, ctx) {
+    const dependency = findDividesIntroDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'DIVIDES_INTRO',
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -2013,6 +2179,18 @@ function findEqualityTransDependency(claim, ctx) {
     }
     return null;
 }
+function findArithmeticCommDependency(claim, ctx) {
+    for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+        const source = ctx.proofObjects[i];
+        if (supportsArithmeticCommutativeEquality(source.claim, claim)) {
+            return {
+                claims: [source.claim],
+                ids: [source.id],
+            };
+        }
+    }
+    return null;
+}
 function findEqualitySubstDependency(claim, ctx) {
     for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
         const equality = ctx.proofObjects[i];
@@ -2047,6 +2225,64 @@ function findUnionIntroDependency(claim, ctx) {
         }
     }
     return null;
+}
+function findSetBuilderIntroDependency(claim, ctx) {
+    const dependency = resolveSetBuilderIntroDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
+    if (!dependency)
+        return null;
+    const witness = findLatestProofObjectByClaim(ctx, dependency.witnessMembership);
+    if (!witness)
+        return null;
+    return {
+        claims: [dependency.witnessMembership],
+        ids: [witness.id],
+    };
+}
+function findIndexedUnionIntroDependency(claim, ctx) {
+    const dependency = resolveIndexedUnionIntroDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
+    if (!dependency)
+        return null;
+    const witness = findLatestProofObjectByClaim(ctx, dependency.witnessMembership);
+    const body = findLatestProofObjectByClaim(ctx, dependency.bodyMembership);
+    if (!witness || !body)
+        return null;
+    return {
+        claims: [dependency.witnessMembership, dependency.bodyMembership],
+        ids: uniqueIds([witness.id, body.id]),
+    };
+}
+function findIndexedUnionElimDependency(claim, ctx) {
+    for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+        const unionMembership = ctx.proofObjects[i];
+        const membership = parseMembershipProp(unionMembership.claim);
+        if (!membership)
+            continue;
+        const indexedUnion = parseIndexedUnionTerm(membership.set);
+        if (!indexedUnion)
+            continue;
+        const scope = findIndexedUnionElimScope(unionMembership.claim, claim, ctx);
+        if (!scope)
+            continue;
+        return {
+            claims: [unionMembership.claim, scope.witnessMembership.claim, scope.bodyMembership.claim],
+            ids: uniqueIds([unionMembership.id, scope.witnessMembership.id, scope.bodyMembership.id]),
+            dischargedScopeIds: scope.dischargedScopeIds,
+        };
+    }
+    return null;
+}
+function findSetEqualityDependency(claim, ctx) {
+    const dependency = resolveSetEqualityDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
+    if (!dependency)
+        return null;
+    const left = findLatestProofObjectByClaim(ctx, dependency.leftQuantifier);
+    const right = findLatestProofObjectByClaim(ctx, dependency.rightQuantifier);
+    if (!left || !right)
+        return null;
+    return {
+        claims: [dependency.leftQuantifier, dependency.rightQuantifier],
+        ids: uniqueIds([left.id, right.id]),
+    };
 }
 function findIntersectionIntroDependency(claim, ctx) {
     const output = parseMembershipProp(claim);
@@ -2140,6 +2376,15 @@ function findExistsTypedIntroDependency(claim, ctx) {
     const quantifier = parseTypedQuantifierProp(claim, 'exists');
     if (!quantifier)
         return null;
+    const resolved = resolveTypedExistentialIntroWitness(quantifier, ctx);
+    if (!resolved)
+        return null;
+    return {
+        claims: [resolved.witnessClaim, resolved.bodyClaim],
+        ids: uniqueIds([resolved.witnessId, resolved.bodyId]),
+    };
+}
+function resolveTypedExistentialIntroWitness(quantifier, ctx) {
     for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
         const witness = ctx.proofObjects[i];
         const witnessProp = parseTypedVariableProp(witness.claim);
@@ -2151,8 +2396,19 @@ function findExistsTypedIntroDependency(claim, ctx) {
         const body = findLatestProofObjectByClaim(ctx, instantiated);
         if (body) {
             return {
-                claims: [witness.claim, body.claim],
-                ids: uniqueIds([witness.id, body.id]),
+                witnessClaim: witness.claim,
+                bodyClaim: body.claim,
+                witnessId: witness.id,
+                bodyId: body.id,
+            };
+        }
+        const arithmeticBody = findArithmeticWitnessedBody(ctx, quantifier.body, quantifier.variable, witnessProp.variable);
+        if (arithmeticBody) {
+            return {
+                witnessClaim: witness.claim,
+                bodyClaim: arithmeticBody.claim,
+                witnessId: witness.id,
+                bodyId: arithmeticBody.id,
             };
         }
     }
@@ -2198,6 +2454,18 @@ function findExistsUniqueElimDependency(claim, ctx) {
             return {
                 claims: [unique.claim],
                 ids: [unique.id],
+            };
+        }
+    }
+    return null;
+}
+function findDividesIntroDependency(claim, ctx) {
+    for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+        const equality = ctx.proofObjects[i];
+        if (supportsDividesFromEquality(equality.claim, claim)) {
+            return {
+                claims: [equality.claim],
+                ids: [equality.id],
             };
         }
     }
@@ -2461,9 +2729,19 @@ function minimumDependencyCount(rule, dependsOn) {
             return uniqueProps(dependsOn).length;
         case 'SUBSET_TRANS':
             return uniqueProps(dependsOn).length;
+        case 'ARITHMETIC_COMM':
+            return uniqueProps(dependsOn).length;
         case 'EQUALITY_SUBST':
             return uniqueProps(dependsOn).length;
         case 'UNION_INTRO':
+            return uniqueProps(dependsOn).length;
+        case 'SET_BUILDER_INTRO':
+            return uniqueProps(dependsOn).length;
+        case 'INDEXED_UNION_INTRO':
+            return uniqueProps(dependsOn).length;
+        case 'INDEXED_UNION_ELIM':
+            return uniqueProps(dependsOn).length;
+        case 'SET_MEMBERSHIP_EQ':
             return uniqueProps(dependsOn).length;
         case 'INTERSECTION_INTRO':
             return uniqueProps(dependsOn).length;
@@ -2480,6 +2758,8 @@ function minimumDependencyCount(rule, dependsOn) {
         case 'EXISTS_UNIQUE_INTRO':
             return uniqueProps(dependsOn).length;
         case 'EXISTS_UNIQUE_ELIM':
+            return uniqueProps(dependsOn).length;
+        case 'DIVIDES_INTRO':
             return uniqueProps(dependsOn).length;
         case 'FORALL_IN_ELIM':
             return uniqueProps(dependsOn).length;
@@ -2604,6 +2884,18 @@ function checkDerivedClaim(claim, ctx) {
     const unionIntro = checkUnionIntroDerivedClaim(claim, ctx);
     if (unionIntro?.valid)
         return unionIntro;
+    const setBuilderIntro = checkSetBuilderIntroDerivedClaim(claim, ctx);
+    if (setBuilderIntro?.valid)
+        return setBuilderIntro;
+    const indexedUnionIntro = checkIndexedUnionIntroDerivedClaim(claim, ctx);
+    if (indexedUnionIntro?.valid)
+        return indexedUnionIntro;
+    const setEquality = checkSetEqualityDerivedClaim(claim, ctx);
+    if (setEquality?.valid)
+        return setEquality;
+    const indexedUnionElim = checkIndexedUnionElimDerivedClaim(claim, ctx);
+    if (indexedUnionElim?.valid)
+        return indexedUnionElim;
     const intersectionIntro = checkIntersectionIntroDerivedClaim(claim, ctx);
     if (intersectionIntro?.valid)
         return intersectionIntro;
@@ -2628,6 +2920,9 @@ function checkDerivedClaim(claim, ctx) {
     const existsUniqueElim = checkExistsUniqueComponentDerivedClaim(claim, ctx);
     if (existsUniqueElim?.valid)
         return existsUniqueElim;
+    const dividesIntro = checkDividesDerivedClaim(claim, ctx);
+    if (dividesIntro?.valid)
+        return dividesIntro;
     const forallElim = checkForallInElimDerivedClaim(claim, ctx);
     if (forallElim?.valid)
         return forallElim;
@@ -2710,6 +3005,13 @@ function checkEqualityDerivedClaim(claim, ctx) {
     if ((0, propositions_1.sameProp)(equality.left, equality.right)) {
         return (0, rules_1.checkEqualityRefl)(claim);
     }
+    for (const item of visibleEstablishedClaims(ctx)) {
+        if (supportsArithmeticCommutativeEquality(item.content, claim)) {
+            const result = (0, rules_1.checkArithmeticComm)(item.content, claim, ctx);
+            if (result.valid)
+                return result;
+        }
+    }
     const symmetricSource = `${equality.right} = ${equality.left}`;
     if (visibleEstablishedClaims(ctx).some(item => (0, propositions_1.sameProp)(item.content, symmetricSource))) {
         const result = (0, rules_1.checkEqualitySymm)(symmetricSource, claim, ctx);
@@ -2761,6 +3063,41 @@ function checkUnionIntroDerivedClaim(claim, ctx) {
             return result;
     }
     return null;
+}
+function checkSetBuilderIntroDerivedClaim(claim, ctx) {
+    const dependency = resolveSetBuilderIntroDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
+    if (!dependency)
+        return null;
+    const result = (0, rules_1.checkSetBuilderIntro)(dependency.witnessMembership, claim, ctx);
+    return result.valid ? result : null;
+}
+function checkIndexedUnionIntroDerivedClaim(claim, ctx) {
+    const dependency = resolveIndexedUnionIntroDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
+    if (!dependency)
+        return null;
+    const result = (0, rules_1.checkIndexedUnionIntro)(dependency.witnessMembership, dependency.bodyMembership, claim, ctx);
+    return result.valid ? result : null;
+}
+function checkIndexedUnionElimDerivedClaim(claim, ctx) {
+    for (const item of visibleEstablishedClaims(ctx)) {
+        const membership = parseMembershipProp(item.content);
+        if (!membership || !parseIndexedUnionTerm(membership.set))
+            continue;
+        const scope = findIndexedUnionElimScope(item.content, claim, ctx);
+        if (!scope)
+            continue;
+        const result = (0, rules_1.checkIndexedUnionElim)(item.content, scope.witnessMembership.claim, scope.bodyMembership.claim, claim, ctx);
+        if (result.valid)
+            return result;
+    }
+    return null;
+}
+function checkSetEqualityDerivedClaim(claim, ctx) {
+    const dependency = resolveSetEqualityDependency(claim, visibleEstablishedClaims(ctx).map(item => item.content));
+    if (!dependency)
+        return null;
+    const result = (0, rules_1.checkSetEquality)(dependency.leftQuantifier, dependency.rightQuantifier, claim, ctx);
+    return result.valid ? result : null;
 }
 function checkIntersectionIntroDerivedClaim(claim, ctx) {
     const output = parseMembershipProp(claim);
@@ -2824,20 +3161,12 @@ function checkExistsTypedIntroDerivedClaim(claim, ctx) {
     const quantifier = parseTypedQuantifierProp(claim, 'exists');
     if (!quantifier)
         return null;
-    const established = visibleEstablishedClaims(ctx);
-    for (const variable of ctx.variables) {
-        if (!sameTypeDomain(variable.type ?? '', quantifier.domain))
-            continue;
-        const instantiated = instantiateBoundedQuantifier({ variable: quantifier.variable, body: quantifier.body }, variable.name);
-        if (!instantiated)
-            continue;
-        if (established.some(item => (0, propositions_1.sameProp)(item.content, instantiated))) {
-            const witnessDeclaration = `${variable.name}: ${variable.type}`;
-            const result = (0, rules_1.checkExistsTypedIntro)(witnessDeclaration, instantiated, claim, ctx);
-            if (result.valid)
-                return result;
-        }
-    }
+    const resolved = resolveTypedExistentialIntroWitness(quantifier, ctx);
+    if (!resolved)
+        return null;
+    const result = (0, rules_1.checkExistsTypedIntro)(resolved.witnessClaim, resolved.bodyClaim, claim, ctx);
+    if (result.valid)
+        return result;
     return null;
 }
 function checkExistsTypedElimDerivedClaim(claim, ctx) {
@@ -2868,6 +3197,16 @@ function checkExistsUniqueComponentDerivedClaim(claim, ctx) {
             continue;
         if ((0, propositions_1.sameProp)(claim, lowered.existenceClaim) || (0, propositions_1.sameProp)(claim, lowered.uniquenessClaim)) {
             const result = (0, rules_1.checkExistsUniqueElim)(item.content, claim, ctx);
+            if (result.valid)
+                return result;
+        }
+    }
+    return null;
+}
+function checkDividesDerivedClaim(claim, ctx) {
+    for (const item of visibleEstablishedClaims(ctx)) {
+        if (supportsDividesFromEquality(item.content, claim)) {
+            const result = (0, rules_1.checkDividesIntro)(item.content, claim, ctx);
             if (result.valid)
                 return result;
         }
@@ -3033,6 +3372,84 @@ function parseMembershipProp(prop) {
         return null;
     return { element: stripParens(match[1].trim()), set: stripParens(match[3].trim()) };
 }
+function parseSetBuilderTerm(term) {
+    const value = stripParens(term);
+    const match = value.match(/^\{\s*(.+?)\s*\|\s*([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)\s*\}$/);
+    if (!match)
+        return null;
+    return {
+        elementTemplate: stripParens(match[1].trim()),
+        variable: match[2].trim(),
+        domain: stripParens(match[3].trim()),
+    };
+}
+function parseIndexedUnionTerm(term) {
+    const value = stripParens(term);
+    if (!value.startsWith('∪'))
+        return null;
+    return parseSetBuilderTerm(value.slice(1).trim());
+}
+function parseMembershipQuantifier(claim) {
+    const typed = parseTypedQuantifierProp(claim, 'forall');
+    if (typed && typed.body) {
+        const membership = parseMembershipProp(typed.body);
+        if (membership && (0, propositions_1.sameProp)(membership.element, typed.variable)) {
+            return { domain: typed.domain, membershipSet: membership.set };
+        }
+    }
+    const bounded = parseBoundedQuantifierProp(claim, 'forall');
+    if (bounded && bounded.body) {
+        const membership = parseMembershipProp(bounded.body);
+        if (membership && (0, propositions_1.sameProp)(membership.element, bounded.variable)) {
+            return { domain: bounded.set, membershipSet: membership.set };
+        }
+    }
+    return null;
+}
+function findMembershipQuantifierClaim(domain, targetSet, claims) {
+    for (const claim of claims) {
+        const info = parseMembershipQuantifier(claim);
+        if (!info)
+            continue;
+        if (matchesDomainTerm(domain, info.domain) && (0, propositions_1.sameProp)(info.membershipSet, targetSet)) {
+            return claim;
+        }
+    }
+    return null;
+}
+function matchesDomainTerm(expected, actual) {
+    return (0, propositions_1.sameProp)(expected, actual) || sameSetBuilderTerm(expected, actual) || sameSetBuilderTerm(actual, expected);
+}
+function sameSetBuilderTerm(left, right) {
+    const leftBuilder = parseSetBuilderOrUnion(left);
+    const rightBuilder = parseSetBuilderOrUnion(right);
+    if (!leftBuilder || !rightBuilder)
+        return false;
+    if (!(0, propositions_1.sameProp)(leftBuilder.domain, rightBuilder.domain))
+        return false;
+    const leftNormalized = normalizeBuilderTemplate(leftBuilder.elementTemplate, leftBuilder.variable);
+    const rightNormalized = normalizeBuilderTemplate(rightBuilder.elementTemplate, rightBuilder.variable);
+    return (0, propositions_1.sameProp)(leftNormalized, rightNormalized);
+}
+function normalizeBuilderTemplate(template, variable) {
+    return substitutePatternVariable(template, variable, '__MEMBER__');
+}
+function parseSetBuilderOrUnion(term) {
+    return parseIndexedUnionTerm(term) ?? parseSetBuilderTerm(term);
+}
+function resolveSetEqualityDependency(claim, availableClaims) {
+    const equality = parseEqualityProp(claim);
+    if (!equality)
+        return null;
+    const leftQuantifier = findMembershipQuantifierClaim(equality.left, equality.right, availableClaims);
+    const rightQuantifier = findMembershipQuantifierClaim(equality.right, equality.left, availableClaims);
+    if (!leftQuantifier || !rightQuantifier)
+        return null;
+    return { leftQuantifier, rightQuantifier };
+}
+function resolveSetEqualityScopeFromInputs(claim, inputs) {
+    return resolveSetEqualityDependency(claim, inputs);
+}
 function parseBinarySetProp(prop, operator) {
     return splitTopLevel(stripParens(prop), operator);
 }
@@ -3072,6 +3489,39 @@ function parseTypedQuantifierProp(prop, kind) {
         body: stripParens(match[3].trim()),
     };
 }
+function parseStandaloneBoundedQuantifierProp(prop, kind) {
+    const value = stripParens(prop);
+    const symbol = kind === 'forall' ? '∀' : kind === 'exists' ? '∃' : '∃!';
+    const match = value.match(new RegExp(`^${symbol}\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*(.+)$`));
+    if (match) {
+        return {
+            kind,
+            variable: match[1].trim(),
+            set: stripParens(match[2].trim()),
+        };
+    }
+    const parenMatch = value.match(new RegExp(`^${symbol}\\s*\\(\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*([^)]+)\\)$`));
+    if (parenMatch) {
+        return {
+            kind,
+            variable: parenMatch[1].trim(),
+            set: stripParens(parenMatch[2].trim()),
+        };
+    }
+    return null;
+}
+function parseStandaloneTypedQuantifierProp(prop, kind) {
+    const value = stripParens(prop);
+    const symbol = kind === 'forall' ? '∀' : kind === 'exists' ? '∃' : '∃!';
+    const match = value.match(new RegExp(`^${symbol}\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*:\\s*(.+)$`));
+    if (!match)
+        return null;
+    return {
+        kind,
+        variable: match[1].trim(),
+        domain: stripParens(match[2].trim()),
+    };
+}
 function parseTypedVariableProp(prop) {
     const match = stripParens(prop).match(/^([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*:\s*(.+)$/);
     if (!match)
@@ -3079,6 +3529,21 @@ function parseTypedVariableProp(prop) {
     return {
         variable: match[1].trim(),
         domain: stripParens(match[2].trim()),
+    };
+}
+function parseProductExpression(value) {
+    const parts = splitTopLevel(stripParens(value), '·');
+    if (!parts)
+        return null;
+    return { left: stripParens(parts[0]), right: stripParens(parts[1]) };
+}
+function parseDividesProp(prop) {
+    const match = stripParens(prop).match(/^(.+?)\s+divides\s+(.+)$/);
+    if (!match)
+        return null;
+    return {
+        divisor: stripParens(match[1].trim()),
+        dividend: stripParens(match[2].trim()),
     };
 }
 function lowerUniqueExistenceClaim(claim) {
@@ -3119,6 +3584,71 @@ function normalizeTypeDomain(value) {
 }
 function sameTypeDomain(left, right) {
     return normalizeTypeDomain(left) === normalizeTypeDomain(right);
+}
+function isSupportedArithmeticTerm(term) {
+    const value = stripParens(term);
+    const product = parseProductExpression(value);
+    if (product) {
+        return isSupportedArithmeticTerm(product.left) && isSupportedArithmeticTerm(product.right);
+    }
+    if (/^\|.+\|$/.test(value))
+        return true;
+    if (/^\[[^:\]]+:[^\]]+\]$/.test(value))
+        return true;
+    if (/^[A-Za-z_][\w₀-₉ₐ-ₙ]*$/.test(value))
+        return true;
+    if (/^\d+$/.test(value))
+        return true;
+    return false;
+}
+function isSetBuilderLikeTerm(term) {
+    const value = stripParens(term);
+    return /^\{.+\|\s*.+\}$/.test(value) || /^∪\{.+\|\s*.+\}$/.test(value);
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function substitutePatternVariable(pattern, variable, witness) {
+    const standalone = new RegExp(`(?<![\\w₀-₉ₐ-ₙ])${escapeRegExp(variable)}(?![\\w₀-₉ₐ-ₙ])`, 'g');
+    const prefixed = new RegExp(`(?<![\\w₀-₉ₐ-ₙ])${escapeRegExp(variable)}(?=[A-Z])`, 'g');
+    return pattern.replace(standalone, witness).replace(prefixed, witness);
+}
+function resolveSetBuilderIntroDependency(claim, availableClaims) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const builder = parseSetBuilderTerm(output.set);
+    if (!builder)
+        return null;
+    for (const available of availableClaims) {
+        const witness = parseMembershipProp(available);
+        if (!witness || !(0, propositions_1.sameProp)(witness.set, builder.domain))
+            continue;
+        const expectedElement = substitutePatternVariable(builder.elementTemplate, builder.variable, witness.element);
+        if ((0, propositions_1.sameProp)(output.element, expectedElement)) {
+            return { witnessMembership: available };
+        }
+    }
+    return null;
+}
+function resolveIndexedUnionIntroDependency(claim, availableClaims) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const indexedUnion = parseIndexedUnionTerm(output.set);
+    if (!indexedUnion)
+        return null;
+    for (const available of availableClaims) {
+        const witness = parseMembershipProp(available);
+        if (!witness || !(0, propositions_1.sameProp)(witness.set, indexedUnion.domain))
+            continue;
+        const instantiatedSet = substitutePatternVariable(indexedUnion.elementTemplate, indexedUnion.variable, witness.element);
+        const bodyMembership = `${output.element} ∈ ${instantiatedSet}`;
+        if (availableClaims.some(item => (0, propositions_1.sameProp)(item, bodyMembership))) {
+            return { witnessMembership: available, bodyMembership };
+        }
+    }
+    return null;
 }
 function splitTopLevel(prop, operator) {
     let depth = 0;
@@ -3182,6 +3712,40 @@ function supportsEqualityTransitivity(leftEqualityClaim, rightEqualityClaim, tar
     }
     return false;
 }
+function supportsDividesFromEquality(equalityClaim, target) {
+    const equality = parseEqualityProp(equalityClaim);
+    const divides = parseDividesProp(target);
+    if (!equality || !divides)
+        return false;
+    if (!(0, propositions_1.sameProp)(equality.left, divides.dividend))
+        return false;
+    const product = parseProductExpression(equality.right);
+    if (!product)
+        return false;
+    return (0, propositions_1.sameProp)(product.left, divides.divisor) || (0, propositions_1.sameProp)(product.right, divides.divisor);
+}
+function supportsArithmeticCommutativeEquality(sourceClaim, target) {
+    const source = parseEqualityProp(sourceClaim);
+    const output = parseEqualityProp(target);
+    if (!source || !output)
+        return false;
+    if (!(0, propositions_1.sameProp)(source.left, output.left))
+        return false;
+    const sourceProduct = parseProductExpression(source.right);
+    const outputProduct = parseProductExpression(output.right);
+    if (!sourceProduct || !outputProduct)
+        return false;
+    return (0, propositions_1.sameProp)(sourceProduct.left, outputProduct.right) && (0, propositions_1.sameProp)(sourceProduct.right, outputProduct.left);
+}
+function findArithmeticWitnessedBody(ctx, bodyPattern, placeholder, witness) {
+    const instantiated = instantiateBoundedQuantifier({ variable: placeholder, body: bodyPattern }, witness);
+    if (!instantiated)
+        return null;
+    const exact = findLatestProofObjectByClaim(ctx, instantiated);
+    if (exact)
+        return exact;
+    return findLatestProofObject(ctx, object => supportsArithmeticCommutativeEquality(object.claim, instantiated));
+}
 function instantiateBoundedQuantifier(quantifier, witness) {
     const variablePattern = new RegExp(`(^|[^\\w₀-₉ₐ-ₙ])${escapeRegExp(quantifier.variable)}([^\\w₀-₉ₐ-ₙ]|$)`, 'g');
     if (!variablePattern.test(quantifier.body) && !(0, propositions_1.sameProp)(quantifier.body, quantifier.variable)) {
@@ -3238,6 +3802,37 @@ function findForallInIntroScope(quantifier, ctx) {
                 membership,
                 body,
                 dischargedScopeIds: scopesThrough(ctx, membership.scopeIds[membership.scopeIds.length - 1]),
+            };
+        }
+    }
+    return null;
+}
+function findIndexedUnionElimScope(unionMembershipClaim, target, ctx) {
+    const unionMembership = parseMembershipProp(unionMembershipClaim);
+    if (!unionMembership)
+        return null;
+    const indexedUnion = parseIndexedUnionTerm(unionMembership.set);
+    if (!indexedUnion)
+        return null;
+    for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+        const witnessMembership = ctx.proofObjects[i];
+        const witnessProp = parseMembershipProp(witnessMembership.claim);
+        if (!witnessProp || witnessMembership.source !== 'assumption' || !(0, propositions_1.sameProp)(witnessProp.set, indexedUnion.domain))
+            continue;
+        const witness = witnessProp.element;
+        if (!ctx.variables.some(variable => (0, propositions_1.sameProp)(variable.name, witness)))
+            continue;
+        const instantiatedSet = substitutePatternVariable(indexedUnion.elementTemplate, indexedUnion.variable, witness);
+        const bodyClaim = `${unionMembership.element} ∈ ${instantiatedSet}`;
+        const bodyMembership = findLatestProofObjectByClaim(ctx, bodyClaim, object => object.source === 'assumption');
+        if (!bodyMembership)
+            continue;
+        if (!containsFreeLikeVariable(target, witness)) {
+            return {
+                witness,
+                witnessMembership,
+                bodyMembership,
+                dischargedScopeIds: scopesThrough(ctx, witnessMembership.scopeIds[witnessMembership.scopeIds.length - 1]),
             };
         }
     }
@@ -3310,6 +3905,19 @@ function resolveExistsElimScopeFromInputs(quantifier, claims, target) {
     }
     return null;
 }
+function resolveIndexedUnionElimScopeFromInputs(indexedUnion, unionElement, claims, target) {
+    for (const claim of claims) {
+        const witness = parseMembershipProp(claim);
+        if (!witness || !(0, propositions_1.sameProp)(witness.set, indexedUnion.domain))
+            continue;
+        const instantiatedSet = substitutePatternVariable(indexedUnion.elementTemplate, indexedUnion.variable, witness.element);
+        const bodyMembership = `${unionElement} ∈ ${instantiatedSet}`;
+        if (claims.some(other => (0, propositions_1.sameProp)(other, bodyMembership)) && !containsFreeLikeVariable(target, witness.element)) {
+            return { witness: witness.element };
+        }
+    }
+    return null;
+}
 function resolveExistsTypedElimScopeFromInputs(quantifier, claims, target) {
     for (const claim of claims) {
         const witness = parseTypedVariableProp(claim);
@@ -3335,9 +3943,6 @@ function isFreshScopedWitness(witness, quantifier, target) {
         return false;
     return instantiateBoundedQuantifier(quantifier, witness) !== null;
 }
-function escapeRegExp(value) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 function isKernelCheckableAtom(value) {
     return kernelSubsetGap(value) === null;
 }
@@ -3356,6 +3961,21 @@ function kernelSubsetDiagnostic(expr, label, step) {
     };
 }
 function kernelSubsetGap(value) {
+    const implication = parseImplicationProp(value);
+    if (implication) {
+        return kernelSubsetGap(implication[0]) ?? kernelSubsetGap(implication[1]);
+    }
+    const conjunction = parseConjunctionProp(value);
+    if (conjunction) {
+        return kernelSubsetGap(conjunction[0]) ?? kernelSubsetGap(conjunction[1]);
+    }
+    const disjunction = parseDisjunctionProp(value);
+    if (disjunction) {
+        return kernelSubsetGap(disjunction[0]) ?? kernelSubsetGap(disjunction[1]);
+    }
+    if (value.startsWith('¬')) {
+        return kernelSubsetGap(stripParens(value.slice(1)));
+    }
     const forall = parseBoundedQuantifierProp(value, 'forall');
     if (forall) {
         return kernelSubsetGap(forall.body);
@@ -3384,6 +4004,46 @@ function kernelSubsetGap(value) {
         return {
             rule: 'EXISTS_UNIQUE',
             hint: 'Unique existence is preserved and partially lowered, but nested ∃! goals are not fully kernel-checked yet.',
+        };
+    }
+    const standaloneTypedExistsUnique = parseStandaloneTypedQuantifierProp(value, 'exists_unique');
+    if (standaloneTypedExistsUnique) {
+        return {
+            rule: 'EXISTS_UNIQUE',
+            hint: 'Standalone unique-existence binders are preserved, but they still need an explicit body or lowering rule to be fully checked.',
+        };
+    }
+    const standaloneBoundedExistsUnique = parseStandaloneBoundedQuantifierProp(value, 'exists_unique');
+    if (standaloneBoundedExistsUnique) {
+        return {
+            rule: 'EXISTS_UNIQUE',
+            hint: 'Standalone unique-existence binders are preserved, but they still need an explicit body or lowering rule to be fully checked.',
+        };
+    }
+    const equality = parseEqualityProp(value);
+    if (equality && (isSetBuilderLikeTerm(equality.left) || isSetBuilderLikeTerm(equality.right))) {
+        return {
+            rule: 'SET_OPERATOR_REASONING',
+            hint: 'Set-builder and indexed-union equalities are preserved structurally, but not fully kernel-checked yet.',
+        };
+    }
+    const divides = parseDividesProp(value);
+    if (divides) {
+        if (isSupportedArithmeticTerm(divides.divisor) && isSupportedArithmeticTerm(divides.dividend)) {
+            return null;
+        }
+        return {
+            rule: 'ARITHMETIC_REASONING',
+            hint: 'Only simple divisibility claims over identifier/cardinality/index terms are kernel-checked today.',
+        };
+    }
+    if (equality && (/[|]|\[[^\]]+:[^\]]+\]|·/.test(equality.left) || /[|]|\[[^\]]+:[^\]]+\]|·/.test(equality.right))) {
+        if (isSupportedArithmeticTerm(equality.left) && isSupportedArithmeticTerm(equality.right)) {
+            return null;
+        }
+        return {
+            rule: 'ARITHMETIC_REASONING',
+            hint: 'Only simple equalities over identifier/cardinality/index/product terms are kernel-checked today.',
         };
     }
     if (/[|]|\[[^\]]+:[^\]]+\]|\bdivides\b|·/.test(value)) {
@@ -3416,7 +4076,7 @@ function kernelSubsetGap(value) {
     }
     if (parseSubsetProp(value))
         return null;
-    if (parseEqualityProp(value))
+    if (equality)
         return null;
     if (/[∪∩]/.test(value)) {
         return {

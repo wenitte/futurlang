@@ -102,6 +102,20 @@ runTest('parseExpr accepts standalone existential-unique binders', () => {
     assert_1.strict.equal(quantified.body, null);
     assert_1.strict.equal((0, propositions_1.exprToProp)(quantified), '∃! xH: Set');
 });
+runTest('parseExpr preserves set-builder and indexed-union syntax structurally', () => {
+    const builder = (0, expr_1.parseExpr)('{xH | x ∈ G.carrier}');
+    assert_1.strict.equal(builder.type, 'SetBuilder');
+    assert_1.strict.equal(builder.element, 'xH');
+    assert_1.strict.equal(builder.variable, 'x');
+    assert_1.strict.equal(builder.domain, 'G.carrier');
+    assert_1.strict.equal((0, propositions_1.exprToProp)(builder), '{xH | x ∈ G.carrier}');
+    const indexedUnion = (0, expr_1.parseExpr)('∪{xH | x ∈ G.carrier}');
+    assert_1.strict.equal(indexedUnion.type, 'IndexedUnion');
+    assert_1.strict.equal(indexedUnion.builder.element, 'xH');
+    assert_1.strict.equal(indexedUnion.builder.variable, 'x');
+    assert_1.strict.equal(indexedUnion.builder.domain, 'G.carrier');
+    assert_1.strict.equal((0, propositions_1.exprToProp)(indexedUnion), '∪{xH | x ∈ G.carrier}');
+});
 runTest('parser preserves malformed expressions as opaque atoms', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem Broken() {
@@ -217,7 +231,143 @@ proof ExistsUniqueShorthand() {
     const report = (0, checker_1.checkFile)(ast);
     const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
     assert_1.strict.doesNotMatch(messages, /opaque symbolic claim/i);
-    assert_1.strict.match(messages, /FORALL_BINDER|outside the current kernel subset/i);
+    assert_1.strict.match(messages, /EXISTS_UNIQUE|outside the current kernel subset/i);
+});
+runTest('checker classifies indexed-union set-builder equalities as set reasoning, not arithmetic fallback', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IndexedUnionDemo() {
+  assert(∪{xH | x ∈ G.carrier} = G.carrier)
+} ↔
+
+proof IndexedUnionDemo() {
+  assert(∪{xH | x ∈ G.carrier} = G.carrier)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    const messages = report.reports.flatMap(r => r.diagnostics.map(d => d.message)).join('\n');
+    assert_1.strict.doesNotMatch(messages, /opaque symbolic claim/i);
+    assert_1.strict.doesNotMatch(messages, /ARITHMETIC_REASONING/);
+    assert_1.strict.match(messages, /SET_OPERATOR_REASONING|outside the current kernel subset/i);
+});
+runTest('checker preserves indexed-union equalities as structured expressions in theorem goals', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IndexedUnionStructured() {
+  assert(∪{xH | x ∈ G.carrier} = G.carrier)
+}
+`));
+    const theorem = ast[0];
+    assert_1.strict.equal(theorem.type, 'Theorem');
+    const claim = theorem.body[0];
+    assert_1.strict.equal(claim.type, 'Assert');
+    assert_1.strict.equal(claim.expr.type, 'Atom');
+    assert_1.strict.equal(claim.expr.atomKind, 'expression');
+});
+runTest('checker derives set-builder membership from a witness membership', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem SetBuilderIntro() {
+  given(x ∈ A) →
+  assert(xH ∈ {xH | x ∈ A})
+} ↔
+
+proof SetBuilderIntro() {
+  conclude(xH ∈ {xH | x ∈ A})
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SET_BUILDER_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'xH ∈ {xH | x ∈ A}');
+});
+runTest('checker derives indexed-union membership from witness and body membership', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IndexedUnionIntro() {
+  given(x ∈ G.carrier) →
+  given(g ∈ xH) →
+  assert(g ∈ ∪{xH | x ∈ G.carrier})
+} ↔
+
+proof IndexedUnionIntro() {
+  conclude(g ∈ ∪{xH | x ∈ G.carrier})
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'INDEXED_UNION_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'g ∈ ∪{xH | x ∈ G.carrier}');
+});
+runTest('checker eliminates indexed-union membership with an explicit witness scope', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IndexedUnionElim() {
+  given(g ∈ ∪{xH | x ∈ G.carrier}) →
+  assert(q)
+} ↔
+
+proof IndexedUnionElim() {
+  setVar(a) →
+  assume(a ∈ G.carrier) →
+  assume(g ∈ aH) →
+  conclude(q)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[3].rule, 'INDEXED_UNION_ELIM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'q');
+});
+runTest('checker rejects indexed-union elimination when the witness leaks into the conclusion', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IndexedUnionElimLeak() {
+  given(g ∈ ∪{xH | x ∈ G.carrier}) →
+  assert(a ∈ B)
+} ↔
+
+proof IndexedUnionElimLeak() {
+  setVar(a) →
+  assume(a ∈ G.carrier) →
+  assume(g ∈ aH) →
+  conclude(a ∈ B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal|not yet derived/);
+});
+runTest('checker derives indexed-union equality from matching membership quantifiers', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IndexedUnionEquality() {
+  given(∀ x ∈ ∪{y | y ∈ A}, x ∈ B) →
+  given(∀ y ∈ B, y ∈ ∪{x | x ∈ A}) →
+  assert(∪{x | x ∈ A} = B)
+} ↔
+
+proof IndexedUnionEquality() {
+  conclude(∪{x | x ∈ A} = B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SET_MEMBERSHIP_EQ');
+    assert_1.strict.equal(theoremReport.derivedConclusion, '∪{x | x ∈ A} = B');
+});
+runTest('checker rejects set equality when only one membership quantifier is present', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem IndexedUnionEqualityFail() {
+  given(∀ x ∈ ∪{y | y ∈ A}, x ∈ B) →
+  assert(∪{x | x ∈ A} = B)
+} ↔
+
+proof IndexedUnionEqualityFail() {
+  conclude(∪{x | x ∈ A} = B)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'STRUCTURAL');
 });
 runTest('checker accepts conjunction goals when both parts are established', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -613,6 +763,57 @@ proof ExistsTypedIntro() {
     assert_1.strict.equal(theoremReport.proofSteps[1].rule, 'EXISTS_TYPED_INTRO');
     assert_1.strict.equal(theoremReport.derivedConclusion, '∃ x: ℕ, P(x)');
 });
+runTest('checker validates typed existential introduction from arithmetic witness equality', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ExistsTypedArithmeticIntro() {
+  given(n = m · r) →
+  assert(∃ k: Nat, n = m · k)
+} ↔
+
+proof ExistsTypedArithmeticIntro() {
+  setVar(r: Nat) →
+  conclude(∃ k: Nat, n = m · k)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    assert_1.strict.equal(report.reports[0].proofSteps[1].rule, 'EXISTS_TYPED_INTRO');
+});
+runTest('checker rewrites multiplicative equality by arithmetic commutativity', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ArithmeticComm() {
+  given(n = r · m) →
+  assert(n = m · r)
+} ↔
+
+proof ArithmeticComm() {
+  conclude(n = m · r)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'ARITHMETIC_COMM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'n = m · r');
+});
+runTest('checker validates typed existential introduction from commuted arithmetic witness equality', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ExistsTypedArithmeticIntroComm() {
+  given(n = r · m) →
+  assert(∃ k: Nat, n = m · k)
+} ↔
+
+proof ExistsTypedArithmeticIntroComm() {
+  setVar(r: Nat) →
+  conclude(∃ k: Nat, n = m · k)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[1].rule, 'EXISTS_TYPED_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, '∃ k: ℕ, n = m · k');
+});
 runTest('checker validates bounded existential elimination with explicit witness scope', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem ExistsInElim() {
@@ -686,6 +887,76 @@ proof ExistsUniqueElimExistence() {
     const theoremReport = report.reports[0];
     assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'EXISTS_UNIQUE_ELIM');
     assert_1.strict.equal(theoremReport.derivedConclusion, '∃ x: ℕ, P(x)');
+});
+runTest('checker derives divisibility from multiplicative equality', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem DividesIntro() {
+  given(n = m · r) →
+  assert(m divides n)
+} ↔
+
+proof DividesIntro() {
+  conclude(m divides n)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'DIVIDES_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'm divides n');
+});
+runTest('checker rewrites cardinality-index equalities by arithmetic commutativity', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem CardinalityComm() {
+  given(|G| = [G:H] · |H|) →
+  assert(|G| = |H| · [G:H])
+} ↔
+
+proof CardinalityComm() {
+  conclude(|G| = |H| · [G:H])
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'ARITHMETIC_COMM');
+    assert_1.strict.equal(theoremReport.derivedConclusion, '|G| = |H| · [G:H]');
+});
+runTest('checker derives divisibility from cardinality-index equality', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem CardinalityDivides() {
+  given(|G| = |H| · [G:H]) →
+  assert(|H| divides |G|)
+} ↔
+
+proof CardinalityDivides() {
+  conclude(|H| divides |G|)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'DIVIDES_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, '|H| divides |G|');
+});
+runTest('checker accepts arithmetic conjunctions and implications as kernel-checkable goals', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem CardinalityImplication() {
+  given(|G| = |H| · [G:H]) →
+  assert((r = [G:H] && |H| = m) -> |H| divides |G|)
+} ↔
+
+proof CardinalityImplication() {
+  assume(r = [G:H] && |H| = m) →
+  conclude(|H| divides |G|)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[1].rule, 'DIVIDES_INTRO');
+    assert_1.strict.equal(theoremReport.derivedConclusion, '|H| divides |G|');
+    assert_1.strict.equal(theoremReport.diagnostics.some(d => d.message.includes('ARITHMETIC_REASONING')), false);
 });
 runTest('checker rejects existential elimination when the witness leaks into the conclusion', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`

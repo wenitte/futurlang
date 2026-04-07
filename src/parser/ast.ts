@@ -40,6 +40,18 @@ export interface QuantifiedNode {
   body: ExprNode | null;
 }
 
+export interface SetBuilderNode {
+  type: 'SetBuilder';
+  element: string;
+  variable: string;
+  domain: string;
+}
+
+export interface IndexedUnionNode {
+  type: 'IndexedUnion';
+  builder: SetBuilderNode;
+}
+
 export interface AtomNode {
   type: 'Atom';
   condition: string;
@@ -47,7 +59,16 @@ export interface AtomNode {
   parseError?: string;
 }
 
-export type ExprNode = AndNode | OrNode | ImpliesNode | IffNode | NotNode | QuantifiedNode | AtomNode;
+export type ExprNode =
+  | AndNode
+  | OrNode
+  | ImpliesNode
+  | IffNode
+  | NotNode
+  | QuantifiedNode
+  | SetBuilderNode
+  | IndexedUnionNode
+  | AtomNode;
 
 // ── Statement-level AST nodes ───────────────────────────────────────────────
 
