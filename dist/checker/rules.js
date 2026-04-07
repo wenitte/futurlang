@@ -8,6 +8,7 @@ exports.checkAndIntro = checkAndIntro;
 exports.checkAndElim = checkAndElim;
 exports.checkIffIntro = checkIffIntro;
 exports.checkIffElim = checkIffElim;
+exports.checkSubsetIntro = checkSubsetIntro;
 exports.checkSubsetElim = checkSubsetElim;
 exports.checkSubsetTrans = checkSubsetTrans;
 exports.checkSubsetAntisym = checkSubsetAntisym;
@@ -16,6 +17,7 @@ exports.checkEqualitySymm = checkEqualitySymm;
 exports.checkEqualityTrans = checkEqualityTrans;
 exports.checkArithmeticComm = checkArithmeticComm;
 exports.checkEqualitySubst = checkEqualitySubst;
+exports.checkImageIntro = checkImageIntro;
 exports.checkPreimageIntro = checkPreimageIntro;
 exports.checkPreimageElim = checkPreimageElim;
 exports.checkUnionIntro = checkUnionIntro;
@@ -137,6 +139,27 @@ function checkIffElim(sourceIff, knownSide, target, ctx) {
         rule: 'IFF_ELIM',
         message: `Cannot eliminate biconditional: '${knownSide}' not yet established`,
         hint: `Establish '${knownSide}' before deriving '${target}'`,
+    };
+}
+function checkSubsetIntro(sourceMembership, targetMembership, targetSubset, ctx) {
+    const hasSource = isEstablished(sourceMembership, ctx);
+    const hasTarget = isEstablished(targetMembership, ctx);
+    if (hasSource && hasTarget) {
+        return { valid: true, rule: 'SUBSET_INTRO', message: `Subset introduction: ${sourceMembership}, ${targetMembership} ⊢ ${targetSubset}` };
+    }
+    if (!hasSource) {
+        return {
+            valid: false,
+            rule: 'SUBSET_INTRO',
+            message: `Cannot use subset introduction: '${sourceMembership}' not yet established`,
+            hint: `Introduce a fresh witness in '${sourceMembership}' before deriving '${targetSubset}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'SUBSET_INTRO',
+        message: `Cannot use subset introduction: '${targetMembership}' not yet established`,
+        hint: `Derive '${targetMembership}' from the witness assumption before concluding '${targetSubset}'`,
     };
 }
 // ── Rule: SUBSET_ELIM ────────────────────────────────────────────────────────
@@ -265,6 +288,17 @@ function checkEqualitySubst(equalityClaim, membershipClaim, target, ctx) {
         rule: 'EQUALITY_SUBST',
         message: `Cannot use equality substitution: '${membershipClaim}' not yet established`,
         hint: `Establish '${membershipClaim}' before deriving '${target}'`,
+    };
+}
+function checkImageIntro(sourceMembership, target, ctx) {
+    if (isEstablished(sourceMembership, ctx)) {
+        return { valid: true, rule: 'IMAGE_INTRO', message: `Image introduction: ${sourceMembership} ⊢ ${target}` };
+    }
+    return {
+        valid: false,
+        rule: 'IMAGE_INTRO',
+        message: `Cannot use image introduction: '${sourceMembership}' not yet established`,
+        hint: `Establish '${sourceMembership}' before deriving '${target}'`,
     };
 }
 function checkPreimageIntro(imageMembership, target, ctx) {

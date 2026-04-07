@@ -648,6 +648,30 @@ proof SubsetAntisymmetry() {
     assert_1.strict.equal(theoremReport.proofSteps[0].rule, 'SUBSET_ANTISYM');
     assert_1.strict.equal(theoremReport.derivedConclusion, 'A = B');
 });
+runTest('checker validates subset introduction from a fresh witness scope', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem PreimageIntersectionSubset() {
+  assert(preimage(f, B ∩ C) ⊆ preimage(f, B))
+} ↔
+
+proof PreimageIntersectionSubset() {
+  setVar(x: Element) →
+  assume(x ∈ preimage(f, B ∩ C)) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  assert(x ∈ preimage(f, B)) →
+  conclude(preimage(f, B ∩ C) ⊆ preimage(f, B))
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'PREIMAGE_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'INTERSECTION_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'PREIMAGE_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'SUBSET_INTRO'));
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'preimage(f, B ∩ C) ⊆ preimage(f, B)');
+});
 runTest('checker validates equality substitution on membership claims', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem EqualitySubstitution() {
@@ -768,6 +792,8 @@ proof UnionMembershipIff() {
     const theoremReport = report.reports[0];
     assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'UNION_ELIM'));
     assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'OR_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'UNION_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IMPLIES_INTRO'));
     assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IFF_INTRO'));
     assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ A ∪ B ↔ x ∈ A ∨ x ∈ B');
 });
@@ -832,6 +858,69 @@ proof PreimageElim() {
     assert_1.strict.equal(elimReport.reports[0].proofSteps[0].rule, 'PREIMAGE_ELIM');
     assert_1.strict.equal(elimReport.reports[0].derivedConclusion, 'f(x) ∈ B');
 });
+runTest('checker validates image introduction and image-of-union helpers', () => {
+    const introAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ImageIntro() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A))
+} ↔
+
+proof ImageIntro() {
+  conclude(f(x) ∈ image(f, A))
+}
+`));
+    const introReport = (0, checker_1.checkFile)(introAst);
+    assert_1.strict.equal(introReport.valid, true);
+    assert_1.strict.equal(introReport.reports[0].proofSteps[0].rule, 'IMAGE_INTRO');
+    assert_1.strict.equal(introReport.reports[0].derivedConclusion, 'f(x) ∈ image(f, A)');
+    const unionAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ImageUnionLeft() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A union B))
+} ↔
+
+proof ImageUnionLeft() {
+  assert(x in A union B) →
+  conclude(f(x) ∈ image(f, A union B))
+}
+`));
+    const unionReport = (0, checker_1.checkFile)(unionAst);
+    assert_1.strict.equal(unionReport.valid, true);
+    const theoremReport = unionReport.reports[0];
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'UNION_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IMAGE_INTRO'));
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'f(x) ∈ image(f, A union B)');
+});
+runTest('checker proves pointwise image of union forward from scratch', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem ImageUnionForward() {
+  assert(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))
+} ↔
+
+proof ImageUnionForward() {
+  assume(x in A union B) →
+  assert((x in A) || (x in B)) →
+  assume(x in A) →
+  assert(f(x) ∈ image(f, A)) →
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(x in A → f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assume(x in B) →
+  assert(f(x) ∈ image(f, B)) →
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(x in B → f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  conclude(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'UNION_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IMAGE_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'UNION_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IMPLIES_INTRO'));
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'x in A union B → f(x) ∈ image(f, A) ∪ image(f, B)');
+});
 runTest('checker proves preimage distributes over intersection from scratch', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem PreimageIntersectionIff() {
@@ -866,6 +955,43 @@ proof PreimageIntersectionIff() {
     assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'INTERSECTION_INTRO'));
     assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'IFF_INTRO'));
     assert_1.strict.equal(theoremReport.derivedConclusion, 'x ∈ preimage(f, B ∩ C) ↔ x ∈ preimage(f, B) ∧ x ∈ preimage(f, C)');
+});
+runTest('checker proves preimage intersection extensionality from scratch', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem PreimageIntersectionEquality() {
+  assert(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+} ↔
+
+proof PreimageIntersectionEquality() {
+  setVar(x: Element) →
+  assume(x ∈ preimage(f, B ∩ C)) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert(x ∈ preimage(f, B) ∩ preimage(f, C)) →
+  assert(preimage(f, B ∩ C) ⊆ preimage(f, B) ∩ preimage(f, C)) →
+  setVar(y: Element) →
+  assume(y ∈ preimage(f, B) ∩ preimage(f, C)) →
+  assert(y ∈ preimage(f, B)) →
+  assert(y ∈ preimage(f, C)) →
+  assert(f(y) ∈ B) →
+  assert(f(y) ∈ C) →
+  assert(f(y) ∈ B ∩ C) →
+  assert(y ∈ preimage(f, B ∩ C)) →
+  assert(preimage(f, B) ∩ preimage(f, C) ⊆ preimage(f, B ∩ C)) →
+  conclude(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, true);
+    const theoremReport = report.reports[0];
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'SUBSET_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'INTERSECTION_INTRO'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'INTERSECTION_ELIM'));
+    assert_1.strict.ok(theoremReport.proofSteps.some(step => step.rule === 'SUBSET_ANTISYM'));
+    assert_1.strict.equal(theoremReport.derivedConclusion, 'preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C)');
 });
 runTest('checker validates bounded universal elimination', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
@@ -1328,6 +1454,128 @@ proof UnionMembershipIff() {
   conclude((x in A union B) <-> ((x in A) || (x in B)))
 } →
 
+lemma PreimageIntersectionIff() {
+  assert((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+} ↔
+
+proof PreimageIntersectionIff() {
+  assume(x ∈ preimage(f, B ∩ C)) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert((x ∈ preimage(f, B ∩ C)) -> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C)))) →
+  assume((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(x ∈ preimage(f, B ∩ C)) →
+  assert(((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) -> (x ∈ preimage(f, B ∩ C))) →
+  conclude((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+} →
+
+lemma PreimageUnionIff() {
+  assert((x ∈ preimage(f, B ∪ C)) <-> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))))
+} ↔
+
+proof PreimageUnionIff() {
+  assume(x ∈ preimage(f, B ∪ C)) →
+  assert(f(x) ∈ B ∪ C) →
+  assert((f(x) ∈ B) || (f(x) ∈ C)) →
+  assume(f(x) ∈ B) →
+  assert(x ∈ preimage(f, B)) →
+  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assert((f(x) ∈ B) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
+  assume(f(x) ∈ C) →
+  assert(x ∈ preimage(f, C)) →
+  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assert((f(x) ∈ C) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
+  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assert((x ∈ preimage(f, B ∪ C)) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
+  assume((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assume(x ∈ preimage(f, B)) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ B ∪ C) →
+  assert(x ∈ preimage(f, B ∪ C)) →
+  assert((x ∈ preimage(f, B)) -> (x ∈ preimage(f, B ∪ C))) →
+  assume(x ∈ preimage(f, C)) →
+  assert(f(x) ∈ C) →
+  assert(f(x) ∈ B ∪ C) →
+  assert(x ∈ preimage(f, B ∪ C)) →
+  assert((x ∈ preimage(f, C)) -> (x ∈ preimage(f, B ∪ C))) →
+  assert(x ∈ preimage(f, B ∪ C)) →
+  assert(((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) -> (x ∈ preimage(f, B ∪ C))) →
+  conclude((x ∈ preimage(f, B ∪ C)) <-> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))))
+} →
+
+lemma PreimageIntersectionLeft() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, B))
+} ↔
+
+proof PreimageIntersectionLeft() {
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  conclude(x ∈ preimage(f, B))
+} →
+
+lemma PreimageIntersectionRight() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, C))
+} ↔
+
+proof PreimageIntersectionRight() {
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ C) →
+  conclude(x ∈ preimage(f, C))
+} →
+
+lemma PreimageIntersectionEquality() {
+  assert(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+} ↔
+
+proof PreimageIntersectionEquality() {
+  setVar(x: Element) →
+  assume(x ∈ preimage(f, B ∩ C)) →
+  apply(PreimageIntersectionLeft) →
+  apply(PreimageIntersectionRight) →
+  assert(x ∈ preimage(f, B) ∩ preimage(f, C)) →
+  assert(preimage(f, B ∩ C) ⊆ preimage(f, B) ∩ preimage(f, C)) →
+  setVar(y: Element) →
+  assume(y ∈ preimage(f, B) ∩ preimage(f, C)) →
+  assert(y ∈ preimage(f, B)) →
+  assert(y ∈ preimage(f, C)) →
+  assert(f(y) ∈ B) →
+  assert(f(y) ∈ C) →
+  assert(f(y) ∈ B ∩ C) →
+  assert(y ∈ preimage(f, B ∩ C)) →
+  assert(preimage(f, B) ∩ preimage(f, C) ⊆ preimage(f, B ∩ C)) →
+  conclude(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+} →
+
+lemma ImageIntro() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A))
+} ↔
+
+proof ImageIntro() {
+  conclude(f(x) ∈ image(f, A))
+} →
+
+lemma ImageUnionLeft() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A union B))
+} ↔
+
+proof ImageUnionLeft() {
+  assert(x in A union B) →
+  conclude(f(x) ∈ image(f, A union B))
+} →
+
 lemma IntersectionMembershipIff() {
   assert((x in A intersection B) <-> ((x in A) && (x in B)))
 } ↔
@@ -1370,6 +1618,34 @@ theorem UsesIntersectionHelperLibrary() {
 
 proof UsesIntersectionHelperLibrary() {
   apply(IntersectionMembershipLeft)
+} →
+
+theorem UsesPreimageIntersectionLibrary() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, B))
+} ↔
+
+proof UsesPreimageIntersectionLibrary() {
+  apply(PreimageIntersectionLeft)
+} →
+
+theorem UsesPreimageIntersectionEqualityLibrary() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, B) ∩ preimage(f, C))
+} ↔
+
+proof UsesPreimageIntersectionEqualityLibrary() {
+  apply(PreimageIntersectionEquality) →
+  conclude(x ∈ preimage(f, B) ∩ preimage(f, C))
+} →
+
+theorem UsesImageUnionLibrary() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A union B))
+} ↔
+
+proof UsesImageUnionLibrary() {
+  apply(ImageUnionLeft)
 }
 `));
     const report = (0, checker_1.checkFile)(ast);
@@ -1383,6 +1659,19 @@ proof UsesIntersectionHelperLibrary() {
     assert_1.strict.ok(helperReport);
     assert_1.strict.ok(helperReport.proofSteps.some(step => step.rule === 'BY_LEMMA'));
     assert_1.strict.equal(helperReport.derivedConclusion, 'x ∈ A');
+    const preimageReport = report.reports.find(r => r.name === 'UsesPreimageIntersectionLibrary');
+    assert_1.strict.ok(preimageReport);
+    assert_1.strict.ok(preimageReport.proofSteps.some(step => step.rule === 'BY_LEMMA'));
+    assert_1.strict.equal(preimageReport.derivedConclusion, 'x ∈ preimage(f, B)');
+    const preimageEqualityReport = report.reports.find(r => r.name === 'UsesPreimageIntersectionEqualityLibrary');
+    assert_1.strict.ok(preimageEqualityReport);
+    assert_1.strict.ok(preimageEqualityReport.proofSteps.some(step => step.rule === 'BY_LEMMA'));
+    assert_1.strict.ok(preimageEqualityReport.proofSteps.some(step => step.rule === 'EQUALITY_SUBST'));
+    assert_1.strict.equal(preimageEqualityReport.derivedConclusion, 'x ∈ preimage(f, B) ∩ preimage(f, C)');
+    const imageReport = report.reports.find(r => r.name === 'UsesImageUnionLibrary');
+    assert_1.strict.ok(imageReport);
+    assert_1.strict.ok(imageReport.proofSteps.some(step => step.rule === 'BY_LEMMA'));
+    assert_1.strict.equal(imageReport.derivedConclusion, 'f(x) ∈ image(f, A union B)');
 });
 runTest('checker marks external lemma application as UNVERIFIED and non-trusted', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`

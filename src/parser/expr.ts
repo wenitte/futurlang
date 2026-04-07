@@ -333,6 +333,9 @@ class ExprParser {
       while (this.peek().kind === 'LPAREN') {
         condition += this.consumeAtomicCallSuffix();
       }
+      while (this.peek().kind === 'ATOM' && /^(∈|∉|⊆|⊂|=|≠|≤|≥|<|>)/.test(this.peek().value.trim())) {
+        condition += ' ' + this.consume().value.trim();
+      }
       const quantified = parseQuantifiedExpr(condition);
       if (quantified) return quantified;
       const atomKind =

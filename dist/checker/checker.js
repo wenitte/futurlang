@@ -951,6 +951,8 @@ function validateDerivationNode(node, inputs, output, goal) {
             return validateIffIntroNode(node, inputs, output);
         case 'IFF_ELIM':
             return validateIffElimNode(node, inputs, output);
+        case 'SUBSET_INTRO':
+            return validateSubsetIntroNode(node, inputs, output);
         case 'SUBSET_ELIM':
             return validateSubsetElimNode(node, inputs, output);
         case 'SUBSET_TRANS':
@@ -967,6 +969,8 @@ function validateDerivationNode(node, inputs, output, goal) {
             return validateArithmeticCommNode(node, inputs, output);
         case 'EQUALITY_SUBST':
             return validateEqualitySubstNode(node, inputs, output);
+        case 'IMAGE_INTRO':
+            return validateImageIntroNode(node, inputs, output);
         case 'PREIMAGE_INTRO':
             return validatePreimageIntroNode(node, inputs, output);
         case 'PREIMAGE_ELIM':
@@ -1112,6 +1116,35 @@ function validateIffElimNode(node, inputs, output) {
     }
     return null;
 }
+function validateSubsetIntroNode(node, inputs, output) {
+    if (inputs.length !== 2) {
+        return { severity: 'error', message: `SUBSET_INTRO '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+    }
+    const target = parseSubsetProp(output.claim);
+    if (!target) {
+        return { severity: 'error', message: `SUBSET_INTRO '${node.id}' must produce a subset claim`, step: node.step, rule: node.rule };
+    }
+    const membershipInput = inputs.find(input => {
+        const membership = parseMembershipProp(input.claim);
+        return membership !== null && (0, propositions_1.sameProp)(membership.set, target.left);
+    });
+    if (!membershipInput) {
+        return { severity: 'error', message: `SUBSET_INTRO '${node.id}' must reference a witness membership assumption`, step: node.step, rule: node.rule };
+    }
+    const membership = parseMembershipProp(membershipInput.claim);
+    if (!membership) {
+        return { severity: 'error', message: `SUBSET_INTRO '${node.id}' has malformed witness membership`, step: node.step, rule: node.rule };
+    }
+    const bodyClaim = `${membership.element} ∈ ${target.right}`;
+    const hasBody = inputs.some(input => (0, propositions_1.sameProp)(input.claim, bodyClaim));
+    if (!hasBody) {
+        return { severity: 'error', message: `SUBSET_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    if (!node.dischargedScopeIds || node.dischargedScopeIds.length === 0) {
+        return { severity: 'error', message: `SUBSET_INTRO '${node.id}' does not discharge a witness scope`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
 function validateSubsetElimNode(node, inputs, output) {
     if (inputs.length !== 2) {
         return { severity: 'error', message: `SUBSET_ELIM '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
@@ -1228,6 +1261,25 @@ function validateEqualitySubstNode(node, inputs, output) {
     }
     if (!supportsEqualitySubstitution(equality.claim, membership.claim, output.claim)) {
         return { severity: 'error', message: `EQUALITY_SUBST '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateImageIntroNode(node, inputs, output) {
+    if (inputs.length !== 1) {
+        return { severity: 'error', message: `IMAGE_INTRO '${node.id}' requires 1 input`, step: node.step, rule: node.rule };
+    }
+    const inputParts = parseMembershipProp(inputs[0].claim);
+    const outputParts = parseMembershipProp(output.claim);
+    if (!inputParts || !outputParts) {
+        return { severity: 'error', message: `IMAGE_INTRO '${node.id}' has malformed membership inputs`, step: node.step, rule: node.rule };
+    }
+    const image = parseImageTerm(outputParts.set);
+    const app = parseFunctionApplicationTerm(outputParts.element);
+    if (!image || !app) {
+        return { severity: 'error', message: `IMAGE_INTRO '${node.id}' must derive image membership from a source membership`, step: node.step, rule: node.rule };
+    }
+    if (!(0, propositions_1.sameProp)(inputParts.element, app.arg) || !(0, propositions_1.sameProp)(inputParts.set, image.set) || !(0, propositions_1.sameProp)(app.fn, image.fn)) {
+        return { severity: 'error', message: `IMAGE_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
     }
     return null;
 }
@@ -1724,6 +1776,8 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             return buildIffIntroProofObject(claim, source, step, ctx);
         case 'IFF_ELIM':
             return buildIffElimProofObject(claim, source, step, ctx);
+        case 'SUBSET_INTRO':
+            return buildSubsetIntroProofObject(claim, source, step, ctx);
         case 'SUBSET_ELIM':
             return buildSubsetElimProofObject(claim, source, step, ctx);
         case 'SUBSET_TRANS':
@@ -1740,6 +1794,8 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             return buildArithmeticCommProofObject(claim, source, step, ctx);
         case 'EQUALITY_SUBST':
             return buildEqualitySubstProofObject(claim, source, step, ctx);
+        case 'IMAGE_INTRO':
+            return buildImageIntroProofObject(claim, source, step, ctx);
         case 'PREIMAGE_INTRO':
             return buildPreimageIntroProofObject(claim, source, step, ctx);
         case 'PREIMAGE_ELIM':
@@ -1887,6 +1943,20 @@ function buildIffElimProofObject(claim, source, step, ctx) {
         dependsOnIds: dependency?.ids ?? [],
     };
 }
+function buildSubsetIntroProofObject(claim, source, step, ctx) {
+    const dependency = findSubsetIntroDependency(claim, ctx);
+    const dischargedScopeIds = dependency?.dischargedScopeIds ?? [];
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'SUBSET_INTRO',
+        scopeIds: dischargeScopeIds(ctx, dischargedScopeIds),
+        dischargedScopeIds,
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
 function buildSubsetElimProofObject(claim, source, step, ctx) {
     const dependency = findSubsetElimDependency(claim, ctx);
     return {
@@ -1970,6 +2040,17 @@ function buildEqualitySubstProofObject(claim, source, step, ctx) {
         source,
         step,
         rule: 'EQUALITY_SUBST',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildImageIntroProofObject(claim, source, step, ctx) {
+    const dependency = findImageIntroDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'IMAGE_INTRO',
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -2356,6 +2437,19 @@ function findAndElimDependency(claim, ctx) {
     }
     return null;
 }
+function findSubsetIntroDependency(claim, ctx) {
+    const target = parseSubsetProp(claim);
+    if (!target)
+        return null;
+    const scope = findSubsetIntroScope(target, ctx);
+    if (!scope)
+        return null;
+    return {
+        claims: [scope.membership.claim, scope.body.claim],
+        ids: uniqueIds([scope.membership.id, scope.body.id]),
+        dischargedScopeIds: scope.dischargedScopeIds,
+    };
+}
 function findSubsetElimDependency(claim, ctx) {
     const output = parseMembershipProp(claim);
     if (!output)
@@ -2483,6 +2577,22 @@ function findEqualitySubstDependency(claim, ctx) {
         }
     }
     return null;
+}
+function findImageIntroDependency(claim, ctx) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const image = parseImageTerm(output.set);
+    const app = parseFunctionApplicationTerm(output.element);
+    if (!image || !app)
+        return null;
+    if (!(0, propositions_1.sameProp)(image.fn, app.fn))
+        return null;
+    const sourceClaim = `${app.arg} ∈ ${image.set}`;
+    const sourceObject = findLatestProofObjectByClaim(ctx, sourceClaim);
+    if (!sourceObject)
+        return null;
+    return { claims: [sourceClaim], ids: [sourceObject.id] };
 }
 function findPreimageIntroDependency(claim, ctx) {
     const output = parseMembershipProp(claim);
@@ -3093,6 +3203,8 @@ function minimumDependencyCount(rule, dependsOn) {
             return uniqueProps(dependsOn).length;
         case 'IFF_ELIM':
             return uniqueProps(dependsOn).length;
+        case 'SUBSET_INTRO':
+            return uniqueProps(dependsOn).length;
         case 'SUBSET_ELIM':
             return uniqueProps(dependsOn).length;
         case 'SUBSET_TRANS':
@@ -3102,6 +3214,8 @@ function minimumDependencyCount(rule, dependsOn) {
         case 'ARITHMETIC_COMM':
             return uniqueProps(dependsOn).length;
         case 'EQUALITY_SUBST':
+            return uniqueProps(dependsOn).length;
+        case 'IMAGE_INTRO':
             return uniqueProps(dependsOn).length;
         case 'PREIMAGE_INTRO':
             return uniqueProps(dependsOn).length;
@@ -3228,6 +3342,9 @@ function checkDerivedClaim(claim, ctx) {
     const implicationIntro = checkImplicationIntroDerivedClaim(claim, ctx);
     if (implicationIntro?.valid)
         return implicationIntro;
+    const subsetIntro = checkSubsetIntroDerivedClaim(claim, ctx);
+    if (subsetIntro?.valid)
+        return subsetIntro;
     for (const item of established) {
         const implication = parseImplicationProp(item.content);
         if (!implication)
@@ -3271,6 +3388,9 @@ function checkDerivedClaim(claim, ctx) {
     const equalitySubst = checkEqualitySubstDerivedClaim(claim, ctx);
     if (equalitySubst?.valid)
         return equalitySubst;
+    const imageIntro = checkImageIntroDerivedClaim(claim, ctx);
+    if (imageIntro?.valid)
+        return imageIntro;
     const preimageIntro = checkPreimageIntroDerivedClaim(claim, ctx);
     if (preimageIntro?.valid)
         return preimageIntro;
@@ -3374,6 +3494,17 @@ function checkSubsetDerivedClaim(claim, ctx) {
             return result;
     }
     return null;
+}
+function checkSubsetIntroDerivedClaim(claim, ctx) {
+    const target = parseSubsetProp(claim);
+    if (!target)
+        return null;
+    const scope = findSubsetIntroScope(target, ctx);
+    if (!scope)
+        return null;
+    const bodyClaim = `${scope.witness} ∈ ${target.right}`;
+    const result = (0, rules_1.checkSubsetIntro)(scope.membership.claim, bodyClaim, claim, ctx);
+    return result.valid ? result : null;
 }
 function checkImplicationIntroDerivedClaim(claim, ctx) {
     const implication = parseImplicationProp(claim);
@@ -3493,6 +3624,20 @@ function checkEqualitySubstDerivedClaim(claim, ctx) {
         }
     }
     return null;
+}
+function checkImageIntroDerivedClaim(claim, ctx) {
+    const output = parseMembershipProp(claim);
+    if (!output)
+        return null;
+    const image = parseImageTerm(output.set);
+    const app = parseFunctionApplicationTerm(output.element);
+    if (!image || !app)
+        return null;
+    if (!(0, propositions_1.sameProp)(image.fn, app.fn))
+        return null;
+    const sourceMembership = `${app.arg} ∈ ${image.set}`;
+    const result = (0, rules_1.checkImageIntro)(sourceMembership, claim, ctx);
+    return result.valid ? result : null;
 }
 function checkPreimageIntroDerivedClaim(claim, ctx) {
     const output = parseMembershipProp(claim);
@@ -3888,6 +4033,19 @@ function parseFunctionApplicationTerm(term) {
         arg: stripParens(match[2]),
     };
 }
+function parseImageTerm(term) {
+    const value = stripParens(term);
+    const wordForm = value.match(/^image\((.+)\)$/i);
+    if (!wordForm)
+        return null;
+    const parts = splitTopLevel(wordForm[1], ',');
+    if (!parts)
+        return null;
+    return {
+        fn: stripParens(parts[0]),
+        set: stripParens(parts[1]),
+    };
+}
 function parsePreimageTerm(term) {
     const value = stripParens(term);
     const wordForm = value.match(/^preimage\((.+)\)$/i);
@@ -4268,6 +4426,31 @@ function findForallInIntroScope(quantifier, ctx) {
     }
     return null;
 }
+function findSubsetIntroScope(target, ctx) {
+    const targetClaim = `${target.left} ⊆ ${target.right}`;
+    for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+        const membership = ctx.proofObjects[i];
+        const membershipProp = parseMembershipProp(membership.claim);
+        if (!membershipProp || membership.source !== 'assumption' || !(0, propositions_1.sameProp)(membershipProp.set, target.left))
+            continue;
+        const witness = membershipProp.element;
+        if (!ctx.variables.some(variable => (0, propositions_1.sameProp)(variable.name, witness)))
+            continue;
+        const bodyClaim = `${witness} ∈ ${target.right}`;
+        const body = findLatestProofObjectByClaim(ctx, bodyClaim);
+        if (!body)
+            continue;
+        if (!containsFreeLikeVariable(targetClaim, witness)) {
+            return {
+                witness,
+                membership,
+                body,
+                dischargedScopeIds: scopesThrough(ctx, membership.scopeIds[membership.scopeIds.length - 1]),
+            };
+        }
+    }
+    return null;
+}
 function findIndexedUnionElimScope(unionMembershipClaim, target, ctx) {
     const unionMembership = parseMembershipProp(unionMembershipClaim);
     if (!unionMembership)
@@ -4433,6 +4616,10 @@ function kernelSubsetGap(value) {
     const disjunction = parseDisjunctionProp(value);
     if (disjunction) {
         return kernelSubsetGap(disjunction[0]) ?? kernelSubsetGap(disjunction[1]);
+    }
+    const iff = parseIffProp(value);
+    if (iff) {
+        return kernelSubsetGap(iff[0]) ?? kernelSubsetGap(iff[1]);
     }
     if (value.startsWith('¬')) {
         return kernelSubsetGap(stripParens(value.slice(1)));

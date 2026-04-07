@@ -106,6 +106,28 @@ export function checkIffElim(sourceIff: string, knownSide: string, target: strin
   };
 }
 
+export function checkSubsetIntro(sourceMembership: string, targetMembership: string, targetSubset: string, ctx: ProofContext): CheckResult {
+  const hasSource = isEstablished(sourceMembership, ctx);
+  const hasTarget = isEstablished(targetMembership, ctx);
+  if (hasSource && hasTarget) {
+    return { valid: true, rule: 'SUBSET_INTRO', message: `Subset introduction: ${sourceMembership}, ${targetMembership} ⊢ ${targetSubset}` };
+  }
+  if (!hasSource) {
+    return {
+      valid: false,
+      rule: 'SUBSET_INTRO',
+      message: `Cannot use subset introduction: '${sourceMembership}' not yet established`,
+      hint: `Introduce a fresh witness in '${sourceMembership}' before deriving '${targetSubset}'`,
+    };
+  }
+  return {
+    valid: false,
+    rule: 'SUBSET_INTRO',
+    message: `Cannot use subset introduction: '${targetMembership}' not yet established`,
+    hint: `Derive '${targetMembership}' from the witness assumption before concluding '${targetSubset}'`,
+  };
+}
+
 // ── Rule: SUBSET_ELIM ────────────────────────────────────────────────────────
 // If x ∈ A is established and A ⊆ B is established, then x ∈ B follows.
 export function checkSubsetElim(elementMembership: string, subsetClaim: string, target: string, ctx: ProofContext): CheckResult {
@@ -239,6 +261,18 @@ export function checkEqualitySubst(equalityClaim: string, membershipClaim: strin
     rule: 'EQUALITY_SUBST',
     message: `Cannot use equality substitution: '${membershipClaim}' not yet established`,
     hint: `Establish '${membershipClaim}' before deriving '${target}'`,
+  };
+}
+
+export function checkImageIntro(sourceMembership: string, target: string, ctx: ProofContext): CheckResult {
+  if (isEstablished(sourceMembership, ctx)) {
+    return { valid: true, rule: 'IMAGE_INTRO', message: `Image introduction: ${sourceMembership} ⊢ ${target}` };
+  }
+  return {
+    valid: false,
+    rule: 'IMAGE_INTRO',
+    message: `Cannot use image introduction: '${sourceMembership}' not yet established`,
+    hint: `Establish '${sourceMembership}' before deriving '${target}'`,
   };
 }
 

@@ -30,6 +30,7 @@ export type InferenceRule =
   | 'NOT_ELIM'          // have ¬¬P, conclude P  (double negation elimination)
   | 'EX_FALSO'          // have ⊥, conclude anything
   // Set-theoretic
+  | 'SUBSET_INTRO'      // open fresh x with x ∈ A and derive x ∈ B, conclude A ⊆ B
   | 'SUBSET_ELIM'       // have x ∈ A, have A ⊆ B, conclude x ∈ B
   | 'SUBSET_TRANS'      // have A ⊆ B, have B ⊆ C, conclude A ⊆ C
   | 'SUBSET_ANTISYM'    // have A ⊆ B and B ⊆ A, conclude A = B
@@ -38,6 +39,7 @@ export type InferenceRule =
   | 'EQUALITY_TRANS'    // have x = y, have y = z, conclude x = z
   | 'ARITHMETIC_COMM'   // have a = b · c, conclude a = c · b
   | 'EQUALITY_SUBST'    // have x = y and x ∈ A, conclude y ∈ A
+  | 'IMAGE_INTRO'       // have x ∈ A, conclude f(x) ∈ image(f, A)
   | 'PREIMAGE_INTRO'    // have f(x) ∈ B, conclude x ∈ preimage(f, B)
   | 'PREIMAGE_ELIM'     // have x ∈ preimage(f, B), conclude f(x) ∈ B
   | 'UNION_INTRO'       // have x ∈ A, conclude x ∈ A ∪ B

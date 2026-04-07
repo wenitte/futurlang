@@ -22,5 +22,11 @@ fl check examples/library/sets-basic.fl
 - intersection membership biconditional
 - intersection membership helper lemmas
 - union membership biconditional
+- preimage/intersection biconditional
+- preimage/intersection extensional equality
+- preimage/union biconditional
+- image introduction
+- image/union helper lemmas
+- pointwise image-of-union forward theorem
 
 It also includes downstream theorems that reuse those lemmas through `apply(...)`, so the file demonstrates actual proof reuse rather than only standalone declarations.

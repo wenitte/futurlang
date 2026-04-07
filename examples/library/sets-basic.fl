@@ -84,6 +84,157 @@ proof UnionMembershipIff() {
   conclude((x in A union B) <-> ((x in A) || (x in B)))
 } →
 
+lemma PreimageIntersectionIff() {
+  assert((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+} ↔
+
+proof PreimageIntersectionIff() {
+  assume(x ∈ preimage(f, B ∩ C)) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert((x ∈ preimage(f, B ∩ C)) -> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C)))) →
+  assume((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
+  assert(x ∈ preimage(f, B)) →
+  assert(x ∈ preimage(f, C)) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ C) →
+  assert(f(x) ∈ B ∩ C) →
+  assert(x ∈ preimage(f, B ∩ C)) →
+  assert(((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) -> (x ∈ preimage(f, B ∩ C))) →
+  conclude((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+} →
+
+lemma PreimageUnionIff() {
+  assert((x ∈ preimage(f, B ∪ C)) <-> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))))
+} ↔
+
+proof PreimageUnionIff() {
+  assume(x ∈ preimage(f, B ∪ C)) →
+  assert(f(x) ∈ B ∪ C) →
+  assert((f(x) ∈ B) || (f(x) ∈ C)) →
+  assume(f(x) ∈ B) →
+  assert(x ∈ preimage(f, B)) →
+  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assert((f(x) ∈ B) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
+  assume(f(x) ∈ C) →
+  assert(x ∈ preimage(f, C)) →
+  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assert((f(x) ∈ C) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
+  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assert((x ∈ preimage(f, B ∪ C)) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
+  assume((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assume(x ∈ preimage(f, B)) →
+  assert(f(x) ∈ B) →
+  assert(f(x) ∈ B ∪ C) →
+  assert(x ∈ preimage(f, B ∪ C)) →
+  assert((x ∈ preimage(f, B)) -> (x ∈ preimage(f, B ∪ C))) →
+  assume(x ∈ preimage(f, C)) →
+  assert(f(x) ∈ C) →
+  assert(f(x) ∈ B ∪ C) →
+  assert(x ∈ preimage(f, B ∪ C)) →
+  assert((x ∈ preimage(f, C)) -> (x ∈ preimage(f, B ∪ C))) →
+  assert(x ∈ preimage(f, B ∪ C)) →
+  assert(((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) -> (x ∈ preimage(f, B ∪ C))) →
+  conclude((x ∈ preimage(f, B ∪ C)) <-> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))))
+} →
+
+lemma PreimageIntersectionLeft() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, B))
+} ↔
+
+proof PreimageIntersectionLeft() {
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ B) →
+  conclude(x ∈ preimage(f, B))
+} →
+
+lemma PreimageIntersectionRight() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, C))
+} ↔
+
+proof PreimageIntersectionRight() {
+  assert(f(x) ∈ B ∩ C) →
+  assert(f(x) ∈ C) →
+  conclude(x ∈ preimage(f, C))
+} →
+
+lemma PreimageIntersectionEquality() {
+  assert(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+} ↔
+
+proof PreimageIntersectionEquality() {
+  setVar(x: Element) →
+  assume(x ∈ preimage(f, B ∩ C)) →
+  apply(PreimageIntersectionLeft) →
+  apply(PreimageIntersectionRight) →
+  assert(x ∈ preimage(f, B) ∩ preimage(f, C)) →
+  assert(preimage(f, B ∩ C) ⊆ preimage(f, B) ∩ preimage(f, C)) →
+  setVar(y: Element) →
+  assume(y ∈ preimage(f, B) ∩ preimage(f, C)) →
+  assert(y ∈ preimage(f, B)) →
+  assert(y ∈ preimage(f, C)) →
+  assert(f(y) ∈ B) →
+  assert(f(y) ∈ C) →
+  assert(f(y) ∈ B ∩ C) →
+  assert(y ∈ preimage(f, B ∩ C)) →
+  assert(preimage(f, B) ∩ preimage(f, C) ⊆ preimage(f, B ∩ C)) →
+  conclude(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+} →
+
+lemma ImageIntro() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A))
+} ↔
+
+proof ImageIntro() {
+  conclude(f(x) ∈ image(f, A))
+} →
+
+lemma ImageUnionLeft() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A union B))
+} ↔
+
+proof ImageUnionLeft() {
+  assert(x in A union B) →
+  conclude(f(x) ∈ image(f, A union B))
+} →
+
+lemma ImageUnionRight() {
+  given(x in B) →
+  assert(f(x) ∈ image(f, A union B))
+} ↔
+
+proof ImageUnionRight() {
+  assert(x in A union B) →
+  conclude(f(x) ∈ image(f, A union B))
+} →
+
+lemma ImageUnionForward() {
+  assert(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))
+} ↔
+
+proof ImageUnionForward() {
+  assume(x in A union B) →
+  assert((x in A) || (x in B)) →
+  assume(x in A) →
+  assert(f(x) ∈ image(f, A)) →
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(x in A → f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assume(x in B) →
+  assert(f(x) ∈ image(f, B)) →
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(x in B → f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  conclude(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))
+} →
+
 theorem UsesSetsBasicLibrary() {
   given(x in A union B) →
   assert((x in A) || (x in B))
@@ -101,4 +252,42 @@ theorem UsesIntersectionHelperLibrary() {
 
 proof UsesIntersectionHelperLibrary() {
   apply(IntersectionMembershipLeft)
+} →
+
+theorem UsesPreimageIntersectionLibrary() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, B))
+} ↔
+
+proof UsesPreimageIntersectionLibrary() {
+  apply(PreimageIntersectionLeft)
+} →
+
+theorem UsesPreimageIntersectionEqualityLibrary() {
+  given(x ∈ preimage(f, B ∩ C)) →
+  assert(x ∈ preimage(f, B) ∩ preimage(f, C))
+} ↔
+
+proof UsesPreimageIntersectionEqualityLibrary() {
+  apply(PreimageIntersectionEquality) →
+  conclude(x ∈ preimage(f, B) ∩ preimage(f, C))
+} →
+
+theorem UsesImageUnionLibrary() {
+  given(x in A) →
+  assert(f(x) ∈ image(f, A union B))
+} ↔
+
+proof UsesImageUnionLibrary() {
+  apply(ImageUnionLeft)
+} →
+
+theorem UsesImageUnionForwardLibrary() {
+  given(x in A union B) →
+  assert(f(x) ∈ image(f, A) ∪ image(f, B))
+} ↔
+
+proof UsesImageUnionForwardLibrary() {
+  apply(ImageUnionForward) →
+  conclude(f(x) ∈ image(f, A) ∪ image(f, B))
 }
