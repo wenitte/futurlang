@@ -92,6 +92,70 @@ runTest('parseExpr normalizes typed quantified binders into canonical atom form'
     assert_1.strict.equal(quantified.domain, 'G.carrier');
     assert_1.strict.equal((0, propositions_1.exprToProp)(quantified), '∀ x: G.carrier, ∀ y: G.carrier, ∃ z: H, x = z');
 });
+runTest('proposition normalization canonicalizes alternate surface syntax', () => {
+    assert_1.strict.equal((0, propositions_1.canonicalizeProp)('(x in A) implies (x in A union B)'), 'x ∈ A → x ∈ A ∪ B');
+    assert_1.strict.equal((0, propositions_1.canonicalizeProp)('forall x in A, exists y in B'), '∀ x ∈ A, ∃ y ∈ B');
+    assert_1.strict.equal((0, propositions_1.sameProp)('(p -> q)', 'p → q'), true);
+    assert_1.strict.equal((0, propositions_1.sameProp)('(x in A) implies (x in A union B)', 'x ∈ A → x ∈ A ∪ B'), true);
+});
+runTest('proposition normalization builds structured canonical atoms for kernel relations', () => {
+    const membership = (0, propositions_1.parseCanonicalExpr)('x in A');
+    assert_1.strict.equal('kind' in membership ? membership.kind : '', 'membership');
+    if ('kind' in membership && membership.kind === 'membership') {
+        assert_1.strict.equal(membership.element, 'x');
+        assert_1.strict.equal(membership.set, 'A');
+    }
+    const subset = (0, propositions_1.parseCanonicalExpr)('A subseteq B');
+    assert_1.strict.equal('kind' in subset ? subset.kind : '', 'subset');
+    if ('kind' in subset && subset.kind === 'subset') {
+        assert_1.strict.equal(subset.left, 'A');
+        assert_1.strict.equal(subset.right, 'B');
+        assert_1.strict.equal(subset.strict, false);
+    }
+    const equality = (0, propositions_1.parseCanonicalExpr)('x=y');
+    assert_1.strict.equal('kind' in equality ? equality.kind : '', 'equality');
+    if ('kind' in equality && equality.kind === 'equality') {
+        assert_1.strict.equal(equality.left, 'x');
+        assert_1.strict.equal(equality.right, 'y');
+    }
+    const typed = (0, propositions_1.parseCanonicalExpr)('a: Nat');
+    assert_1.strict.equal('kind' in typed ? typed.kind : '', 'typed_variable');
+    if ('kind' in typed && typed.kind === 'typed_variable') {
+        assert_1.strict.equal(typed.variable, 'a');
+        assert_1.strict.equal(typed.domain, 'ℕ');
+    }
+});
+runTest('proposition normalization parses set-builder and indexed-union terms structurally', () => {
+    const builder = (0, propositions_1.parseSetBuilderCanonical)('{xH | x ∈ G.carrier}');
+    assert_1.strict.ok(builder);
+    assert_1.strict.equal(builder.elementTemplate, 'xH');
+    assert_1.strict.equal(builder.variable, 'x');
+    assert_1.strict.equal(builder.domain, 'G.carrier');
+    const indexedUnion = (0, propositions_1.parseIndexedUnionCanonical)('∪{xH | x ∈ G.carrier}');
+    assert_1.strict.ok(indexedUnion);
+    assert_1.strict.equal(indexedUnion.elementTemplate, 'xH');
+    assert_1.strict.equal(indexedUnion.variable, 'x');
+    assert_1.strict.equal(indexedUnion.domain, 'G.carrier');
+    assert_1.strict.equal((0, propositions_1.isSetBuilderLikeCanonical)('{xH | x ∈ G.carrier}'), true);
+    assert_1.strict.equal((0, propositions_1.isSetBuilderLikeCanonical)('∪{xH | x ∈ G.carrier}'), true);
+    assert_1.strict.equal((0, propositions_1.isSetBuilderLikeCanonical)('x ∈ A'), false);
+});
+runTest('proposition normalization parses bounded and typed quantifiers structurally', () => {
+    const bounded = (0, propositions_1.parseBoundedQuantifierCanonical)('forall x in A, x in B', 'forall');
+    assert_1.strict.ok(bounded);
+    assert_1.strict.equal(bounded.variable, 'x');
+    assert_1.strict.equal(bounded.set, 'A');
+    assert_1.strict.equal(bounded.body, 'x ∈ B');
+    const typed = (0, propositions_1.parseTypedQuantifierCanonical)('∀(x: Nat) ⇒ P(x)', 'forall');
+    assert_1.strict.ok(typed);
+    assert_1.strict.equal(typed.variable, 'x');
+    assert_1.strict.equal(typed.domain, 'ℕ');
+    assert_1.strict.equal(typed.body, 'P(x)');
+    const standalone = (0, propositions_1.parseStandaloneTypedQuantifierCanonical)('∃!(xH: Set)', 'exists_unique');
+    assert_1.strict.ok(standalone);
+    assert_1.strict.equal(standalone.variable, 'xH');
+    assert_1.strict.equal(standalone.domain, 'Set');
+});
 runTest('parseExpr accepts standalone existential-unique binders', () => {
     const quantified = (0, expr_1.parseExpr)('∃!(xH: Set)');
     assert_1.strict.equal(quantified.type, 'Quantified');
@@ -1056,6 +1120,26 @@ proof UsesForwardStep() {
     assert_1.strict.equal(lemmaDerivation.inputIds.length, 1);
     assert_1.strict.equal(theoremReport.derivedFactIds.length, 1);
 });
+runTest('checker marks external lemma application as UNVERIFIED and non-trusted', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UsesExternalLemma() {
+  assert(q)
+} ↔
+
+proof UsesExternalLemma() {
+  apply(ForwardStep)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    const theoremReport = report.reports[0];
+    assert_1.strict.equal(theoremReport.proofSteps[0].status, 'UNVERIFIED');
+    const importedFact = theoremReport.proofObjects.find(object => object.source === 'lemma_application');
+    assert_1.strict.ok(importedFact);
+    assert_1.strict.equal(importedFact.status, 'UNVERIFIED');
+    assert_1.strict.match(theoremReport.diagnostics.map(d => d.message).join('\n'), /UNVERIFIED because 'ForwardStep' is not defined in this file/i);
+    assert_1.strict.match(theoremReport.diagnostics.map(d => d.message).join('\n'), /does not establish theorem goal/i);
+});
 runTest('checker accepts chained multi-premise implication demo', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
 theorem ChainImplication() {
@@ -1311,6 +1395,38 @@ proof Unverified() {
     const unverifiedObj = report.reports[0].proofObjects.find(o => o.status === 'UNVERIFIED');
     assert_1.strict.ok(unverifiedObj, 'Expected at least one UNVERIFIED proof object');
     assert_1.strict.ok(report.reports[0].unverifiedCount > 0);
+    assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /UNVERIFIED and does not advance the trusted proof state/i);
+});
+runTest('checker does not let UNVERIFIED assertions satisfy theorem goals', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UnverifiedGoal() {
+  assert(p)
+} ↔
+
+proof UnverifiedGoal() {
+  assert(p)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    const messages = report.reports[0].diagnostics.map(d => d.message).join('\n');
+    assert_1.strict.match(messages, /does not establish theorem goal/i);
+    assert_1.strict.match(messages, /UNVERIFIED and does not advance the trusted proof state/i);
+});
+runTest('checker does not let UNVERIFIED conclusions satisfy theorem goals', () => {
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`
+theorem UnverifiedConclusionGoal() {
+  assert(p)
+} ↔
+
+proof UnverifiedConclusionGoal() {
+  conclude(p)
+}
+`));
+    const report = (0, checker_1.checkFile)(ast);
+    assert_1.strict.equal(report.valid, false);
+    const messages = report.reports[0].diagnostics.map(d => d.message).join('\n');
+    assert_1.strict.match(messages, /does not establish theorem goal/i);
 });
 runTest('checker marks properly derived facts as PROVED', () => {
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(`

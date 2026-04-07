@@ -164,7 +164,7 @@ function printCheckReport(file, report) {
         if (report.valid) {
             const hasUnverified = report.reports.some(r => r.unverifiedCount > 0);
             if (hasUnverified) {
-                console.log('\n~ Proof structure valid — some steps UNVERIFIED (accepted without derivation chain)');
+                console.log('\n~ Proof accepted in permissive mode — some steps are UNVERIFIED and outside the trusted derivation chain');
             }
             else {
                 console.log('\n✓ All proofs verified');
@@ -204,6 +204,9 @@ Usage:
   fl [--strict] <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
   fl check [--strict] <file.fl>     Check proof structure (natural deduction, self-contained kernel)
   fl web <file.fl>                  Generate a React app from the program truth chain
+
+Notes:
+  --strict                          Recommended for serious proof work; rejects any UNVERIFIED step
 `);
 }
 main().catch(e => { console.error(e.message); process.exit(1); });

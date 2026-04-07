@@ -27,6 +27,11 @@ import { sortCheckProposition, inferIdentifierSort, Sort } from './sorts';
 import {
   exprToProp, sameProp, normalizeProp, splitConjunction as splitGoalConjunction,
   splitDisjunction as splitGoalDisjunction, splitImplication, splitIff,
+  parseMembershipCanonical, parseSubsetCanonical, parseEqualityCanonical, parseTypedVariableCanonical,
+  parseImplicationCanonical, parseConjunctionCanonical, parseDisjunctionCanonical, parseBinarySetCanonical,
+  parseSetBuilderCanonical, parseIndexedUnionCanonical, parseSetBuilderOrUnionCanonical, isSetBuilderLikeCanonical,
+  parseBoundedQuantifierCanonical, parseTypedQuantifierCanonical,
+  parseStandaloneBoundedQuantifierCanonical, parseStandaloneTypedQuantifierCanonical,
 } from './propositions';
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -347,6 +352,14 @@ function checkProofBlock(
           step,
           derivation: stepRule,
         });
+        if (finalizedAssertion.objectStatus === 'UNVERIFIED') {
+          diagnostics.push({
+            severity: 'info',
+            message: `Step ${step} assertion '${claim}' is UNVERIFIED and does not advance the trusted proof state`,
+            step,
+            rule: finalizedAssertion.result.rule,
+          });
+        }
         // Only emit error for definitively-failed derivations, not UNVERIFIED
         if (!finalizedAssertion.result.valid && stepRule?.valid === false) {
           diagnostics.push({
@@ -412,6 +425,14 @@ function checkProofBlock(
           step,
           derivation,
         });
+        if (finalizedConclusion.objectStatus === 'UNVERIFIED') {
+          diagnostics.push({
+            severity: 'info',
+            message: `Step ${step} conclusion '${claim}' is UNVERIFIED and does not discharge the trusted theorem goal`,
+            step,
+            rule: finalizedConclusion.result.rule,
+          });
+        }
         if (!finalizedConclusion.result.valid && finalizedConclusion.objectStatus !== 'UNVERIFIED') {
           diagnostics.push({ severity: 'error', message: finalizedConclusion.result.message, step, hint: finalizedConclusion.result.hint, rule: finalizedConclusion.result.rule });
         }
@@ -446,7 +467,13 @@ function checkProofBlock(
             registerLemmaImportClaim(ctx, conclusion, step, lemma.hypotheses, lemma.conclusions);
           }
         } else if (result.valid) {
-          registerLemmaImportClaim(ctx, `applied(${n.target})`, step, [], []);
+          diagnostics.push({
+            severity: 'info',
+            message: `Step ${step} apply(${n.target}) is UNVERIFIED because '${n.target}' is not defined in this file`,
+            step,
+            rule: result.rule,
+          });
+          registerUnverifiedLemmaClaim(ctx, n.target, step);
         }
         if (!result.valid) {
           diagnostics.push({ severity: 'error', message: result.message, step, rule: result.rule, hint: result.hint });
@@ -457,6 +484,7 @@ function checkProofBlock(
           claim: n.target,
           rule: result.rule,
           valid: result.valid,
+          status: result.valid && !lemma ? 'UNVERIFIED' : 'PROVED',
           message: result.message,
           uses: result.valid && lemma ? lemma.hypotheses : [],
           imports: result.valid && lemma ? lemma.conclusions : [],
@@ -706,6 +734,12 @@ function isProvedConclusion(content: string, report: ProofReport): boolean {
   );
 }
 
+function collectProvedClaims(report: ProofReport): string[] {
+  return report.proofObjects
+    .filter(o => o.status === 'PROVED')
+    .map(o => o.claim);
+}
+
 function goalSatisfied(goalExpr: ExprNode, report: ProofReport, body: ASTNode[]): boolean {
   const established = report.derivedConclusion;
   if (!established) return false;
@@ -714,8 +748,8 @@ function goalSatisfied(goalExpr: ExprNode, report: ProofReport, body: ASTNode[])
 
   if (goalExpr.type === 'Quantified' && goalExpr.quantifier === 'forall' && goalExpr.body) {
     const witnesses = goalExpr.binderStyle === 'typed'
-      ? collectTypedGoalWitnesses(goalExpr.domain, body)
-      : collectBoundedGoalWitnesses(goalExpr.domain, body);
+      ? collectTypedGoalWitnesses(report, goalExpr.domain)
+      : collectBoundedGoalWitnesses(report, goalExpr.domain);
     const bodySource = exprToProp(goalExpr.body);
     return witnesses.some(witness => {
       const instantiated = instantiateBoundedQuantifier({ variable: goalExpr.variable, body: bodySource }, witness);
@@ -731,16 +765,13 @@ function goalSatisfied(goalExpr: ExprNode, report: ProofReport, body: ASTNode[])
   const implication = splitImplication(goalExpr);
   if (implication) {
     const [antecedent, consequent] = implication;
-    const sawAssumption = body.some(
-      node => node.type === 'Assume' && sameProp(exprToString((node as AssumeNode).expr), antecedent)
-    );
-    return sawAssumption && sameProp(established, consequent);
+    return hasProvedAssumption(report, antecedent) && collectProvedClaims(report).some(claim => sameProp(claim, consequent));
   }
 
   const conjunction = splitGoalConjunction(goalExpr);
   if (conjunction) {
     const [left, right] = conjunction;
-    const establishedClaims = collectEstablishedClaims(body);
+    const establishedClaims = collectProvedClaims(report);
     return establishedClaims.some(claim => sameProp(claim, left))
       && establishedClaims.some(claim => sameProp(claim, right));
   }
@@ -748,7 +779,7 @@ function goalSatisfied(goalExpr: ExprNode, report: ProofReport, body: ASTNode[])
   const iff = splitIff(goalExpr);
   if (iff) {
     const [left, right] = iff;
-    const establishedClaims = collectEstablishedClaims(body);
+    const establishedClaims = collectProvedClaims(report);
     return establishedClaims.some(claim => sameProp(claim, `${left} → ${right}`))
       && establishedClaims.some(claim => sameProp(claim, `${right} → ${left}`));
   }
@@ -756,32 +787,32 @@ function goalSatisfied(goalExpr: ExprNode, report: ProofReport, body: ASTNode[])
   return false;
 }
 
-function collectTypedGoalWitnesses(domain: string, body: ASTNode[]): string[] {
-  const matches = body
-    .filter((node): node is SetVarNode => node.type === 'SetVar')
-    .filter(node => sameTypeDomain(node.varType ?? '', domain))
-    .map(node => node.varName);
+function hasProvedAssumption(report: ProofReport, claim: string): boolean {
+  return report.proofObjects.some(
+    object => object.status === 'PROVED' &&
+      object.source === 'assumption' &&
+      sameProp(object.claim, claim)
+  );
+}
+
+function collectTypedGoalWitnesses(report: ProofReport, domain: string): string[] {
+  const matches = report.proofObjects
+    .filter(object => object.status === 'PROVED' && object.source === 'variable')
+    .map(object => parseTypedVariableProp(object.claim))
+    .filter((typed): typed is { variable: string; domain: string } => Boolean(typed))
+    .filter(typed => sameTypeDomain(typed.domain, domain))
+    .map(typed => typed.variable);
   return [...new Set(matches)];
 }
 
-function collectBoundedGoalWitnesses(setName: string, body: ASTNode[]): string[] {
-  const matches = body
-    .filter((node): node is AssumeNode => node.type === 'Assume')
-    .map(node => parseMembershipProp(exprToString(node.expr)))
+function collectBoundedGoalWitnesses(report: ProofReport, setName: string): string[] {
+  const matches = report.proofObjects
+    .filter(object => object.status === 'PROVED' && (object.source === 'assumption' || object.source === 'premise'))
+    .map(object => parseMembershipProp(object.claim))
     .filter((membership): membership is { element: string; set: string } => Boolean(membership))
     .filter(membership => sameProp(membership.set, setName))
     .map(membership => membership.element);
   return [...new Set(matches)];
-}
-
-function collectEstablishedClaims(body: ASTNode[]): string[] {
-  const claims: string[] = [];
-  for (const node of body) {
-    if (node.type === 'Assert') claims.push(exprToString(node.expr));
-    if (node.type === 'Assume') claims.push(exprToString(node.expr));
-    if (node.type === 'Conclude') claims.push(exprToString(node.expr));
-  }
-  return claims;
 }
 
 function findDerivedConclusion(established: Claim[]): string | null {
@@ -819,10 +850,12 @@ function registerClaim(
     scopeIds: input.scopeIds ?? currentScopeIds(ctx),
     proofObjectId,
   };
-  // PROVED claims go into established; UNVERIFIED claims go into both
-  // established (for goal-tracking) AND unverified (to block rule use)
-  ctx.established.push(claim);
-  if (status === 'UNVERIFIED') {
+  // Only PROVED claims count as established facts. UNVERIFIED claims are
+  // recorded separately so they remain visible in diagnostics but cannot
+  // satisfy theorem goals or participate in derivations.
+  if (status === 'PROVED') {
+    ctx.established.push(claim);
+  } else {
     ctx.unverified.push(claim);
     ctx.unverifiedContents.add(normalizeProp(claim.content));
   }
@@ -904,6 +937,19 @@ function registerLemmaImportClaim(
     dependsOnIds: resolveClaimIds(ctx, hypotheses),
     imports,
     objectStatus: 'PROVED',
+  });
+}
+
+function registerUnverifiedLemmaClaim(ctx: ProofContext, lemmaName: string, step: number): Claim {
+  return registerClaim(ctx, {
+    content: `applied(${lemmaName})`,
+    source: 'lemma_application',
+    step,
+    rule: 'BY_LEMMA',
+    dependsOn: [],
+    imports: [lemmaName],
+    emitDerivation: false,
+    objectStatus: 'UNVERIFIED',
   });
 }
 
@@ -3591,36 +3637,46 @@ function checkImplicationGoalDischarge(claim: string, ctx: ProofContext): CheckR
 
   const [antecedent, consequent] = implication;
   if (!sameProp(consequent, claim)) return null;
-
-  const antecedentAssumed = ctx.established.some(
-    item => isVisibleInCurrentScope(item.scopeIds, ctx) && item.source === 'assumption' && sameProp(item.content, antecedent)
-  );
-  const consequentEstablished = visibleEstablishedClaims(ctx).some(item => sameProp(item.content, consequent));
-  return checkImpliesIntro(antecedent, consequent, antecedentAssumed, consequentEstablished);
+  const dependency = findImplicationIntroDependency(ctx.goal, ctx);
+  if (!dependency) return null;
+  return {
+    valid: true,
+    rule: 'IMPLIES_INTRO',
+    message: `${antecedent} → ${consequent} ✓`,
+  };
 }
 
 function checkForallGoalDischarge(claim: string, ctx: ProofContext): CheckResult | null {
   if (!ctx.goal) return null;
   const typedQuantifier = parseTypedQuantifierProp(ctx.goal, 'forall');
   if (typedQuantifier) {
+    const dependency = findForallTypedIntroDependency(ctx.goal, ctx);
+    if (!dependency) return null;
     const scope = findForallTypedIntroScope(typedQuantifier, ctx);
-    if (!scope) return null;
-    if (!sameProp(scope.body.claim, claim)) return null;
-    return checkForallTypedIntro(scope.witness.claim, scope.body.claim, ctx.goal, ctx);
+    if (!scope || !sameProp(scope.body.claim, claim)) return null;
+    return {
+      valid: true,
+      rule: 'FORALL_TYPED_INTRO',
+      message: `${ctx.goal} ✓`,
+    };
   }
   const quantifier = parseBoundedQuantifierProp(ctx.goal, 'forall');
   if (!quantifier) return null;
+  const dependency = findForallInIntroDependency(ctx.goal, ctx);
+  if (!dependency) return null;
   const scope = findForallInIntroScope(quantifier, ctx);
   if (!scope) return null;
   if (!sameProp(scope.body.claim, claim)) return null;
-  return checkForallInIntro(scope.membership.claim, scope.body.claim, ctx.goal, ctx);
+  return {
+    valid: true,
+    rule: 'FORALL_IN_INTRO',
+    message: `${ctx.goal} ✓`,
+  };
 }
 
 function checkContradictionDischarge(claim: string, ctx: ProofContext): CheckResult | null {
-  const contradictionEstablished = visibleEstablishedClaims(ctx).some(item => sameProp(item.content, 'contradiction'));
-  if (!contradictionEstablished) return null;
-  const contradiction = checkContradiction(ctx);
-  if (!contradiction.valid) return contradiction;
+  const dependency = findContradictionDependency(ctx);
+  if (!dependency) return null;
   return {
     valid: true,
     rule: 'CONTRADICTION',
@@ -3641,53 +3697,35 @@ function checkPremiseClaim(claim: string, ctx: ProofContext): CheckResult | null
 }
 
 function parseImplicationProp(prop: string): [string, string] | null {
-  const parts = splitTopLevel(prop, '→');
-  if (!parts) return null;
-  return parts;
+  return parseImplicationCanonical(prop);
 }
 
 function parseConjunctionProp(prop: string): [string, string] | null {
-  const parts = splitTopLevel(prop, '∧');
-  if (!parts) return null;
-  return parts;
+  return parseConjunctionCanonical(prop);
 }
 
 function parseSubsetProp(prop: string): { left: string; right: string } | null {
-  const match = stripParens(prop).match(/^(.+?)\s*(⊆|⊂)\s*(.+)$/);
-  if (!match) return null;
-  return { left: stripParens(match[1].trim()), right: stripParens(match[3].trim()) };
+  const parsed = parseSubsetCanonical(prop);
+  return parsed ? { left: parsed.left, right: parsed.right } : null;
 }
 
 function parseEqualityProp(prop: string): { left: string; right: string } | null {
   if (/==/.test(prop)) return null;
-  const match = stripParens(prop).match(/^(.+?)\s*=\s*(.+)$/);
-  if (!match) return null;
-  return { left: stripParens(match[1].trim()), right: stripParens(match[2].trim()) };
+  return parseEqualityCanonical(prop);
 }
 
 function parseMembershipProp(prop: string): { element: string; set: string } | null {
   const value = stripParens(prop);
   if (value.startsWith('∀') || value.startsWith('∃')) return null;
-  const match = value.match(/^(.+?)\s*(∈|∉)\s*(.+)$/);
-  if (!match) return null;
-  return { element: stripParens(match[1].trim()), set: stripParens(match[3].trim()) };
+  return parseMembershipCanonical(value);
 }
 
 function parseSetBuilderTerm(term: string): { elementTemplate: string; variable: string; domain: string } | null {
-  const value = stripParens(term);
-  const match = value.match(/^\{\s*(.+?)\s*\|\s*([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)\s*\}$/);
-  if (!match) return null;
-  return {
-    elementTemplate: stripParens(match[1].trim()),
-    variable: match[2].trim(),
-    domain: stripParens(match[3].trim()),
-  };
+  return parseSetBuilderCanonical(term);
 }
 
 function parseIndexedUnionTerm(term: string): { elementTemplate: string; variable: string; domain: string } | null {
-  const value = stripParens(term);
-  if (!value.startsWith('∪')) return null;
-  return parseSetBuilderTerm(value.slice(1).trim());
+  return parseIndexedUnionCanonical(term);
 }
 
 function parseMembershipQuantifier(claim: string): { domain: string; membershipSet: string } | null {
@@ -3738,7 +3776,7 @@ function normalizeBuilderTemplate(template: string, variable: string): string {
 }
 
 function parseSetBuilderOrUnion(term: string): { elementTemplate: string; variable: string; domain: string } | null {
-  return parseIndexedUnionTerm(term) ?? parseSetBuilderTerm(term);
+  return parseSetBuilderOrUnionCanonical(term);
 }
 
 function resolveSetEqualityDependency(
@@ -3758,99 +3796,39 @@ function resolveSetEqualityScopeFromInputs(claim: string, inputs: string[]): { l
 }
 
 function parseBinarySetProp(prop: string, operator: '∪' | '∩'): [string, string] | null {
-  return splitTopLevel(stripParens(prop), operator);
+  return parseBinarySetCanonical(stripParens(prop), operator);
 }
 
 function parseBoundedQuantifierProp(
   prop: string,
   kind: 'forall' | 'exists' | 'exists_unique',
 ): { kind: 'forall' | 'exists' | 'exists_unique'; variable: string; set: string; body: string } | null {
-  const value = stripParens(prop);
-  const symbol = kind === 'forall' ? '∀' : kind === 'exists' ? '∃' : '∃!';
-  const match = value.match(new RegExp(`^${symbol}\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*(.+?)\\s*,\\s*(.+)$`));
-  if (match) {
-    return {
-      kind,
-      variable: match[1].trim(),
-      set: stripParens(match[2].trim()),
-      body: stripParens(match[3].trim()),
-    };
-  }
-  const parenMatch = value.match(new RegExp(`^${symbol}\\s*\\(\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*([^)]+)\\)\\s*,\\s*(.+)$`));
-  if (parenMatch) {
-    return {
-      kind,
-      variable: parenMatch[1].trim(),
-      set: stripParens(parenMatch[2].trim()),
-      body: stripParens(parenMatch[3].trim()),
-    };
-  }
-  return null;
+  return parseBoundedQuantifierCanonical(prop, kind);
 }
 
 function parseTypedQuantifierProp(
   prop: string,
   kind: 'forall' | 'exists' | 'exists_unique',
 ): { kind: 'forall' | 'exists' | 'exists_unique'; variable: string; domain: string; body: string } | null {
-  const value = stripParens(prop);
-  const symbol = kind === 'forall' ? '∀' : kind === 'exists' ? '∃' : '∃!';
-  const match = value.match(new RegExp(`^${symbol}\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*:\\s*(.+?)\\s*,\\s*(.+)$`));
-  if (!match) return null;
-  return {
-    kind,
-    variable: match[1].trim(),
-    domain: stripParens(match[2].trim()),
-    body: stripParens(match[3].trim()),
-  };
+  return parseTypedQuantifierCanonical(prop, kind);
 }
 
 function parseStandaloneBoundedQuantifierProp(
   prop: string,
   kind: 'forall' | 'exists' | 'exists_unique',
 ): { kind: 'forall' | 'exists' | 'exists_unique'; variable: string; set: string } | null {
-  const value = stripParens(prop);
-  const symbol = kind === 'forall' ? '∀' : kind === 'exists' ? '∃' : '∃!';
-  const match = value.match(new RegExp(`^${symbol}\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*(.+)$`));
-  if (match) {
-    return {
-      kind,
-      variable: match[1].trim(),
-      set: stripParens(match[2].trim()),
-    };
-  }
-  const parenMatch = value.match(new RegExp(`^${symbol}\\s*\\(\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*∈\\s*([^)]+)\\)$`));
-  if (parenMatch) {
-    return {
-      kind,
-      variable: parenMatch[1].trim(),
-      set: stripParens(parenMatch[2].trim()),
-    };
-  }
-  return null;
+  return parseStandaloneBoundedQuantifierCanonical(prop, kind);
 }
 
 function parseStandaloneTypedQuantifierProp(
   prop: string,
   kind: 'forall' | 'exists' | 'exists_unique',
 ): { kind: 'forall' | 'exists' | 'exists_unique'; variable: string; domain: string } | null {
-  const value = stripParens(prop);
-  const symbol = kind === 'forall' ? '∀' : kind === 'exists' ? '∃' : '∃!';
-  const match = value.match(new RegExp(`^${symbol}\\s*([A-Za-z_][\\w₀-₉ₐ-ₙ]*)\\s*:\\s*(.+)$`));
-  if (!match) return null;
-  return {
-    kind,
-    variable: match[1].trim(),
-    domain: stripParens(match[2].trim()),
-  };
+  return parseStandaloneTypedQuantifierCanonical(prop, kind);
 }
 
 function parseTypedVariableProp(prop: string): { variable: string; domain: string } | null {
-  const match = stripParens(prop).match(/^([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*:\s*(.+)$/);
-  if (!match) return null;
-  return {
-    variable: match[1].trim(),
-    domain: stripParens(match[2].trim()),
-  };
+  return parseTypedVariableCanonical(prop);
 }
 
 function parseProductExpression(value: string): { left: string; right: string } | null {
@@ -3930,8 +3908,7 @@ function isSupportedArithmeticTerm(term: string): boolean {
 }
 
 function isSetBuilderLikeTerm(term: string): boolean {
-  const value = stripParens(term);
-  return /^\{.+\|\s*.+\}$/.test(value) || /^∪\{.+\|\s*.+\}$/.test(value);
+  return isSetBuilderLikeCanonical(term);
 }
 
 function escapeRegExp(value: string): string {
@@ -4394,6 +4371,12 @@ function kernelSubsetGap(value: string): { rule: string; hint: string } | null {
     };
   }
   if (equality && (/[|]|\[[^\]]+:[^\]]+\]|·/.test(equality.left) || /[|]|\[[^\]]+:[^\]]+\]|·/.test(equality.right))) {
+    if (isSetBuilderLikeTerm(equality.left) || isSetBuilderLikeTerm(equality.right)) {
+      return {
+        rule: 'SET_OPERATOR_REASONING',
+        hint: 'Set-builder and indexed-union equalities are preserved structurally, but not fully kernel-checked yet.',
+      };
+    }
     if (isSupportedArithmeticTerm(equality.left) && isSupportedArithmeticTerm(equality.right)) {
       return null;
     }
@@ -4402,7 +4385,7 @@ function kernelSubsetGap(value: string): { rule: string; hint: string } | null {
       hint: 'Only simple equalities over identifier/cardinality/index/product terms are kernel-checked today.',
     };
   }
-  if (/[|]|\[[^\]]+:[^\]]+\]|\bdivides\b|·/.test(value)) {
+  if (/[|]|\[[^\]]+:[^\]]+\]|\bdivides\b|·/.test(value) && !isSetBuilderLikeTerm(value)) {
     return {
       rule: 'ARITHMETIC_REASONING',
       hint: 'Arithmetic/cardinality/index reasoning is outside the current self-contained kernel.',
@@ -4475,7 +4458,7 @@ function checkExFalsoDerivedClaim(claim: string, ctx: ProofContext): CheckResult
 // ── Disjunction helpers ───────────────────────────────────────────────────────
 
 function parseDisjunctionProp(prop: string): [string, string] | null {
-  return splitTopLevel(prop, '∨');
+  return parseDisjunctionCanonical(prop);
 }
 
 function isDisjunction(expr: ExprNode): boolean {
