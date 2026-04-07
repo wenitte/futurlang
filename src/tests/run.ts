@@ -512,6 +512,66 @@ proof LeftProjection() {
   assert.equal(report.reports[0].proofSteps[1].rule, 'AND_ELIM');
 });
 
+runTest('checker accepts biconditional introduction derivations', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem IffIntro() {
+  given(p -> q) →
+  given(q -> p) →
+  assert(p <-> q)
+} ↔
+
+proof IffIntro() {
+  conclude(p <-> q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  assert.equal(report.reports[0].proofSteps[0].rule, 'IFF_INTRO');
+  assert.equal(report.reports[0].derivedConclusion, 'p ↔ q');
+});
+
+runTest('checker accepts biconditional elimination derivations', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem IffElim() {
+  given(p <-> q) →
+  given(p) →
+  assert(q)
+} ↔
+
+proof IffElim() {
+  conclude(q)
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  assert.equal(report.reports[0].proofSteps[0].rule, 'IFF_ELIM');
+  assert.equal(report.reports[0].derivedConclusion, 'q');
+});
+
+runTest('checker proves intersection membership biconditional from scratch', () => {
+  const ast = parseLinesToAST(lexFL(`
+theorem IntersectionMembershipIff() {
+  assert((x in A intersection B) <-> ((x in A) && (x in B)))
+} ↔
+
+proof IntersectionMembershipIff() {
+  assume(x in A intersection B) →
+  assert((x in A) && (x in B)) →
+  assert((x in A intersection B) -> ((x in A) && (x in B))) →
+  assume((x in A) && (x in B)) →
+  assert(x in A intersection B) →
+  assert(((x in A) && (x in B)) -> (x in A intersection B)) →
+  conclude((x in A intersection B) <-> ((x in A) && (x in B)))
+}
+`));
+  const report = checkFile(ast);
+  assert.equal(report.valid, true);
+  const theoremReport = report.reports[0];
+  assert.ok(theoremReport.proofSteps.some(step => step.rule === 'IMPLIES_INTRO'));
+  assert.ok(theoremReport.proofSteps.some(step => step.rule === 'IFF_INTRO'));
+  assert.equal(theoremReport.derivedConclusion, 'x ∈ A ∩ B ↔ x ∈ A ∧ x ∈ B');
+});
+
 runTest('checker accepts MI-style symbolic identity demos', () => {
   const ast = parseLinesToAST(lexFL(`
 theorem MembershipIdentity() {

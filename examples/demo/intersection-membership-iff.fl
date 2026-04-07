@@ -1,0 +1,13 @@
+theorem IntersectionMembershipIff() {
+  assert((x in A intersection B) <-> ((x in A) && (x in B)))
+} ↔
+
+proof IntersectionMembershipIff() {
+  assume(x in A intersection B) →
+  assert((x in A) && (x in B)) →
+  assert((x in A intersection B) -> ((x in A) && (x in B))) →
+  assume((x in A) && (x in B)) →
+  assert(x in A intersection B) →
+  assert(((x in A) && (x in B)) -> (x in A intersection B)) →
+  conclude((x in A intersection B) <-> ((x in A) && (x in B)))
+}

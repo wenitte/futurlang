@@ -1,0 +1,9 @@
+theorem IffElim() {
+  given(p <-> q) →
+  given(p) →
+  assert(q)
+} ↔
+
+proof IffElim() {
+  conclude(q)
+}

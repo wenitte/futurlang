@@ -20,14 +20,17 @@ All examples in this directory obey the core FuturLang rule that the source itse
 12. `intersection-left.fl`
 13. `intersection-intro.fl`
 14. `intersection-right.fl`
-15. `mi-order-identity.fl`
-16. `conjunction-intro.fl`
-17. `conjunction-elim.fl`
-18. `modus-ponens.fl`
-19. `right-projection.fl`
-20. `multi-premise-chain.fl`
-21. `lemma-apply.fl`
-22. `contradiction-demo.fl`
+15. `intersection-membership-iff.fl`
+16. `mi-order-identity.fl`
+17. `conjunction-intro.fl`
+18. `conjunction-elim.fl`
+19. `modus-ponens.fl`
+20. `right-projection.fl`
+21. `multi-premise-chain.fl`
+22. `iff-intro.fl`
+23. `iff-elim.fl`
+24. `lemma-apply.fl`
+25. `contradiction-demo.fl`
 
 ## Demo commands
 
@@ -46,12 +49,15 @@ fl check examples/demo/exists-in-elim.fl
 fl check examples/demo/intersection-left.fl
 fl check examples/demo/intersection-intro.fl
 fl check examples/demo/intersection-right.fl
+fl check examples/demo/intersection-membership-iff.fl
 fl check examples/demo/mi-order-identity.fl
 fl check examples/demo/conjunction-intro.fl
 fl check examples/demo/conjunction-elim.fl
 fl check examples/demo/modus-ponens.fl
 fl check examples/demo/right-projection.fl
 fl check examples/demo/multi-premise-chain.fl
+fl check examples/demo/iff-intro.fl
+fl check examples/demo/iff-elim.fl
 fl check examples/demo/lemma-apply.fl
 fl check examples/demo/contradiction-demo.fl
 ```
@@ -84,6 +90,8 @@ These examples stay inside the current fast checker subset, so they are the righ
 
 `intersection-right.fl` shows kernel-checked intersection membership elimination in direct set notation: from `x ∈ A ∩ B`, the checker derives `x ∈ B`.
 
+`intersection-membership-iff.fl` is a stronger derived theorem built from the kernel rules: it proves `x ∈ A ∩ B ↔ (x ∈ A ∧ x ∈ B)` from scratch by deriving both implications and then applying `IFF_INTRO`.
+
 The conjunction introduction demo now includes an explicit `conclude(p && q)` step so `fl check` can display `AND_INTRO` directly in the proof trace.
 
 `modus-ponens.fl` now uses first-class theorem premises with `given(...)`, which is closer to the long-term repository-style FuturLang syntax than repeating the premise inside the proof body.
@@ -91,6 +99,10 @@ The conjunction introduction demo now includes an explicit `conclude(p && q)` st
 `right-projection.fl` shows that a theorem premise can directly populate proof context and support elimination without repeating the premise inside the proof.
 
 `multi-premise-chain.fl` shows multiple chained `given(...)` premises in one theorem body.
+
+`iff-intro.fl` shows kernel-checked biconditional introduction: from `p → q` and `q → p`, the checker derives `p ↔ q`.
+
+`iff-elim.fl` shows kernel-checked biconditional elimination: from `p ↔ q` and `p`, the checker derives `q`.
 
 `lemma-apply.fl` demonstrates a chained lemma with a chained premise, followed by a theorem proof that satisfies the lemma hypothesis and uses `apply(...)`.
 

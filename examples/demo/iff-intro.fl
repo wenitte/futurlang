@@ -1,0 +1,9 @@
+theorem IffIntro() {
+  given(p -> q) →
+  given(q -> p) →
+  assert(p <-> q)
+} ↔
+
+proof IffIntro() {
+  conclude(p <-> q)
+}

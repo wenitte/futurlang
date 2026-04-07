@@ -6,6 +6,8 @@ exports.checkAssumption = checkAssumption;
 exports.checkModusPonens = checkModusPonens;
 exports.checkAndIntro = checkAndIntro;
 exports.checkAndElim = checkAndElim;
+exports.checkIffIntro = checkIffIntro;
+exports.checkIffElim = checkIffElim;
 exports.checkSubsetElim = checkSubsetElim;
 exports.checkSubsetTrans = checkSubsetTrans;
 exports.checkEqualityRefl = checkEqualityRefl;
@@ -97,6 +99,41 @@ function checkAndElim(target, conjunction, ctx) {
         };
     }
     return { valid: true, rule: 'AND_ELIM', message: `Conjunction elimination: ${conjunction} ⊢ ${target}` };
+}
+function checkIffIntro(leftImplies, rightImplies, target, ctx) {
+    const hasLeft = isEstablished(leftImplies, ctx);
+    const hasRight = isEstablished(rightImplies, ctx);
+    if (hasLeft && hasRight) {
+        return { valid: true, rule: 'IFF_INTRO', message: `Biconditional introduction: ${leftImplies}, ${rightImplies} ⊢ ${target}` };
+    }
+    const missing = hasLeft ? rightImplies : leftImplies;
+    return {
+        valid: false,
+        rule: 'IFF_INTRO',
+        message: `Cannot introduce biconditional: '${missing}' not yet established`,
+        hint: `Establish both directions before deriving '${target}'`,
+    };
+}
+function checkIffElim(sourceIff, knownSide, target, ctx) {
+    const hasIff = isEstablished(sourceIff, ctx);
+    const hasSide = isEstablished(knownSide, ctx);
+    if (hasIff && hasSide) {
+        return { valid: true, rule: 'IFF_ELIM', message: `Biconditional elimination: ${sourceIff}, ${knownSide} ⊢ ${target}` };
+    }
+    if (!hasIff) {
+        return {
+            valid: false,
+            rule: 'IFF_ELIM',
+            message: `Cannot eliminate biconditional: '${sourceIff}' not yet established`,
+            hint: `Establish '${sourceIff}' before deriving '${target}'`,
+        };
+    }
+    return {
+        valid: false,
+        rule: 'IFF_ELIM',
+        message: `Cannot eliminate biconditional: '${knownSide}' not yet established`,
+        hint: `Establish '${knownSide}' before deriving '${target}'`,
+    };
 }
 // ── Rule: SUBSET_ELIM ────────────────────────────────────────────────────────
 // If x ∈ A is established and A ⊆ B is established, then x ∈ B follows.

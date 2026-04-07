@@ -21,6 +21,8 @@ export type InferenceRule =
   | 'AND_ELIM'          // have P ∧ Q, conclude P  or  have P ∧ Q, conclude Q
   | 'AND_ELIM_LEFT'     // have P ∧ Q, conclude P
   | 'AND_ELIM_RIGHT'    // have P ∧ Q, conclude Q
+  | 'IFF_INTRO'         // have P → Q and Q → P, conclude P ↔ Q
+  | 'IFF_ELIM'          // have P ↔ Q and one side, conclude the other
   | 'OR_INTRO_LEFT'     // have P, conclude P ∨ Q
   | 'OR_INTRO_RIGHT'    // have Q, conclude P ∨ Q
   | 'OR_ELIM'           // have P ∨ Q, P → R, Q → R, conclude R

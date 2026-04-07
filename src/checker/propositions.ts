@@ -206,6 +206,10 @@ export function parseDisjunctionCanonical(prop: string): [string, string] | null
   return splitTopLevelProp(prop, '∨');
 }
 
+export function parseIffCanonical(prop: string): [string, string] | null {
+  return splitTopLevelProp(prop, '↔');
+}
+
 export function parseBinarySetCanonical(prop: string, operator: '∪' | '∩'): [string, string] | null {
   return splitTopLevelProp(prop, operator);
 }
@@ -398,7 +402,7 @@ function splitTopLevelAtom(value: string, operator: string): [string, string] | 
   return null;
 }
 
-function splitTopLevelProp(value: string, operator: '→' | '∧' | '∨' | '∪' | '∩'): [string, string] | null {
+function splitTopLevelProp(value: string, operator: '→' | '∧' | '∨' | '↔' | '∪' | '∩'): [string, string] | null {
   let parenDepth = 0;
   let braceDepth = 0;
   let bracketDepth = 0;

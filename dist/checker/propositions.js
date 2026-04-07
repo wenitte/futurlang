@@ -13,6 +13,7 @@ exports.parseTypedVariableCanonical = parseTypedVariableCanonical;
 exports.parseImplicationCanonical = parseImplicationCanonical;
 exports.parseConjunctionCanonical = parseConjunctionCanonical;
 exports.parseDisjunctionCanonical = parseDisjunctionCanonical;
+exports.parseIffCanonical = parseIffCanonical;
 exports.parseBinarySetCanonical = parseBinarySetCanonical;
 exports.parseSetBuilderCanonical = parseSetBuilderCanonical;
 exports.parseIndexedUnionCanonical = parseIndexedUnionCanonical;
@@ -172,6 +173,9 @@ function parseConjunctionCanonical(prop) {
 }
 function parseDisjunctionCanonical(prop) {
     return splitTopLevelProp(prop, '∨');
+}
+function parseIffCanonical(prop) {
+    return splitTopLevelProp(prop, '↔');
 }
 function parseBinarySetCanonical(prop, operator) {
     return splitTopLevelProp(prop, operator);

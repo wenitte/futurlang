@@ -932,6 +932,10 @@ function validateDerivationNode(node, inputs, output, goal) {
             return validateAndIntroNode(node, inputs, output);
         case 'AND_ELIM':
             return validateAndElimNode(node, inputs, output);
+        case 'IFF_INTRO':
+            return validateIffIntroNode(node, inputs, output);
+        case 'IFF_ELIM':
+            return validateIffElimNode(node, inputs, output);
         case 'SUBSET_ELIM':
             return validateSubsetElimNode(node, inputs, output);
         case 'SUBSET_TRANS':
@@ -1048,6 +1052,40 @@ function validateAndElimNode(node, inputs, output) {
     const conjunction = parseConjunctionProp(inputs[0].claim);
     if (!conjunction || (!(0, propositions_1.sameProp)(conjunction[0], output.claim) && !(0, propositions_1.sameProp)(conjunction[1], output.claim))) {
         return { severity: 'error', message: `AND_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateIffIntroNode(node, inputs, output) {
+    if (inputs.length !== 2) {
+        return { severity: 'error', message: `IFF_INTRO '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+    }
+    const iff = parseIffProp(output.claim);
+    if (!iff) {
+        return { severity: 'error', message: `IFF_INTRO '${node.id}' must produce a biconditional`, step: node.step, rule: node.rule };
+    }
+    const leftImpl = `${iff[0]} → ${iff[1]}`;
+    const rightImpl = `${iff[1]} → ${iff[0]}`;
+    const hasLeft = inputs.some(input => (0, propositions_1.sameProp)(input.claim, leftImpl));
+    const hasRight = inputs.some(input => (0, propositions_1.sameProp)(input.claim, rightImpl));
+    if (!hasLeft || !hasRight) {
+        return { severity: 'error', message: `IFF_INTRO '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
+    }
+    return null;
+}
+function validateIffElimNode(node, inputs, output) {
+    if (inputs.length !== 2) {
+        return { severity: 'error', message: `IFF_ELIM '${node.id}' requires 2 inputs`, step: node.step, rule: node.rule };
+    }
+    const iffObj = inputs.find(input => parseIffProp(input.claim));
+    const sideObj = inputs.find(input => !parseIffProp(input.claim));
+    if (!iffObj || !sideObj) {
+        return { severity: 'error', message: `IFF_ELIM '${node.id}' must reference a biconditional and one side`, step: node.step, rule: node.rule };
+    }
+    const iff = parseIffProp(iffObj.claim);
+    const valid = ((0, propositions_1.sameProp)(sideObj.claim, iff[0]) && (0, propositions_1.sameProp)(output.claim, iff[1]))
+        || ((0, propositions_1.sameProp)(sideObj.claim, iff[1]) && (0, propositions_1.sameProp)(output.claim, iff[0]));
+    if (!valid) {
+        return { severity: 'error', message: `IFF_ELIM '${node.id}' does not justify '${output.claim}'`, step: node.step, rule: node.rule };
     }
     return null;
 }
@@ -1576,6 +1614,10 @@ function buildProofObjectInput(claim, source, step, derivation, ctx) {
             return buildAndIntroProofObject(claim, source, step, ctx);
         case 'AND_ELIM':
             return buildAndElimProofObject(claim, source, step, ctx);
+        case 'IFF_INTRO':
+            return buildIffIntroProofObject(claim, source, step, ctx);
+        case 'IFF_ELIM':
+            return buildIffElimProofObject(claim, source, step, ctx);
         case 'SUBSET_ELIM':
             return buildSubsetElimProofObject(claim, source, step, ctx);
         case 'SUBSET_TRANS':
@@ -1665,7 +1707,7 @@ function buildPremiseProofObject(claim, source, step, ctx) {
     };
 }
 function implicationOutputClaim(claim, ctx) {
-    const implication = ctx.goal ? parseImplicationProp(ctx.goal) : parseImplicationProp(claim);
+    const implication = parseImplicationProp(claim) ?? (ctx.goal ? parseImplicationProp(ctx.goal) : null);
     if (!implication)
         return claim;
     return `${implication[0]} → ${implication[1]}`;
@@ -1705,6 +1747,28 @@ function buildAndElimProofObject(claim, source, step, ctx) {
         source,
         step,
         rule: 'AND_ELIM',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildIffIntroProofObject(claim, source, step, ctx) {
+    const dependency = findIffIntroDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'IFF_INTRO',
+        dependsOn: dependency?.claims ?? [],
+        dependsOnIds: dependency?.ids ?? [],
+    };
+}
+function buildIffElimProofObject(claim, source, step, ctx) {
+    const dependency = findIffElimDependency(claim, ctx);
+    return {
+        content: claim,
+        source,
+        step,
+        rule: 'IFF_ELIM',
         dependsOn: dependency?.claims ?? [],
         dependsOnIds: dependency?.ids ?? [],
     };
@@ -2355,6 +2419,44 @@ function findIntersectionElimDependency(claim, ctx) {
         return null;
     return { claims: [candidate.claim], ids: [candidate.id] };
 }
+function findIffIntroDependency(claim, ctx) {
+    const iff = parseIffProp(claim);
+    if (!iff)
+        return null;
+    const leftImpl = `${iff[0]} → ${iff[1]}`;
+    const rightImpl = `${iff[1]} → ${iff[0]}`;
+    const leftObj = findLatestProofObjectByClaim(ctx, leftImpl);
+    const rightObj = findLatestProofObjectByClaim(ctx, rightImpl);
+    if (!leftObj || !rightObj)
+        return null;
+    return {
+        claims: [leftImpl, rightImpl],
+        ids: uniqueIds([leftObj.id, rightObj.id]),
+    };
+}
+function findIffElimDependency(claim, ctx) {
+    for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
+        const iffObj = ctx.proofObjects[i];
+        const iff = parseIffProp(iffObj.claim);
+        if (!iff)
+            continue;
+        const leftObj = findLatestProofObjectByClaim(ctx, iff[0]);
+        if (leftObj && (0, propositions_1.sameProp)(claim, iff[1])) {
+            return {
+                claims: [iffObj.claim, leftObj.claim],
+                ids: uniqueIds([iffObj.id, leftObj.id]),
+            };
+        }
+        const rightObj = findLatestProofObjectByClaim(ctx, iff[1]);
+        if (rightObj && (0, propositions_1.sameProp)(claim, iff[0])) {
+            return {
+                claims: [iffObj.claim, rightObj.claim],
+                ids: uniqueIds([iffObj.id, rightObj.id]),
+            };
+        }
+    }
+    return null;
+}
 function findForallTypedElimDependency(claim, ctx) {
     for (let i = ctx.proofObjects.length - 1; i >= 0; i--) {
         const quantified = ctx.proofObjects[i];
@@ -2583,7 +2685,7 @@ function findExistsInElimDependency(claim, ctx) {
     return null;
 }
 function findImplicationIntroDependency(claim, ctx) {
-    const implication = ctx.goal ? parseImplicationProp(ctx.goal) : parseImplicationProp(claim);
+    const implication = parseImplicationProp(claim) ?? (ctx.goal ? parseImplicationProp(ctx.goal) : null);
     if (!implication)
         return null;
     const antecedentObject = findLatestProofObjectByClaim(ctx, implication[0], object => object.source === 'assumption');
@@ -2762,6 +2864,10 @@ function minimumDependencyCount(rule, dependsOn) {
             return uniqueProps(dependsOn).length;
         case 'AND_ELIM':
             return 1;
+        case 'IFF_INTRO':
+            return uniqueProps(dependsOn).length;
+        case 'IFF_ELIM':
+            return uniqueProps(dependsOn).length;
         case 'SUBSET_ELIM':
             return uniqueProps(dependsOn).length;
         case 'SUBSET_TRANS':
@@ -2884,6 +2990,9 @@ function checkDerivedClaim(claim, ctx) {
     if (established.some(item => (0, propositions_1.sameProp)(item.content, claim))) {
         return null;
     }
+    const implicationIntro = checkImplicationIntroDerivedClaim(claim, ctx);
+    if (implicationIntro?.valid)
+        return implicationIntro;
     for (const item of established) {
         const implication = parseImplicationProp(item.content);
         if (!implication)
@@ -2912,6 +3021,12 @@ function checkDerivedClaim(claim, ctx) {
     const subsetTrans = checkSubsetTransDerivedClaim(claim, ctx);
     if (subsetTrans?.valid)
         return subsetTrans;
+    const iffIntro = checkIffIntroDerivedClaim(claim, ctx);
+    if (iffIntro?.valid)
+        return iffIntro;
+    const iffElim = checkIffElimDerivedClaim(claim, ctx);
+    if (iffElim?.valid)
+        return iffElim;
     const equalityDirect = checkEqualityDerivedClaim(claim, ctx);
     if (equalityDirect?.valid)
         return equalityDirect;
@@ -3013,6 +3128,15 @@ function checkSubsetDerivedClaim(claim, ctx) {
     }
     return null;
 }
+function checkImplicationIntroDerivedClaim(claim, ctx) {
+    const implication = parseImplicationProp(claim);
+    if (!implication)
+        return null;
+    const dependency = findImplicationIntroDependency(claim, ctx);
+    if (!dependency)
+        return null;
+    return (0, rules_1.checkImpliesIntro)(implication[0], implication[1], true, true);
+}
 function checkSubsetTransDerivedClaim(claim, ctx) {
     const target = parseSubsetProp(claim);
     if (!target)
@@ -3031,6 +3155,34 @@ function checkSubsetTransDerivedClaim(claim, ctx) {
                 if (result.valid)
                     return result;
             }
+        }
+    }
+    return null;
+}
+function checkIffIntroDerivedClaim(claim, ctx) {
+    const iff = parseIffProp(claim);
+    if (!iff)
+        return null;
+    const leftImpl = `${iff[0]} → ${iff[1]}`;
+    const rightImpl = `${iff[1]} → ${iff[0]}`;
+    const result = (0, rules_1.checkIffIntro)(leftImpl, rightImpl, claim, ctx);
+    return result.valid ? result : null;
+}
+function checkIffElimDerivedClaim(claim, ctx) {
+    const established = visibleEstablishedClaims(ctx);
+    for (const item of established) {
+        const iff = parseIffProp(item.content);
+        if (!iff)
+            continue;
+        if (visibleEstablishedClaims(ctx).some(other => (0, propositions_1.sameProp)(other.content, iff[0])) && (0, propositions_1.sameProp)(claim, iff[1])) {
+            const result = (0, rules_1.checkIffElim)(item.content, iff[0], claim, ctx);
+            if (result.valid)
+                return result;
+        }
+        if (visibleEstablishedClaims(ctx).some(other => (0, propositions_1.sameProp)(other.content, iff[1])) && (0, propositions_1.sameProp)(claim, iff[0])) {
+            const result = (0, rules_1.checkIffElim)(item.content, iff[1], claim, ctx);
+            if (result.valid)
+                return result;
         }
     }
     return null;
@@ -3393,6 +3545,9 @@ function parseImplicationProp(prop) {
 }
 function parseConjunctionProp(prop) {
     return (0, propositions_1.parseConjunctionCanonical)(prop);
+}
+function parseIffProp(prop) {
+    return (0, propositions_1.parseIffCanonical)(prop);
 }
 function parseSubsetProp(prop) {
     const parsed = (0, propositions_1.parseSubsetCanonical)(prop);
