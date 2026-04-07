@@ -24,16 +24,18 @@ All examples in this directory obey the core FuturLang rule that the source itse
 16. `intersection-right.fl`
 17. `intersection-membership-iff.fl`
 18. `preimage-intersection-iff.fl`
-19. `mi-order-identity.fl`
-20. `conjunction-intro.fl`
-21. `conjunction-elim.fl`
-22. `modus-ponens.fl`
-23. `right-projection.fl`
-24. `multi-premise-chain.fl`
-25. `iff-intro.fl`
-26. `iff-elim.fl`
-27. `lemma-apply.fl`
-28. `contradiction-demo.fl`
+19. `image-union-left.fl`
+20. `image-union-forward.fl`
+21. `mi-order-identity.fl`
+22. `conjunction-intro.fl`
+23. `conjunction-elim.fl`
+24. `modus-ponens.fl`
+25. `right-projection.fl`
+26. `multi-premise-chain.fl`
+27. `iff-intro.fl`
+28. `iff-elim.fl`
+29. `lemma-apply.fl`
+30. `contradiction-demo.fl`
 
 ## Demo commands
 
@@ -56,6 +58,8 @@ fl check examples/demo/intersection-intro.fl
 fl check examples/demo/intersection-right.fl
 fl check examples/demo/intersection-membership-iff.fl
 fl check examples/demo/preimage-intersection-iff.fl
+fl check examples/demo/image-union-left.fl
+fl check examples/demo/image-union-forward.fl
 fl check examples/demo/mi-order-identity.fl
 fl check examples/demo/conjunction-intro.fl
 fl check examples/demo/conjunction-elim.fl
@@ -103,6 +107,12 @@ These examples stay inside the current fast checker subset, so they are the righ
 `intersection-membership-iff.fl` is a stronger derived theorem built from the kernel rules: it proves `x ∈ A ∩ B ↔ (x ∈ A ∧ x ∈ B)` from scratch by deriving both implications and then applying `IFF_INTRO`.
 
 `preimage-intersection-iff.fl` is the first honest function-facing theorem in the kernel subset: it uses `PREIMAGE_INTRO`, `PREIMAGE_ELIM`, and intersection rules to prove `x ∈ preimage(f, B ∩ C) ↔ (x ∈ preimage(f, B) ∧ x ∈ preimage(f, C))`.
+
+`preimage-intersection-equality.fl` pushes that one level higher: it uses `SUBSET_INTRO` and `SUBSET_ANTISYM` to prove the actual set equality `preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C)`.
+
+`image-union-left.fl` is the first image theorem in the same minimal function layer: from `x ∈ A`, the checker derives `f(x) ∈ image(f, A ∪ B)` by combining `UNION_INTRO` with `IMAGE_INTRO`.
+
+`image-union-forward.fl` is the first nontrivial image theorem: from `x ∈ A ∪ B`, the checker derives `f(x) ∈ image(f, A) ∪ image(f, B)` by combining `UNION_ELIM`, `IMAGE_INTRO`, `UNION_INTRO`, and implication introduction.
 
 The conjunction introduction demo now includes an explicit `conclude(p && q)` step so `fl check` can display `AND_INTRO` directly in the proof trace.
 
