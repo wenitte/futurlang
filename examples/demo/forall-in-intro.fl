@@ -1,5 +1,5 @@
 theorem ForallInIntro() {
-  given(A ⊆ B) →
+  given(A ⊂ B) →
   assert(∀ x ∈ A, x ∈ B)
 } ↔
 

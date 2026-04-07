@@ -11,7 +11,7 @@ proof PreimageIntersectionEquality() {
   assert(x ∈ preimage(f, B)) →
   assert(x ∈ preimage(f, C)) →
   assert(x ∈ preimage(f, B) ∩ preimage(f, C)) →
-  assert(preimage(f, B ∩ C) ⊆ preimage(f, B) ∩ preimage(f, C)) →
+  assert(preimage(f, B ∩ C) ⊂ preimage(f, B) ∩ preimage(f, C)) →
   setVar(y: Element) →
   assume(y ∈ preimage(f, B) ∩ preimage(f, C)) →
   assert(y ∈ preimage(f, B)) →
@@ -20,6 +20,6 @@ proof PreimageIntersectionEquality() {
   assert(f(y) ∈ C) →
   assert(f(y) ∈ B ∩ C) →
   assert(y ∈ preimage(f, B ∩ C)) →
-  assert(preimage(f, B) ∩ preimage(f, C) ⊆ preimage(f, B ∩ C)) →
+  assert(preimage(f, B) ∩ preimage(f, C) ⊂ preimage(f, B ∩ C)) →
   conclude(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
 }

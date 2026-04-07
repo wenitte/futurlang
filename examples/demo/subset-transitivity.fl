@@ -1,9 +1,9 @@
 theorem SubsetTransitivity() {
-  given(A ⊆ B) →
-  given(B ⊆ C) →
-  assert(A ⊆ C)
+  given(A ⊂ B) →
+  given(B ⊂ C) →
+  assert(A ⊂ C)
 } ↔
 
 proof SubsetTransitivity() {
-  conclude(A ⊆ C)
+  conclude(A ⊂ C)
 }

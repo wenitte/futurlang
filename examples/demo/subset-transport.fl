@@ -1,6 +1,6 @@
 theorem SubsetTransport() {
   given(x ∈ A) →
-  given(A ⊆ B) →
+  given(A ⊂ B) →
   assert(x ∈ B)
 } ↔
 
