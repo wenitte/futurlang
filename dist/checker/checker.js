@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkFile = checkFile;
 const propositions_1 = require("./propositions");
 const category_1 = require("../kernel/category");
+const category_diagrams_1 = require("../kernel/category-diagrams");
 const TOP = '⊤';
 const BOTTOM = '⊥';
 function checkFile(nodes, options = {}) {
@@ -116,6 +117,7 @@ function createContext(goal, lemmas, premises) {
     }
     return {
         category,
+        diagrams: new category_diagrams_1.CategoryDiagramKernel(),
         objects: [],
         derivations: [],
         diagnostics: [],
@@ -325,6 +327,7 @@ function deriveClaim(ctx, claim, step) {
     const prover = [
         deriveAndIntro,
         deriveAndElim,
+        deriveCategoryClaim,
         deriveNotIntro,
         deriveImpliesElim,
         deriveImpliesIntro,
@@ -379,6 +382,300 @@ function deriveAndIntro(ctx, claim, step) {
         uses: [parts[0], parts[1]],
         message: 'Constructed the Boolean meet from both conjunct morphisms',
     };
+}
+function deriveCategoryClaim(ctx, claim, step) {
+    const morphismDecl = (0, propositions_1.parseMorphismDeclarationCanonical)(claim);
+    if (morphismDecl) {
+        try {
+            ctx.diagrams.registerClaim(claim);
+            createKernelObject(ctx, claim, 'CAT_MORPHISM', step);
+            return {
+                rule: 'CAT_MORPHISM',
+                state: 'PROVED',
+                message: 'Registered a categorical morphism with explicit domain and codomain',
+            };
+        }
+        catch (error) {
+            return categoryFailure(error, 'CAT_MORPHISM');
+        }
+    }
+    const predicate = (0, propositions_1.parseCategoryPredicateCanonical)(claim);
+    if (predicate) {
+        try {
+            const result = deriveCategoryPredicate(ctx, predicate, step, claim);
+            if (result)
+                return result;
+        }
+        catch (error) {
+            return categoryFailure(error, predicateToRule(predicate.name));
+        }
+    }
+    const categoricalEquality = looksLikeCategoricalEquality(claim) ? (0, propositions_1.parseCategoricalEqualityCanonical)(claim) : null;
+    if (categoricalEquality) {
+        try {
+            const result = deriveCategoricalEquality(ctx, claim, categoricalEquality.left, categoricalEquality.right, step);
+            if (result)
+                return result;
+        }
+        catch (error) {
+            return categoryFailure(error, 'CAT_EQUALITY');
+        }
+    }
+    return null;
+}
+function deriveCategoryPredicate(ctx, predicate, step, claim) {
+    switch (predicate.name) {
+        case 'Category':
+        case 'Object':
+        case 'Morphism':
+        case 'Functor':
+            ctx.diagrams.registerPredicate(predicate.name, predicate.args);
+            createKernelObject(ctx, claim, predicate.name === 'Functor' ? 'FUNCTOR_INTRO' : predicate.name === 'Morphism' ? 'CAT_MORPHISM' : 'CAT_OBJECT', step);
+            return {
+                rule: predicate.name === 'Functor' ? 'FUNCTOR_INTRO' : predicate.name === 'Morphism' ? 'CAT_MORPHISM' : 'CAT_OBJECT',
+                state: 'PROVED',
+                message: predicate.name === 'Functor'
+                    ? 'Registered a functor between finite categories'
+                    : predicate.name === 'Morphism'
+                        ? 'Registered a categorical morphism declaration inside an explicit category'
+                        : 'Registered categorical structure in the finite-diagram kernel',
+            };
+        case 'Iso':
+            return deriveIso(ctx, predicate.args, claim, step);
+        case 'Product':
+            return deriveProduct(ctx, predicate.args, claim, step);
+        case 'ProductMediator':
+            return deriveProductMediator(ctx, predicate.args, claim, step);
+        case 'Coproduct':
+            return deriveCoproduct(ctx, predicate.args, claim, step);
+        case 'Pullback':
+            return derivePullback(ctx, predicate.args, claim, step);
+        case 'Pushout':
+            return derivePushout(ctx, predicate.args, claim, step);
+    }
+}
+function deriveCategoricalEquality(ctx, claim, left, right, step) {
+    const formattedLeft = (0, propositions_1.formatMorphismExpr)(left);
+    const formattedRight = (0, propositions_1.formatMorphismExpr)(right);
+    const leftDecl = (0, propositions_1.parseMorphismDeclarationCanonical)(formattedLeft);
+    const rightDecl = (0, propositions_1.parseMorphismDeclarationCanonical)(formattedRight);
+    void leftDecl;
+    void rightDecl;
+    if (ctx.diagrams.equalMorphisms(left, right)) {
+        createKernelObject(ctx, claim, 'CAT_EQUALITY', step);
+        return {
+            rule: 'CAT_EQUALITY',
+            state: 'PROVED',
+            uses: [formattedLeft, formattedRight],
+            message: 'Validated equality between categorical composites',
+        };
+    }
+    // Identity laws and associativity can be proved from structure even without prior equality registration.
+    const leftText = formattedLeft;
+    const rightText = formattedRight;
+    if (stripIdentity(leftText) === stripIdentity(rightText)) {
+        createKernelObject(ctx, claim, 'CAT_IDENTITY', step);
+        return {
+            rule: 'CAT_IDENTITY',
+            state: 'PROVED',
+            uses: [formattedLeft, formattedRight],
+            message: 'Validated a categorical identity law',
+        };
+    }
+    if (normalizeComposition(leftText) === normalizeComposition(rightText)) {
+        createKernelObject(ctx, claim, 'CAT_ASSOC', step);
+        return {
+            rule: 'CAT_ASSOC',
+            state: 'PROVED',
+            uses: [formattedLeft, formattedRight],
+            message: 'Validated associativity of explicit morphism composition',
+        };
+    }
+    const functorLaw = deriveFunctorEquality(ctx, left, right, claim, step);
+    if (functorLaw)
+        return functorLaw;
+    return null;
+}
+function deriveIso(ctx, args, claim, step) {
+    const target = args[0];
+    if (!target)
+        return null;
+    const morphism = ctx.diagrams.resolveMorphismExpr({ kind: 'name', label: target });
+    for (const object of [...ctx.objects, ...ctx.premises, ...ctx.assumptions]) {
+        const candidate = (0, propositions_1.parseMorphismDeclarationCanonical)(object.claim);
+        if (!candidate)
+            continue;
+        try {
+            const inverse = ctx.diagrams.resolveMorphismExpr({ kind: 'name', label: candidate.label });
+            if (inverse.category !== morphism.category)
+                continue;
+            const leftId = `id_${ctx.diagrams.objectById(morphism.domain).label}`;
+            const rightId = `id_${ctx.diagrams.objectById(morphism.codomain).label}`;
+            const leftEq = `${candidate.label} ∘ ${target} = ${leftId}`;
+            const rightEq = `${target} ∘ ${candidate.label} = ${rightId}`;
+            if (findExact(ctx.objects, leftEq, false) || findExact(ctx.premises, leftEq, false) || findExact(ctx.assumptions, leftEq, false)) {
+                if (findExact(ctx.objects, rightEq, false) || findExact(ctx.premises, rightEq, false) || findExact(ctx.assumptions, rightEq, false)) {
+                    createKernelObject(ctx, claim, 'ISO_INTRO', step);
+                    return {
+                        rule: 'ISO_INTRO',
+                        state: 'PROVED',
+                        uses: [leftEq, rightEq],
+                        message: `Validated explicit inverse equations for Iso(${target})`,
+                    };
+                }
+            }
+        }
+        catch {
+            continue;
+        }
+    }
+    return {
+        rule: 'ISO_INTRO',
+        state: 'FAILED',
+        message: `Category error: inverse conditions for Iso(${target}) are not satisfied`,
+    };
+}
+function deriveProduct(ctx, args, claim, step) {
+    if (args.length < 5)
+        return null;
+    const [productObject, pi1, pi2, leftObject, rightObject] = args;
+    const leftDecl = hasMorphism(ctx, `${pi1} : ${productObject} → ${leftObject}`);
+    const rightDecl = hasMorphism(ctx, `${pi2} : ${productObject} → ${rightObject}`);
+    if (leftDecl && rightDecl) {
+        createKernelObject(ctx, claim, 'PRODUCT_INTRO', step);
+        return {
+            rule: 'PRODUCT_INTRO',
+            state: 'PROVED',
+            uses: [`${pi1} : ${productObject} → ${leftObject}`, `${pi2} : ${productObject} → ${rightObject}`],
+            message: 'Validated the explicit projections for a finite product cone',
+        };
+    }
+    return {
+        rule: 'PRODUCT_INTRO',
+        state: 'PENDING',
+        message: 'Universal property error: mediator or projection data for the product is incomplete',
+    };
+}
+function deriveProductMediator(ctx, args, claim, step) {
+    if (args.length < 5)
+        return null;
+    const [mediator, left, right, pi1, pi2] = args;
+    const leftEq = `${pi1} ∘ ${mediator} = ${left}`;
+    const rightEq = `${pi2} ∘ ${mediator} = ${right}`;
+    if (hasClaim(ctx, leftEq) && hasClaim(ctx, rightEq)) {
+        createKernelObject(ctx, claim, 'PRODUCT_MEDIATOR', step);
+        return {
+            rule: 'PRODUCT_MEDIATOR',
+            state: 'PROVED',
+            uses: [leftEq, rightEq],
+            message: 'Universal property error cleared: mediator satisfies both projection equations',
+        };
+    }
+    return {
+        rule: 'PRODUCT_MEDIATOR',
+        state: 'FAILED',
+        message: 'Universal property error: mediator does not satisfy both projection equations',
+    };
+}
+function deriveCoproduct(ctx, args, claim, step) {
+    if (args.length < 5)
+        return null;
+    const [sumObject, i1, i2, leftObject, rightObject] = args;
+    if (hasMorphism(ctx, `${i1} : ${leftObject} → ${sumObject}`) && hasMorphism(ctx, `${i2} : ${rightObject} → ${sumObject}`)) {
+        createKernelObject(ctx, claim, 'COPRODUCT_INTRO', step);
+        return {
+            rule: 'COPRODUCT_INTRO',
+            state: 'PROVED',
+            uses: [`${i1} : ${leftObject} → ${sumObject}`, `${i2} : ${rightObject} → ${sumObject}`],
+            message: 'Validated the explicit injections for a finite coproduct cocone',
+        };
+    }
+    return { rule: 'COPRODUCT_INTRO', state: 'PENDING', message: 'Universal property error: coproduct injections are incomplete' };
+}
+function derivePullback(ctx, args, claim, step) {
+    if (args.length < 5)
+        return null;
+    const [pullbackObject, p1, p2, f, g] = args;
+    const p1Decl = findDeclarationByLabel(ctx, p1);
+    const p2Decl = findDeclarationByLabel(ctx, p2);
+    const fDecl = findDeclarationByLabel(ctx, f);
+    const gDecl = findDeclarationByLabel(ctx, g);
+    if (!p1Decl || !p2Decl || !fDecl || !gDecl) {
+        return { rule: 'PULLBACK_INTRO', state: 'PENDING', message: 'Universal property error: pullback data is incomplete' };
+    }
+    const commuting = `${f} ∘ ${p1} = ${g} ∘ ${p2}`;
+    if (!hasClaim(ctx, commuting)) {
+        return { rule: 'PULLBACK_INTRO', state: 'FAILED', message: 'Diagram error: square does not commute' };
+    }
+    if (p1Decl.domain !== pullbackObject || p2Decl.domain !== pullbackObject) {
+        return { rule: 'PULLBACK_INTRO', state: 'FAILED', message: 'Category error: pullback legs do not originate at the claimed pullback object' };
+    }
+    createKernelObject(ctx, claim, 'PULLBACK_INTRO', step);
+    return {
+        rule: 'PULLBACK_INTRO',
+        state: 'PROVED',
+        uses: [commuting],
+        message: 'Validated a finite pullback square and its commuting condition',
+    };
+}
+function derivePushout(ctx, args, claim, step) {
+    if (args.length < 5)
+        return null;
+    const [pushoutObject, i1, i2, f, g] = args;
+    const i1Decl = findDeclarationByLabel(ctx, i1);
+    const i2Decl = findDeclarationByLabel(ctx, i2);
+    if (!i1Decl || !i2Decl) {
+        return { rule: 'PUSHOUT_INTRO', state: 'PENDING', message: 'Universal property error: pushout data is incomplete' };
+    }
+    const commuting = `${i1} ∘ ${f} = ${i2} ∘ ${g}`;
+    if (!hasClaim(ctx, commuting)) {
+        return { rule: 'PUSHOUT_INTRO', state: 'FAILED', message: 'Diagram error: square does not commute' };
+    }
+    if (i1Decl.codomain !== pushoutObject || i2Decl.codomain !== pushoutObject) {
+        return { rule: 'PUSHOUT_INTRO', state: 'FAILED', message: 'Category error: pushout legs do not target the claimed pushout object' };
+    }
+    createKernelObject(ctx, claim, 'PUSHOUT_INTRO', step);
+    return {
+        rule: 'PUSHOUT_INTRO',
+        state: 'PROVED',
+        uses: [commuting],
+        message: 'Validated a finite pushout square and its commuting condition',
+    };
+}
+function categoryFailure(error, rule) {
+    const message = error instanceof Error ? error.message : 'Unknown category-check failure';
+    return { rule, state: 'FAILED', message };
+}
+function deriveFunctorEquality(ctx, left, right, claim, step) {
+    if (left.kind === 'functor_map' && right.kind === 'compose') {
+        if (left.argument.kind === 'compose' && right.left.kind === 'functor_map' && right.right.kind === 'functor_map') {
+            if (left.functor === right.left.functor && left.functor === right.right.functor) {
+                const expectedLeft = (0, propositions_1.formatMorphismExpr)(left.argument.left);
+                const expectedRight = (0, propositions_1.formatMorphismExpr)(left.argument.right);
+                if (expectedLeft === (0, propositions_1.formatMorphismExpr)(right.left.argument) && expectedRight === (0, propositions_1.formatMorphismExpr)(right.right.argument)) {
+                    createKernelObject(ctx, claim, 'FUNCTOR_COMPOSE', step);
+                    return {
+                        rule: 'FUNCTOR_COMPOSE',
+                        state: 'PROVED',
+                        uses: [(0, propositions_1.formatMorphismExpr)(left), (0, propositions_1.formatMorphismExpr)(right)],
+                        message: 'Validated that the functor preserves composition',
+                    };
+                }
+            }
+        }
+    }
+    if (left.kind === 'functor_map' && left.argument.kind === 'identity' && right.kind === 'identity') {
+        if (right.object === `${left.functor}(${left.argument.object})`) {
+            createKernelObject(ctx, claim, 'FUNCTOR_ID', step);
+            return {
+                rule: 'FUNCTOR_ID',
+                state: 'PROVED',
+                uses: [(0, propositions_1.formatMorphismExpr)(left), (0, propositions_1.formatMorphismExpr)(right)],
+                message: 'Validated that the functor preserves identity morphisms',
+            };
+        }
+    }
+    return null;
 }
 function deriveAndElim(ctx, claim, step) {
     for (const object of classicalObjects(ctx)) {
@@ -946,6 +1243,7 @@ function registerDerivedObject(ctx, claim, step, rule, morphism, inputs, imports
         outputId: morphism.id,
         step,
     });
+    registerCategoryClaim(ctx, claim);
     return proofObject;
 }
 function createMorphismForClaim(category, claim, rule, tau, inputs, unresolvedTerms) {
@@ -1015,6 +1313,18 @@ function theoremPremises(node) {
     return node.body
         .filter((item) => item.type === 'Given')
         .map(item => (0, propositions_1.exprToProp)(item.expr));
+}
+function registerCategoryClaim(ctx, claim) {
+    try {
+        ctx.diagrams.registerClaim(claim);
+    }
+    catch (error) {
+        if (error instanceof category_diagrams_1.CategoryDiagramError) {
+            ctx.diagnostics.push({ severity: 'error', message: error.message, rule: 'CAT_MORPHISM' });
+            return;
+        }
+        throw error;
+    }
 }
 function theoremGoal(node) {
     return node.body
@@ -1192,4 +1502,66 @@ function normalizeSpaces(value) {
 }
 function containsWitness(claim, witness) {
     return new RegExp(`\\b${escapeRegex(witness)}\\b`).test(claim);
+}
+function predicateToRule(name) {
+    switch (name) {
+        case 'Category':
+        case 'Object':
+            return 'CAT_OBJECT';
+        case 'Morphism':
+            return 'CAT_MORPHISM';
+        case 'Iso':
+            return 'ISO_INTRO';
+        case 'Product':
+            return 'PRODUCT_INTRO';
+        case 'ProductMediator':
+            return 'PRODUCT_MEDIATOR';
+        case 'Coproduct':
+            return 'COPRODUCT_INTRO';
+        case 'Pullback':
+            return 'PULLBACK_INTRO';
+        case 'Pushout':
+            return 'PUSHOUT_INTRO';
+        case 'Functor':
+            return 'FUNCTOR_INTRO';
+    }
+}
+function hasClaim(ctx, claim) {
+    return Boolean(findExact(ctx.objects, claim, false) ||
+        findExact(ctx.premises, claim, false) ||
+        findExact(ctx.assumptions, claim, false));
+}
+function hasMorphism(ctx, claim) {
+    return hasClaim(ctx, claim) || Boolean(findDeclarationByLabel(ctx, (0, propositions_1.parseMorphismDeclarationCanonical)(claim)?.label ?? ''));
+}
+function findDeclarationByLabel(ctx, label) {
+    if (!label)
+        return null;
+    const collections = [ctx.objects, ctx.premises, ctx.assumptions];
+    for (const collection of collections) {
+        for (let index = collection.length - 1; index >= 0; index--) {
+            const declaration = (0, propositions_1.parseMorphismDeclarationCanonical)(collection[index].claim);
+            if (declaration && declaration.label === label) {
+                return declaration;
+            }
+        }
+    }
+    return null;
+}
+function stripIdentity(value) {
+    return value
+        .replace(/\bid_\{?([^}\s]+(?:\([^)]*\))?)\}?\s*∘\s*/g, '')
+        .replace(/\s*∘\s*id_\{?([^}\s]+(?:\([^)]*\))?)\}?/g, '')
+        .trim();
+}
+function normalizeComposition(value) {
+    return value
+        .replace(/[()]/g, '')
+        .split('∘')
+        .map(part => part.trim())
+        .filter(Boolean)
+        .join(' ∘ ');
+}
+function looksLikeCategoricalEquality(claim) {
+    return claim.includes('∘') || /\bid_/.test(claim) || /^[A-Z][\w₀-₉ₐ-ₙ]*\(.+\)\s*=/.test(claim);
 }

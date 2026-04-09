@@ -1,0 +1,8 @@
+theorem IdentityComposition() {
+  given(f : A → B) →
+  assert(f ∘ id_A = f)
+} ↔
+
+proof IdentityComposition() {
+  conclude(f ∘ id_A = f)
+}

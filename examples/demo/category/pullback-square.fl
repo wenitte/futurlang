@@ -1,0 +1,12 @@
+theorem PullbackSquareDemo() {
+  given(p1 : P → X) →
+  given(p2 : P → Y) →
+  given(f : X → Z) →
+  given(g : Y → Z) →
+  given(f ∘ p1 = g ∘ p2) →
+  assert(Pullback(P, p1, p2, f, g))
+} ↔
+
+proof PullbackSquareDemo() {
+  conclude(Pullback(P, p1, p2, f, g))
+}

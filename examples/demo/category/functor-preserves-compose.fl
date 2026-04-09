@@ -1,0 +1,12 @@
+theorem FunctorPreservesCompose() {
+  given(Category(C)) →
+  given(Category(D)) →
+  given(Morphism(C, f, A, B)) →
+  given(Morphism(C, g, B, C0)) →
+  given(Functor(F, C, D)) →
+  assert(F(g ∘ f) = F(g) ∘ F(f))
+} ↔
+
+proof FunctorPreservesCompose() {
+  conclude(F(g ∘ f) = F(g) ∘ F(f))
+}

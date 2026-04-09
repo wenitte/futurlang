@@ -1,0 +1,14 @@
+theorem ProductMediatorDemo() {
+  given(pi1 : P → A) →
+  given(pi2 : P → B) →
+  given(f : X → A) →
+  given(g : X → B) →
+  given(m : X → P) →
+  given(pi1 ∘ m = f) →
+  given(pi2 ∘ m = g) →
+  assert(ProductMediator(m, f, g, pi1, pi2))
+} ↔
+
+proof ProductMediatorDemo() {
+  conclude(ProductMediator(m, f, g, pi1, pi2))
+}

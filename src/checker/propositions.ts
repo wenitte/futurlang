@@ -43,6 +43,23 @@ export interface StandaloneTypedQuantifierProp {
   domain: string;
 }
 
+export interface MorphismDeclarationProp {
+  label: string;
+  domain: string;
+  codomain: string;
+}
+
+export type MorphismExpr =
+  | { kind: 'name'; label: string }
+  | { kind: 'identity'; object: string }
+  | { kind: 'compose'; left: MorphismExpr; right: MorphismExpr }
+  | { kind: 'functor_map'; functor: string; argument: MorphismExpr };
+
+export interface CategoryPredicateProp {
+  name: 'Category' | 'Object' | 'Morphism' | 'Iso' | 'Product' | 'ProductMediator' | 'Coproduct' | 'Pullback' | 'Pushout' | 'Functor';
+  args: string[];
+}
+
 export function exprToProp(expr: ExprNode): string {
   switch (expr.type) {
     case 'Atom':    return expr.condition;
@@ -200,6 +217,76 @@ export function parseTypedVariableCanonical(prop: string): { variable: string; d
   return isCanonicalAtom(canonical) && canonical.kind === 'typed_variable'
     ? { variable: canonical.variable, domain: canonical.domain }
     : null;
+}
+
+export function parseMorphismDeclarationCanonical(prop: string): MorphismDeclarationProp | null {
+  const value = normalizeTerm(normalizeSurfaceSyntax(prop));
+  const match = value.match(/^(.+?)\s*:\s*(.+?)\s*→\s*(.+)$/);
+  if (!match) return null;
+  const label = normalizeTerm(match[1]);
+  const domain = normalizeTerm(match[2]);
+  const codomain = normalizeTerm(match[3]);
+  if (!label || !domain || !codomain) return null;
+  if (label.includes(' ') && !/^id_/.test(label)) return null;
+  return { label, domain, codomain };
+}
+
+export function parseMorphismExprCanonical(input: string): MorphismExpr | null {
+  const value = stripOuterParens(normalizeTerm(normalizeSurfaceSyntax(input)));
+  if (!value) return null;
+
+  const compositionIndex = findTopLevelSeparator(value, '∘');
+  if (compositionIndex !== -1) {
+    const left = parseMorphismExprCanonical(value.slice(0, compositionIndex));
+    const right = parseMorphismExprCanonical(value.slice(compositionIndex + 1));
+    if (!left || !right) return null;
+    return { kind: 'compose', left, right };
+  }
+
+  const functorMatch = value.match(/^([A-Za-z_][\w₀-₉ₐ-ₙ]*)\((.+)\)$/);
+  if (functorMatch) {
+    const argument = parseMorphismExprCanonical(functorMatch[2]);
+    if (!argument) return null;
+    return { kind: 'functor_map', functor: normalizeTerm(functorMatch[1]), argument };
+  }
+
+  const identityMatch = value.match(/^id_(?:\{(.+)\}|(.+))$/);
+  if (identityMatch) {
+    return { kind: 'identity', object: normalizeTerm(identityMatch[1] ?? identityMatch[2]) };
+  }
+
+  return { kind: 'name', label: value };
+}
+
+export function formatMorphismExpr(expr: MorphismExpr): string {
+  switch (expr.kind) {
+    case 'name':
+      return expr.label;
+    case 'identity':
+      return `id_${expr.object}`;
+    case 'compose':
+      return `${formatMorphismExpr(expr.left)} ∘ ${formatMorphismExpr(expr.right)}`;
+    case 'functor_map':
+      return `${expr.functor}(${formatMorphismExpr(expr.argument)})`;
+  }
+}
+
+export function parseCategoricalEqualityCanonical(prop: string): { left: MorphismExpr; right: MorphismExpr } | null {
+  const equality = splitTopLevelAtom(normalizeTerm(normalizeSurfaceSyntax(prop)), '=');
+  if (!equality) return null;
+  const left = parseMorphismExprCanonical(equality[0]);
+  const right = parseMorphismExprCanonical(equality[1]);
+  if (!left || !right) return null;
+  return { left, right };
+}
+
+export function parseCategoryPredicateCanonical(prop: string): CategoryPredicateProp | null {
+  const value = normalizeTerm(normalizeSurfaceSyntax(prop));
+  const match = value.match(/^(Category|Object|Morphism|Iso|Product|ProductMediator|Coproduct|Pullback|Pushout|Functor)\((.*)\)$/);
+  if (!match) return null;
+  const name = match[1] as CategoryPredicateProp['name'];
+  const args = splitTopLevelArgs(match[2]);
+  return { name, args };
 }
 
 export function parseImplicationCanonical(prop: string): [string, string] | null {
@@ -454,6 +541,33 @@ function findTopLevelSeparator(value: string, separator: string): number {
   }
 
   return -1;
+}
+
+function splitTopLevelArgs(value: string): string[] {
+  const args: string[] = [];
+  let start = 0;
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let bracketDepth = 0;
+
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '(') parenDepth++;
+    else if (ch === ')') parenDepth = Math.max(0, parenDepth - 1);
+    else if (ch === '{') braceDepth++;
+    else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+    else if (ch === '[') bracketDepth++;
+    else if (ch === ']') bracketDepth = Math.max(0, bracketDepth - 1);
+
+    if (parenDepth === 0 && braceDepth === 0 && bracketDepth === 0 && ch === ',') {
+      args.push(normalizeTerm(value.slice(start, i)));
+      start = i + 1;
+    }
+  }
+
+  const final = normalizeTerm(value.slice(start));
+  if (final) args.push(final);
+  return args;
 }
 
 function stripOuterParens(value: string): string {

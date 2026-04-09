@@ -178,6 +178,14 @@ function startsWithOp(s: string): boolean {
   return false;
 }
 
+function startsWithOpInAtom(rest: string, atom: string): boolean {
+  const symbolic = /^(↔|⇔|<->|→|⇒|->|∨|\|\||∧|&&|¬|!|\(|\))/.test(rest);
+  if (symbolic) return true;
+  const wordLike = /^(iff\b|implies\b|or\b|and\b|not\b)/i.test(rest);
+  if (!wordLike) return false;
+  return atom.length === 0 || /\s$/.test(atom);
+}
+
 // ── Tokeniser ─────────────────────────────────────────────────────────────────
 
 function tokenise(src: string): Token[] {
@@ -232,7 +240,7 @@ function tokenise(src: string): Token[] {
       const rest = s.replace(/^\s+/, '');
 
       // Stop if an operator starts here
-      if (startsWithOp(rest)) break;
+      if (startsWithOpInAtom(rest, atom)) break;
 
       // Stop at quote (handled above on next iteration)
       if (rest[0] === '"' || rest[0] === "'") break;

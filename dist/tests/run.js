@@ -45,6 +45,7 @@ const category_1 = require("../kernel/category");
 const revelation_1 = require("../kernel/revelation");
 const quantifiers_1 = require("../kernel/quantifiers");
 const values_1 = require("../kernel/values");
+const category_diagrams_1 = require("../kernel/category-diagrams");
 function runTest(name, fn) {
     try {
         fn();
@@ -71,6 +72,16 @@ function assertTruthTable(label, op, expected) {
 runTest('parseExpr preserves FuturLang connective syntax', () => {
     const expr = (0, expr_1.parseExpr)('(x ∈ A) ⇒ (x ∈ B)');
     assert_1.strict.equal((0, propositions_1.exprToProp)(expr), 'x ∈ A → x ∈ B');
+});
+runTest('category proposition parsing recognizes morphisms and composites', () => {
+    const morphism = (0, propositions_1.parseMorphismDeclarationCanonical)('f : A → B');
+    assert_1.strict.ok(morphism);
+    assert_1.strict.equal(morphism.label, 'f');
+    assert_1.strict.equal(morphism.domain, 'A');
+    assert_1.strict.equal(morphism.codomain, 'B');
+    const equality = (0, propositions_1.parseCategoricalEqualityCanonical)('g ∘ f = h');
+    assert_1.strict.ok(equality);
+    assert_1.strict.equal((0, propositions_1.parseMorphismExprCanonical)('g ∘ f')?.kind, 'compose');
 });
 runTest('Wenittain negation matches WL-WL-001', () => {
     assert_1.strict.equal((0, values_1.neg)('1'), '0');
@@ -138,6 +149,16 @@ runTest('Ra rejects partial witnesses and resolves pending morphisms with total 
     assert_1.strict.equal(resolved.tau, '1');
     assert_1.strict.equal(resolved.pending, false);
 });
+runTest('category kernel validates and rejects composition correctly', () => {
+    const diagrams = new category_diagrams_1.CategoryDiagramKernel();
+    diagrams.registerClaim('f : A → B');
+    diagrams.registerClaim('g : B → C');
+    const composite = diagrams.resolveMorphismExpr((0, propositions_1.parseMorphismExprCanonical)('g ∘ f'));
+    assert_1.strict.equal(diagrams.objectById(composite.domain).label, 'A');
+    assert_1.strict.equal(diagrams.objectById(composite.codomain).label, 'C');
+    diagrams.registerClaim('h : D → E');
+    assert_1.strict.throws(() => diagrams.resolveMorphismExpr((0, propositions_1.parseMorphismExprCanonical)('h ∘ f')), (error) => error instanceof category_diagrams_1.CategoryDiagramError && /do not compose/.test(error.message));
+});
 runTest('checker returns PROVED for classical implication derivations', () => {
     const report = (0, checker_1.checkFile)(parseProgram(`
 theorem Identity() {
@@ -204,16 +225,128 @@ proof UsesForwardStep() {
     assert_1.strict.equal(report.state, 'PROVED');
     assert_1.strict.equal(report.reports[1].state, 'PROVED');
 });
+runTest('checker proves categorical identity laws', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem IdentityLaw() {
+  given(f : A → B) →
+  assert(f ∘ id_A = f)
+} ↔
+
+proof IdentityLaw() {
+  conclude(f ∘ id_A = f)
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+});
+runTest('checker rejects invalid categorical composition', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem BadCompose() {
+  given(f : A → B) →
+  given(g : C → D) →
+  assert(g ∘ f = h)
+} ↔
+
+proof BadCompose() {
+  conclude(g ∘ f = h)
+}
+`));
+    assert_1.strict.equal(report.state, 'FAILED');
+    assert_1.strict.match(report.reports[0].diagnostics.map(d => d.message).join('\n'), /do not compose/);
+});
+runTest('checker proves explicit isomorphisms', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem IsoWitness() {
+  given(f : A → B) →
+  given(g : B → A) →
+  given(g ∘ f = id_A) →
+  given(f ∘ g = id_B) →
+  assert(Iso(f))
+} ↔
+
+proof IsoWitness() {
+  conclude(Iso(f))
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+});
+runTest('checker proves product mediators and pullbacks', () => {
+    const productReport = (0, checker_1.checkFile)(parseProgram(`
+theorem ProductWitness() {
+  given(pi1 : P → A) →
+  given(pi2 : P → B) →
+  given(f : X → A) →
+  given(g : X → B) →
+  given(m : X → P) →
+  given(pi1 ∘ m = f) →
+  given(pi2 ∘ m = g) →
+  assert(ProductMediator(m, f, g, pi1, pi2))
+} ↔
+
+proof ProductWitness() {
+  conclude(ProductMediator(m, f, g, pi1, pi2))
+}
+`));
+    assert_1.strict.equal(productReport.state, 'PROVED');
+    const pullbackReport = (0, checker_1.checkFile)(parseProgram(`
+theorem PullbackSquare() {
+  given(p1 : P → X) →
+  given(p2 : P → Y) →
+  given(f : X → Z) →
+  given(g : Y → Z) →
+  given(f ∘ p1 = g ∘ p2) →
+  assert(Pullback(P, p1, p2, f, g))
+} ↔
+
+proof PullbackSquare() {
+  conclude(Pullback(P, p1, p2, f, g))
+}
+`));
+    assert_1.strict.equal(pullbackReport.state, 'PROVED');
+});
+runTest('checker proves functor composition preservation', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem FunctorCompose() {
+  given(Category(C)) →
+  given(Category(D)) →
+  given(Morphism(C, f, A, B)) →
+  given(Morphism(C, g, B, C0)) →
+  given(Functor(F, C, D)) →
+  assert(F(g ∘ f) = F(g) ∘ F(f))
+} ↔
+
+proof FunctorCompose() {
+  conclude(F(g ∘ f) = F(g) ∘ F(f))
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+});
 runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
     const demoDir = path.resolve(__dirname, '../../examples/demo');
-    const files = fs.readdirSync(demoDir).filter(file => file.endsWith('.fl'));
+    const files = collectDemoFiles(demoDir);
     for (const file of files) {
-        const source = fs.readFileSync(path.join(demoDir, file), 'utf8');
+        const source = fs.readFileSync(file, 'utf8');
         const report = (0, checker_1.checkFile)(parseProgram(source));
-        assert_1.strict.equal(report.state, 'PROVED', file);
+        const label = path.relative(demoDir, file);
+        assert_1.strict.equal(report.state, 'PROVED', label);
         for (const theoremReport of report.reports) {
-            assert_1.strict.equal(theoremReport.state, 'PROVED', `${file}:${theoremReport.name}`);
-            assert_1.strict.equal(theoremReport.pendingCount, 0, `${file}:${theoremReport.name}`);
+            assert_1.strict.equal(theoremReport.state, 'PROVED', `${label}:${theoremReport.name}`);
+            assert_1.strict.equal(theoremReport.pendingCount, 0, `${label}:${theoremReport.name}`);
         }
     }
 });
+function collectDemoFiles(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+        if (entry.name.startsWith('.'))
+            continue;
+        const absolute = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            files.push(...collectDemoFiles(absolute));
+        }
+        else if (entry.name.endsWith('.fl')) {
+            files.push(absolute);
+        }
+    }
+    return files.sort();
+}

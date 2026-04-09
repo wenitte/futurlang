@@ -1,0 +1,11 @@
+theorem IsoComposition() {
+  given(f : A → B) →
+  given(g : B → A) →
+  given(g ∘ f = id_A) →
+  given(f ∘ g = id_B) →
+  assert(Iso(f))
+} ↔
+
+proof IsoComposition() {
+  conclude(Iso(f))
+}
