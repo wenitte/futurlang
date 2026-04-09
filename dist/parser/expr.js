@@ -12,6 +12,7 @@
 //
 // Atoms: string literals, relational expressions (x == y), bare identifiers.
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.normalizeSurfaceSyntax = normalizeSurfaceSyntax;
 exports.parseExpr = parseExpr;
 const WORD_NORMALIZATIONS = [
     [/\bfor\s+all\b/gi, '∀'],
@@ -20,10 +21,10 @@ const WORD_NORMALIZATIONS = [
     [/\bexists\b/gi, '∃'],
     [/\bnot\s+in\b/gi, '∉'],
     [/\bnotin\b/gi, '∉'],
-    [/\bstrictsubset\b/gi, '⊂'],
-    [/\bpropersubset\b/gi, '⊂'],
-    [/\bsubseteq\b/gi, '⊆'],
-    [/\bsubset\b/gi, '⊆'],
+    [/\bstrictsubset\b/gi, '⊆'],
+    [/\bpropersubset\b/gi, '⊆'],
+    [/\bsubseteq\b/gi, '⊂'],
+    [/\bsubset\b/gi, '⊂'],
     [/\bintersection\b/gi, '∩'],
     [/\bintersect\b/gi, '∩'],
     [/\bunion\b/gi, '∪'],

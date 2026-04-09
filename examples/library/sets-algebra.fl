@@ -1,0 +1,125 @@
+lemma SubsetRefl() {
+  assert(A ⊂ A)
+} ↔
+
+proof SubsetRefl() {
+  setVar(x: Element) →
+  assume(x ∈ A) →
+  conclude(A ⊂ A)
+} →
+
+lemma UnionSubsetLeft() {
+  assert(A ⊂ A ∪ B)
+} ↔
+
+proof UnionSubsetLeft() {
+  setVar(x: Element) →
+  assume(x ∈ A) →
+  assert(x ∈ A ∪ B) →
+  conclude(A ⊂ A ∪ B)
+} →
+
+lemma UnionSubsetRight() {
+  assert(B ⊂ A ∪ B)
+} ↔
+
+proof UnionSubsetRight() {
+  setVar(x: Element) →
+  assume(x ∈ B) →
+  assert(x ∈ A ∪ B) →
+  conclude(B ⊂ A ∪ B)
+} →
+
+lemma IntersectionSubsetLeft() {
+  assert(A ∩ B ⊂ A)
+} ↔
+
+proof IntersectionSubsetLeft() {
+  setVar(x: Element) →
+  assume(x ∈ A ∩ B) →
+  assert(x ∈ A) →
+  conclude(A ∩ B ⊂ A)
+} →
+
+lemma IntersectionSubsetRight() {
+  assert(A ∩ B ⊂ B)
+} ↔
+
+proof IntersectionSubsetRight() {
+  setVar(x: Element) →
+  assume(x ∈ A ∩ B) →
+  assert(x ∈ B) →
+  conclude(A ∩ B ⊂ B)
+} →
+
+lemma IntersectionCommutativity() {
+  assert(A ∩ B = B ∩ A)
+} ↔
+
+proof IntersectionCommutativity() {
+  setVar(x: Element) →
+  assume(x ∈ A ∩ B) →
+  assert(x ∈ A) →
+  assert(x ∈ B) →
+  assert(x ∈ B ∩ A) →
+  assert(A ∩ B ⊂ B ∩ A) →
+  setVar(y: Element) →
+  assume(y ∈ B ∩ A) →
+  assert(y ∈ B) →
+  assert(y ∈ A) →
+  assert(y ∈ A ∩ B) →
+  assert(B ∩ A ⊂ A ∩ B) →
+  conclude(A ∩ B = B ∩ A)
+} →
+
+lemma UnionCommutativity() {
+  assert(A ∪ B = B ∪ A)
+} ↔
+
+proof UnionCommutativity() {
+  setVar(x: Element) →
+  assume(x ∈ A ∪ B) →
+  assert(x ∈ A ∨ x ∈ B) →
+  assume(x ∈ A) →
+  assert(x ∈ B ∪ A) →
+  assert(x ∈ A → x ∈ B ∪ A) →
+  assume(x ∈ B) →
+  assert(x ∈ B ∪ A) →
+  assert(x ∈ B → x ∈ B ∪ A) →
+  assert(x ∈ B ∪ A) →
+  assert(A ∪ B ⊂ B ∪ A) →
+  setVar(y: Element) →
+  assume(y ∈ B ∪ A) →
+  assert(y ∈ B ∨ y ∈ A) →
+  assume(y ∈ B) →
+  assert(y ∈ A ∪ B) →
+  assert(y ∈ B → y ∈ A ∪ B) →
+  assume(y ∈ A) →
+  assert(y ∈ A ∪ B) →
+  assert(y ∈ A → y ∈ A ∪ B) →
+  assert(y ∈ A ∪ B) →
+  assert(B ∪ A ⊂ A ∪ B) →
+  conclude(A ∪ B = B ∪ A)
+} →
+
+theorem UnionCommutativityUsage() {
+  given(x ∈ A ∪ B) →
+  assert(x ∈ B ∪ A)
+} ↔
+
+proof UnionCommutativityUsage() {
+  apply(UnionCommutativity) →
+  conclude(x ∈ B ∪ A)
+} →
+
+theorem IntersectionSubsetChain() {
+  given(x ∈ A ∩ B) →
+  given(B ⊂ C) →
+  assert(x ∈ C)
+} ↔
+
+proof IntersectionSubsetChain() {
+  apply(IntersectionSubsetRight) →
+  assert(x ∈ B) →
+  conclude(x ∈ C)
+}

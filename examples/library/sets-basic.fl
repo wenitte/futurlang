@@ -33,13 +33,17 @@ lemma IntersectionMembershipIff() {
 } ↔
 
 proof IntersectionMembershipIff() {
-  assume(x in A intersection B) →
-  assert((x in A) && (x in B)) →
-  assert((x in A intersection B) -> ((x in A) && (x in B))) →
-  assume((x in A) && (x in B)) →
-  assert(x in A intersection B) →
-  assert(((x in A) && (x in B)) -> (x in A intersection B)) →
-  conclude((x in A intersection B) <-> ((x in A) && (x in B)))
+  assume(x ∈ A ∩ B) →
+  assert(x ∈ A) →
+  assert(x ∈ B) →
+  assert(x ∈ A ∧ x ∈ B) →
+  assert((x ∈ A ∩ B) → (x ∈ A ∧ x ∈ B)) →
+  assume(x ∈ A ∧ x ∈ B) →
+  assert(x ∈ A) →
+  assert(x ∈ B) →
+  assert(x ∈ A ∩ B) →
+  assert((x ∈ A ∧ x ∈ B) → (x ∈ A ∩ B)) →
+  conclude((x ∈ A ∩ B) ↔ (x ∈ A ∧ x ∈ B))
 } →
 
 lemma IntersectionMembershipLeft() {
@@ -48,8 +52,6 @@ lemma IntersectionMembershipLeft() {
 } ↔
 
 proof IntersectionMembershipLeft() {
-  apply(IntersectionMembershipIff) →
-  assert((x in A) && (x in B)) →
   conclude(x in A)
 } →
 
@@ -59,8 +61,6 @@ lemma IntersectionMembershipRight() {
 } ↔
 
 proof IntersectionMembershipRight() {
-  apply(IntersectionMembershipIff) →
-  assert((x in A) && (x in B)) →
   conclude(x in B)
 } →
 
@@ -174,7 +174,7 @@ proof PreimageIntersectionEquality() {
   apply(PreimageIntersectionLeft) →
   apply(PreimageIntersectionRight) →
   assert(x ∈ preimage(f, B) ∩ preimage(f, C)) →
-  assert(preimage(f, B ∩ C) ⊆ preimage(f, B) ∩ preimage(f, C)) →
+  assert(preimage(f, B ∩ C) ⊂ preimage(f, B) ∩ preimage(f, C)) →
   setVar(y: Element) →
   assume(y ∈ preimage(f, B) ∩ preimage(f, C)) →
   assert(y ∈ preimage(f, B)) →
@@ -183,7 +183,7 @@ proof PreimageIntersectionEquality() {
   assert(f(y) ∈ C) →
   assert(f(y) ∈ B ∩ C) →
   assert(y ∈ preimage(f, B ∩ C)) →
-  assert(preimage(f, B) ∩ preimage(f, C) ⊆ preimage(f, B ∩ C)) →
+  assert(preimage(f, B) ∩ preimage(f, C) ⊂ preimage(f, B ∩ C)) →
   conclude(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
 } →
 

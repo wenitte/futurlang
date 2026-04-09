@@ -1,4 +1,4 @@
 "use strict";
 // src/checker/types.ts
-// Core types for the natural deduction proof checker
+// TypeScript data structures for the categorical proof kernel.
 Object.defineProperty(exports, "__esModule", { value: true });

@@ -79,7 +79,10 @@ function parseCanonicalExpr(input) {
         return canonicalizeExpr(parsed);
     }
     catch {
-        return canonicalizeAtom(trimmed);
+        // When the expression parser fails (e.g. due to function-call syntax like f(x)),
+        // apply surface normalization before atom canonicalization so that word aliases
+        // like "in" → "∈" are resolved consistently.
+        return canonicalizeAtom((0, expr_1.normalizeSurfaceSyntax)(trimmed));
     }
 }
 function canonicalizeExpr(expr) {
@@ -118,7 +121,7 @@ function canonicalizeAtom(value) {
         return {
             kind: 'subset',
             left: normalizeTerm(subseteq[0]),
-            strict: false,
+            strict: true,
             right: normalizeTerm(subseteq[1]),
         };
     }
@@ -127,7 +130,7 @@ function canonicalizeAtom(value) {
         return {
             kind: 'subset',
             left: normalizeTerm(strictSubset[0]),
-            strict: true,
+            strict: false,
             right: normalizeTerm(strictSubset[1]),
         };
     }
@@ -313,7 +316,7 @@ function canonicalAtomDisplay(atom) {
         case 'nonmembership':
             return `${atom.element} ∉ ${atom.set}`;
         case 'subset':
-            return `${atom.left} ${atom.strict ? '⊂' : '⊆'} ${atom.right}`;
+            return `${atom.left} ${atom.strict ? '⊆' : '⊂'} ${atom.right}`;
         case 'equality':
             return `${atom.left} = ${atom.right}`;
         case 'typed_variable':

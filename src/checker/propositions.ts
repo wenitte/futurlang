@@ -1,5 +1,5 @@
 import { ExprNode, QuantifiedNode } from '../parser/ast';
-import { parseExpr } from '../parser/expr';
+import { parseExpr, normalizeSurfaceSyntax } from '../parser/expr';
 
 export type CanonicalProp =
   | { kind: 'membership'; element: string; set: string }
@@ -94,7 +94,10 @@ export function parseCanonicalExpr(input: string): ExprNode | CanonicalProp {
     const parsed = parseExpr(trimmed);
     return canonicalizeExpr(parsed);
   } catch {
-    return canonicalizeAtom(trimmed);
+    // When the expression parser fails (e.g. due to function-call syntax like f(x)),
+    // apply surface normalization before atom canonicalization so that word aliases
+    // like "in" → "∈" are resolved consistently.
+    return canonicalizeAtom(normalizeSurfaceSyntax(trimmed));
   }
 }
 
@@ -137,7 +140,7 @@ function canonicalizeAtom(value: string): CanonicalProp {
     return {
       kind: 'subset',
       left: normalizeTerm(subseteq[0]),
-      strict: false,
+      strict: true,
       right: normalizeTerm(subseteq[1]),
     };
   }
@@ -147,7 +150,7 @@ function canonicalizeAtom(value: string): CanonicalProp {
     return {
       kind: 'subset',
       left: normalizeTerm(strictSubset[0]),
-      strict: true,
+      strict: false,
       right: normalizeTerm(strictSubset[1]),
     };
   }
@@ -346,7 +349,7 @@ function canonicalAtomDisplay(atom: CanonicalProp): string {
     case 'nonmembership':
       return `${atom.element} ∉ ${atom.set}`;
     case 'subset':
-      return `${atom.left} ${atom.strict ? '⊂' : '⊆'} ${atom.right}`;
+      return `${atom.left} ${atom.strict ? '⊆' : '⊂'} ${atom.right}`;
     case 'equality':
       return `${atom.left} = ${atom.right}`;
     case 'typed_variable':

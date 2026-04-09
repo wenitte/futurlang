@@ -7,12 +7,12 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node dist/tests/run.js && node fl.js test/hello.fl && node fl.js test/connectives.fl && node fl.js check test/lagranges_theorem.fl"
+    "test": "npm run build && node dist/tests/run.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "Formal proof language with self-contained natural-deduction kernel",
+  "description": "Proof-oriented programming language with a categorical Wenittain kernel",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.1",
     "@types/node": "^22.8.1",

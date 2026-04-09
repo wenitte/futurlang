@@ -120,14 +120,14 @@ function generateExpr(node: ExprNode): string {
     case 'Atom':    return generateAtom(node);
     case 'SetBuilder':
     case 'IndexedUnion':
-      return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported set-builder notation in JS evaluator. Use 'fl verify' for formal support.")`;
+      return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported set-builder notation in the JS evaluator. Use 'fl check' for categorical proof checking.")`;
     case 'And':     return `and(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
     case 'Or':      return `or(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
     case 'Implies': return `implies(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
     case 'Iff':     return `iff(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
     case 'Not':     return `not(${generateExpr(node.operand)})`;
     case 'Quantified':
-      return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported quantified notation in JS evaluator. Use 'fl verify' for formal support.")`;
+      return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported quantified notation in the JS evaluator. Use 'fl check' for categorical proof checking.")`;
     default: {
       const _: never = node;
       throw new Error('Unhandled expr node type');
@@ -140,7 +140,7 @@ function generateAtom(node: AtomNode): string {
   const lbl = JSON.stringify(c);
 
   if (node.atomKind === 'opaque') {
-    return `unsupportedExpr(${lbl}, "JS evaluator only supports the strict logical subset. Use 'fl verify' for advanced mathematical claims.")`;
+    return `unsupportedExpr(${lbl}, "JS evaluator only supports the strict logical subset. Use 'fl check' for advanced mathematical claims.")`;
   }
 
   // Already a string literal
@@ -155,7 +155,7 @@ function generateAtom(node: AtomNode): string {
   // Also catch |X| cardinality, [G:H] index notation, set-builder {x | ...}
   const MATH_NOTATION = /\|[^|]|\bmod\b|divides|\{.*\|/;
   if (MATH_CHARS.test(c) || MATH_NOTATION.test(c)) {
-    return `unsupportedExpr(${lbl}, "Unsupported mathematical notation in JS evaluator. Use 'fl verify' for Lean-backed verification.")`;
+    return `unsupportedExpr(${lbl}, "Unsupported mathematical notation in the JS evaluator. Use 'fl check' for categorical proof checking.")`;
   }
 
   // Relational JS expression

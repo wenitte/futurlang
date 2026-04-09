@@ -149,7 +149,7 @@ function serializeAtom(atom) {
         atomKind: atom.atomKind,
         unsupported,
         reason: unsupported
-            ? 'This claim is outside the strict executable subset. Use Lean verification for formal support.'
+            ? 'This claim is outside the strict executable subset. Use fl check for categorical proof checking.'
             : null,
     };
 }

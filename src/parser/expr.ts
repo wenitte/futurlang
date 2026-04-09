@@ -22,10 +22,10 @@ const WORD_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\bexists\b/gi, '∃'],
   [/\bnot\s+in\b/gi, '∉'],
   [/\bnotin\b/gi, '∉'],
-  [/\bstrictsubset\b/gi, '⊂'],
-  [/\bpropersubset\b/gi, '⊂'],
-  [/\bsubseteq\b/gi, '⊆'],
-  [/\bsubset\b/gi, '⊆'],
+  [/\bstrictsubset\b/gi, '⊆'],
+  [/\bpropersubset\b/gi, '⊆'],
+  [/\bsubseteq\b/gi, '⊂'],
+  [/\bsubset\b/gi, '⊂'],
   [/\bintersection\b/gi, '∩'],
   [/\bintersect\b/gi, '∩'],
   [/\bunion\b/gi, '∪'],
@@ -42,7 +42,7 @@ const WORD_NORMALIZATIONS: Array<[RegExp, string]> = [
   [/\b(in)\b/gi, '∈'],
 ];
 
-function normalizeSurfaceSyntax(src: string): string {
+export function normalizeSurfaceSyntax(src: string): string {
   const segments = src.split(/(".*?"|'.*?')/g);
   return segments.map((segment, index) => {
     if (index % 2 === 1) return segment;

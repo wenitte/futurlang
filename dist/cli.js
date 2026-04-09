@@ -107,12 +107,11 @@ function printCheckReport(file, report) {
     console.log(`\nChecking ${path.basename(file)}\n`);
     const declarationOnly = report.theoremCount > 0 && report.pairedCount === 0;
     for (const r of report.reports) {
-        const status = r.valid ? (r.unverifiedCount > 0 ? '~' : '✓') : '✗';
-        const method = r.method !== 'unknown' ? ` [${r.method}]` : '';
-        const statusSuffix = r.unverifiedCount > 0
-            ? ` (${r.provedCount} PROVED, ${r.unverifiedCount} UNVERIFIED)`
-            : r.provedCount > 0 ? ` (${r.provedCount} PROVED)` : '';
-        console.log(`  ${status} ${r.name}${method}  (${r.stepCount} steps, depth ${r.metrics.dependencyDepth})${statusSuffix}`);
+        const status = r.state === 'PROVED' ? '✓' : r.state === 'PENDING' ? '~' : '✗';
+        const statusSuffix = r.pendingCount > 0
+            ? ` (${r.provedCount} classical, ${r.pendingCount} pending)`
+            : r.provedCount > 0 ? ` (${r.provedCount} classical)` : '';
+        console.log(`  ${status} ${r.name}  ${r.state}${statusSuffix}`);
         if (r.premises.length > 0) {
             console.log(`      premises: ${r.premises.join(' ; ')}`);
         }
@@ -123,16 +122,13 @@ function printCheckReport(file, report) {
             console.log(`      final: ${r.derivedConclusion}`);
         }
         for (const step of r.proofSteps) {
-            const stepIcon = step.valid ? (step.status === 'UNVERIFIED' ? '~' : '✓') : '✗';
+            const stepIcon = step.state === 'PROVED' ? '✓' : step.state === 'PENDING' ? '~' : '✗';
             console.log(`      ${stepIcon} step ${step.step} [${step.rule}] ${step.kind} ${step.claim}`);
             if (step.uses && step.uses.length > 0) {
                 console.log(`        uses: ${step.uses.join(' ; ')}`);
             }
             if (step.imports && step.imports.length > 0) {
                 console.log(`        imports: ${step.imports.join(' ; ')}`);
-            }
-            if (step.establishesAs) {
-                console.log(`        establishes-as: ${step.establishesAs}`);
             }
         }
         for (const d of r.diagnostics) {
@@ -144,7 +140,7 @@ function printCheckReport(file, report) {
             else if (d.severity === 'warning') {
                 console.log(`      ⚠ ${d.message}`);
             }
-            else if (d.severity === 'info' && d.rule && d.rule !== 'THEOREM_PROOF') {
+            else if (d.severity === 'info' && d.rule) {
                 console.log(`      ℹ ${d.message}`);
             }
         }
@@ -157,24 +153,21 @@ function printCheckReport(file, report) {
     if (declarationOnly) {
         console.log(`\n  Declaration-only proof program`);
         console.log(`  Theorems: ${report.theoremCount}`);
-        console.log(report.valid ? '\n✓ Declarations parsed cleanly' : '\n✗ Structural errors found');
+        console.log(report.state === 'FAILED' ? '\n✗ Structural errors found' : '\n~ Declarations parsed without paired derivations');
     }
     else {
-        console.log(`\n  Theorems: ${report.theoremCount}  Paired: ${report.pairedCount}  Score: ${report.score}/100`);
-        if (report.valid) {
-            const hasUnverified = report.reports.some(r => r.unverifiedCount > 0);
-            if (hasUnverified) {
-                console.log('\n~ Proof accepted in permissive mode — some steps are UNVERIFIED and outside the trusted derivation chain');
-            }
-            else {
-                console.log('\n✓ All proofs verified');
-            }
+        console.log(`\n  Theorems: ${report.theoremCount}  Paired: ${report.pairedCount}  Result: ${report.state}`);
+        if (report.state === 'PROVED') {
+            console.log('\n✓ All proofs reduced to classical morphism paths');
+        }
+        else if (report.state === 'PENDING') {
+            console.log('\n~ At least one derivation is structurally valid but still blocked behind ω and Ra');
         }
         else {
             console.log('\n✗ Structural errors found');
         }
     }
-    if (!report.valid)
+    if (report.state !== 'PROVED')
         process.exit(1);
 }
 function isProofStyleProgram(ast) {
@@ -202,11 +195,11 @@ FuturLang — formal proof language
 
 Usage:
   fl [--strict] <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
-  fl check [--strict] <file.fl>     Check proof structure (natural deduction, self-contained kernel)
+  fl check [--strict] <file.fl>     Check proof structure with the categorical kernel
   fl web <file.fl>                  Generate a React app from the program truth chain
 
 Notes:
-  --strict                          Recommended for serious proof work; rejects any UNVERIFIED step
+  --strict                          Reserved for future kernel tightening
 `);
 }
 main().catch(e => { console.error(e.message); process.exit(1); });
