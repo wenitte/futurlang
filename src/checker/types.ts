@@ -47,7 +47,7 @@ export type KernelRule =
   | 'MATCH_EXHAUSTIVE'
   | 'STRUCTURAL';
 
-export type ProofState = 'PROVED' | 'PENDING' | 'FAILED';
+export type ProofState = 'PROVED' | 'PENDING' | 'FAILED' | 'UNVERIFIED';
 
 export interface Diagnostic {
   severity: 'error' | 'warning' | 'info';

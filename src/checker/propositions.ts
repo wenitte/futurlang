@@ -69,6 +69,12 @@ export function exprToProp(expr: ExprNode): string {
       return `∪${exprToProp(expr.builder)}`;
     case 'Fold':
       return `fold(${expr.sequence}, ${expr.init}, ${expr.fn})`;
+    case 'If':
+      return `if ${exprToProp(expr.condition)} then ${exprToProp(expr.thenBranch)} else ${exprToProp(expr.elseBranch)}`;
+    case 'LetExpr':
+      return `let ${expr.name} = ${exprToProp(expr.value)} in ${exprToProp(expr.body)}`;
+    case 'Lambda':
+      return `fn(${expr.params.map(param => `${param.name}: ${param.type}`).join(', ')}) => ${exprToProp(expr.body)}`;
     case 'And':     return `${exprToProp(expr.left)} ∧ ${exprToProp(expr.right)}`;
     case 'Or':      return `${exprToProp(expr.left)} ∨ ${exprToProp(expr.right)}`;
     case 'Implies': return `${exprToProp(expr.left)} → ${exprToProp(expr.right)}`;

@@ -12,7 +12,7 @@
 // Atoms: string literals, relational expressions (x == y), bare identifiers.
 
 import {
-  ExprNode, AtomNode, AndNode, OrNode, ImpliesNode, IffNode, NotNode, QuantifiedNode, SetBuilderNode, IndexedUnionNode, FoldNode,
+  ExprNode, AtomNode, AndNode, OrNode, ImpliesNode, IffNode, NotNode, QuantifiedNode, SetBuilderNode, IndexedUnionNode, FoldNode, IfNode, LetExprNode, LambdaNode,
 } from './ast';
 
 const WORD_NORMALIZATIONS: Array<[RegExp, string]> = [
@@ -378,6 +378,19 @@ class ExprParser {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function parseExpr(src: string): ExprNode {
+  const raw = src.trim();
+  const ifExpr = parseIfExpr(raw);
+  if (ifExpr) {
+    return ifExpr;
+  }
+  const letExpr = parseLetExpr(raw);
+  if (letExpr) {
+    return letExpr;
+  }
+  const lambda = parseLambdaExpr(raw);
+  if (lambda) {
+    return lambda;
+  }
   const normalized = normalizeSurfaceSyntax(src).trim();
   const fold = parseFoldExpr(normalized);
   if (fold) {
@@ -400,6 +413,49 @@ export function parseExpr(src: string): ExprNode {
     return quantified;
   }
   return new ExprParser(tokenise(normalized)).parse();
+}
+
+function parseIfExpr(value: string): IfNode | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('if ')) return null;
+  const thenIndex = findTopLevelKeyword(trimmed, ' then ');
+  if (thenIndex === -1) return null;
+  const elseIndex = findTopLevelKeyword(trimmed, ' else ', thenIndex + 6);
+  if (elseIndex === -1) return null;
+  return {
+    type: 'If',
+    condition: parseExpr(trimmed.slice(3, thenIndex).trim()),
+    thenBranch: parseExpr(trimmed.slice(thenIndex + 6, elseIndex).trim()),
+    elseBranch: parseExpr(trimmed.slice(elseIndex + 6).trim()),
+  };
+}
+
+function parseLetExpr(value: string): LetExprNode | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('let ')) return null;
+  const inIndex = findTopLevelKeyword(trimmed, ' in ');
+  if (inIndex === -1) return null;
+  const binding = trimmed.slice(4, inIndex).trim();
+  const eqIndex = findTopLevelEquals(binding);
+  if (eqIndex === -1) return null;
+  return {
+    type: 'LetExpr',
+    name: binding.slice(0, eqIndex).trim(),
+    value: parseExpr(binding.slice(eqIndex + 1).trim()),
+    body: parseExpr(trimmed.slice(inIndex + 4).trim()),
+  };
+}
+
+function parseLambdaExpr(value: string): LambdaNode | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^fn\s*\(([\s\S]*)\)\s*=>\s*([\s\S]+)$/);
+  if (!match) return null;
+  const params = match[1].trim() ? splitTopLevelArgs(match[1]).map(parseLambdaParam) : [];
+  return {
+    type: 'Lambda',
+    params,
+    body: parseExpr(match[2].trim()),
+  };
 }
 
 function parseFoldExpr(value: string): FoldNode | null {
@@ -504,6 +560,47 @@ function splitTopLevelArgs(value: string): string[] {
   const final = value.slice(start).trim();
   if (final) args.push(final);
   return args;
+}
+
+function findTopLevelKeyword(value: string, keyword: string, start = 0): number {
+  let depth = 0;
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  for (let i = start; i <= value.length - keyword.length; i++) {
+    const ch = value[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (ch === '{') braceDepth++;
+    else if (ch === '}') braceDepth = Math.max(0, braceDepth - 1);
+    else if (ch === '[') bracketDepth++;
+    else if (ch === ']') bracketDepth = Math.max(0, bracketDepth - 1);
+    if (depth === 0 && braceDepth === 0 && bracketDepth === 0 && value.slice(i, i + keyword.length) === keyword) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function findTopLevelEquals(value: string): number {
+  let depth = 0;
+  let bracketDepth = 0;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (ch === '[') bracketDepth++;
+    else if (ch === ']') bracketDepth = Math.max(0, bracketDepth - 1);
+    else if (ch === '=' && depth === 0 && bracketDepth === 0) return i;
+  }
+  return -1;
+}
+
+function parseLambdaParam(value: string) {
+  const typed = value.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*(?::|∈)\s*(.+)$/);
+  if (typed) {
+    return { name: typed[1], type: typed[2].trim() };
+  }
+  return { name: value.trim(), type: 'Any' };
 }
 
 function parseSetBuilderExpr(value: string): SetBuilderNode | null {

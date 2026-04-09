@@ -36,6 +36,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const child_process_1 = require("child_process");
 const formal_1 = require("./parser/formal");
 const lexer_1 = require("./parser/lexer");
 const parser_1 = require("./parser/parser");
@@ -43,7 +44,8 @@ const checker_1 = require("./checker/checker");
 const transpiler_1 = require("./react/transpiler");
 const rawArgs = process.argv.slice(2);
 const strict = rawArgs.includes('--strict');
-const args = rawArgs.filter(arg => arg !== '--strict');
+const noLaunch = rawArgs.includes('--no-launch');
+const args = rawArgs.filter(arg => arg !== '--strict' && arg !== '--no-launch');
 async function main() {
     if (args.length === 0) {
         printUsage();
@@ -69,6 +71,40 @@ async function main() {
         runWeb(file, outDir);
         return;
     }
+    if (command === 'create-app') {
+        const name = args[1];
+        if (!name) {
+            console.error('Usage: fl create-app <name>');
+            process.exit(1);
+        }
+        runCreateApp(name);
+        return;
+    }
+    if (command === 'install') {
+        await runInstall();
+        return;
+    }
+    if (command === 'start') {
+        // Project-mode: fl start (no args, reads fl.json)
+        if (!args[1] || args[1].endsWith('.fl') === false) {
+            await runProjectStart();
+            return;
+        }
+        // Legacy: fl start <file.fl> [out-dir]
+        const file = args[1];
+        const outDir = args[2] ?? 'generated/futurlang-webapp';
+        runStart(file, outDir);
+        return;
+    }
+    if (command === 'server') {
+        const file = args[1];
+        if (!file) {
+            console.error('Usage: fl server <file.fl>');
+            process.exit(1);
+        }
+        runServer(file);
+        return;
+    }
     // Default: evaluate
     const file = command;
     if (!fs.existsSync(file)) {
@@ -79,13 +115,18 @@ async function main() {
 }
 function runEval(file) {
     const source = fs.readFileSync(file, 'utf8');
-    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source));
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: false });
     if (isProofStyleProgram(ast)) {
-        console.log(`\n${path.basename(file)}: theorem-prover mode\n`);
-        printCheckReport(file, (0, checker_1.checkFile)(ast, { strict }));
-        return;
+        console.log(`\n${path.basename(file)}: proof + runtime mode\n`);
+        const proofAst = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: true });
+        const report = (0, checker_1.checkFile)(proofAst, { strict });
+        printCheckReport(file, report, false);
+        if (report.state !== 'PROVED') {
+            process.exitCode = 1;
+        }
+        console.log(`\nExecuting ${path.basename(file)}\n`);
     }
-    const js = (0, formal_1.parseFL)(source);
+    const js = (0, formal_1.parseFLFile)(file);
     try {
         eval(js);
     }
@@ -94,20 +135,51 @@ function runEval(file) {
         process.exit(1);
     }
 }
+function runServer(file) {
+    if (!fs.existsSync(file)) {
+        console.error(`File not found: ${file}`);
+        process.exit(1);
+    }
+    const js = (0, formal_1.parseFLFile)(file);
+    try {
+        eval(js);
+    }
+    catch (e) {
+        console.error(e.message);
+        process.exit(1);
+    }
+}
+function runStart(file, outDir) {
+    if (!fs.existsSync(file)) {
+        console.error(`File not found: ${file}`);
+        process.exit(1);
+    }
+    const source = fs.readFileSync(file, 'utf8');
+    if (isServerProgram(source)) {
+        runServer(file);
+        return;
+    }
+    runWeb(file, outDir);
+    if (noLaunch) {
+        console.log('Skipping frontend launch because --no-launch was provided');
+        return;
+    }
+    launchFrontend(outDir);
+}
 function runCheck(file) {
     if (!fs.existsSync(file)) {
         console.error(`File not found: ${file}`);
         process.exit(1);
     }
     const source = fs.readFileSync(file, 'utf8');
-    const report = (0, checker_1.checkFile)((0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source)), { strict });
+    const report = (0, checker_1.checkFile)((0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: true }), { strict });
     printCheckReport(file, report);
 }
-function printCheckReport(file, report) {
+function printCheckReport(file, report, exitOnFailure = true) {
     console.log(`\nChecking ${path.basename(file)}\n`);
     const declarationOnly = report.theoremCount > 0 && report.pairedCount === 0;
     for (const r of report.reports) {
-        const status = r.state === 'PROVED' ? '✓' : r.state === 'PENDING' ? '~' : '✗';
+        const status = r.state === 'PROVED' ? '✓' : r.state === 'PENDING' ? '~' : r.state === 'UNVERIFIED' ? '?' : '✗';
         const statusSuffix = r.pendingCount > 0
             ? ` (${r.provedCount} classical, ${r.pendingCount} pending)`
             : r.provedCount > 0 ? ` (${r.provedCount} classical)` : '';
@@ -122,7 +194,7 @@ function printCheckReport(file, report) {
             console.log(`      final: ${r.derivedConclusion}`);
         }
         for (const step of r.proofSteps) {
-            const stepIcon = step.state === 'PROVED' ? '✓' : step.state === 'PENDING' ? '~' : '✗';
+            const stepIcon = step.state === 'PROVED' ? '✓' : step.state === 'PENDING' ? '~' : step.state === 'UNVERIFIED' ? '?' : '✗';
             console.log(`      ${stepIcon} step ${step.step} [${step.rule}] ${step.kind} ${step.claim}`);
             if (step.uses && step.uses.length > 0) {
                 console.log(`        uses: ${step.uses.join(' ; ')}`);
@@ -163,21 +235,20 @@ function printCheckReport(file, report) {
         else if (report.state === 'PENDING') {
             console.log('\n~ At least one derivation is structurally valid but still blocked behind ω and Ra');
         }
+        else if (report.state === 'UNVERIFIED') {
+            console.log('\n? At least one derivation was accepted only as structurally unverified');
+        }
         else {
             console.log('\n✗ Structural errors found');
         }
     }
-    if (report.state !== 'PROVED')
+    if (exitOnFailure && report.state !== 'PROVED')
         process.exit(1);
 }
 function isProofStyleProgram(ast) {
     return ast.some(node => node.type === 'Theorem' ||
         node.type === 'Proof' ||
-        node.type === 'Lemma' ||
-        node.type === 'Given' ||
-        node.type === 'Assume' ||
-        node.type === 'Conclude' ||
-        node.type === 'Apply');
+        node.type === 'Lemma');
 }
 function runWeb(file, outDir) {
     if (!fs.existsSync(file)) {
@@ -185,21 +256,162 @@ function runWeb(file, outDir) {
         process.exit(1);
     }
     const source = fs.readFileSync(file, 'utf8');
-    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source));
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: false });
     (0, transpiler_1.createReactApp)(ast, outDir);
     console.log(`Generated React app in ${outDir}`);
+}
+function launchFrontend(outDir) {
+    if (!fs.existsSync(path.join(outDir, 'package.json'))) {
+        console.error(`Frontend app is missing package.json in ${outDir}`);
+        process.exit(1);
+    }
+    if (!fs.existsSync(path.join(outDir, 'node_modules'))) {
+        console.error(`Frontend dependencies are missing in ${outDir}. Run npm install there or use the default generated app directory.`);
+        process.exit(1);
+    }
+    console.log(`Starting React dev server in ${outDir}`);
+    const child = (0, child_process_1.spawn)('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', '5173'], {
+        cwd: outDir,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+    });
+    child.on('exit', (code) => {
+        process.exit(code ?? 0);
+    });
+}
+function isServerProgram(source) {
+    return /\bserve\s*\(/.test(source);
+}
+function readManifest() {
+    const manifestPath = path.join(process.cwd(), 'fl.json');
+    if (!fs.existsSync(manifestPath)) {
+        console.error('No fl.json found. Run fl create-app <name> to scaffold a new app, or run fl start <file.fl> to use a specific file.');
+        process.exit(1);
+    }
+    return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+}
+function runCreateApp(name) {
+    const appDir = path.resolve(name);
+    if (fs.existsSync(appDir)) {
+        console.error(`Directory already exists: ${appDir}`);
+        process.exit(1);
+    }
+    const backendDir = path.join(appDir, '_react');
+    const mainFile = 'app.fl';
+    const starterFl = `fn double(n ∈ Nat) -> Nat {
+  conclude(n + n)
+} →
+
+fn clamp(x ∈ Real, lo ∈ Real, hi ∈ Real) -> Real {
+  assume(lo <= hi) →
+  conclude(max(lo, min(x, hi)))
+} →
+
+theorem DoubleIsPositive() {
+  let n = 4 →
+  let result = double(n) →
+  assert(result > 0)
+} →
+
+proof DoubleIsPositive() {
+  let n = 4 →
+  let result = double(n) →
+  conclude(result > 0)
+}
+`;
+    const manifest = { name, main: mainFile, backend: '_react' };
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(path.join(appDir, mainFile), starterFl, 'utf8');
+    fs.writeFileSync(path.join(appDir, 'fl.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+    fs.writeFileSync(path.join(appDir, '.gitignore'), '_react/node_modules\n', 'utf8');
+    const source = fs.readFileSync(path.join(appDir, mainFile), 'utf8');
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: false });
+    (0, transpiler_1.createReactApp)(ast, backendDir);
+    console.log(`Created app: ${name}/`);
+    console.log(`  ${name}/${mainFile}   ← your FL source`);
+    console.log(`  ${name}/fl.json       ← project manifest`);
+    console.log(`  ${name}/_react/       ← generated React backend`);
+    console.log(`\nNext steps:`);
+    console.log(`  cd ${name}`);
+    console.log(`  fl install`);
+    console.log(`  fl start`);
+}
+async function runInstall() {
+    const manifest = readManifest();
+    const backendDir = path.resolve(manifest.backend);
+    if (!fs.existsSync(backendDir)) {
+        console.error(`Backend directory not found: ${backendDir}. Re-run fl create-app or fl start to regenerate it.`);
+        process.exit(1);
+    }
+    console.log(`Installing dependencies in ${manifest.backend}/...`);
+    await new Promise((resolve, reject) => {
+        const child = (0, child_process_1.spawn)('npm', ['install'], {
+            cwd: backendDir,
+            stdio: 'inherit',
+            shell: process.platform === 'win32',
+        });
+        child.on('exit', (code) => {
+            if (code === 0)
+                resolve();
+            else
+                reject(new Error(`npm install exited with code ${code}`));
+        });
+    });
+    console.log('\nDone. Run fl start to launch your app.');
+}
+async function runProjectStart() {
+    const manifest = readManifest();
+    const mainFile = path.resolve(manifest.main);
+    const backendDir = path.resolve(manifest.backend);
+    if (!fs.existsSync(mainFile)) {
+        console.error(`Main file not found: ${manifest.main}`);
+        process.exit(1);
+    }
+    // Regenerate React app from current FL source
+    const source = fs.readFileSync(mainFile, 'utf8');
+    const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: false });
+    (0, transpiler_1.createReactApp)(ast, backendDir);
+    console.log(`Generated React app from ${manifest.main}`);
+    // Auto-install if node_modules is missing
+    if (!fs.existsSync(path.join(backendDir, 'node_modules'))) {
+        console.log('node_modules not found — running npm install...');
+        await new Promise((resolve, reject) => {
+            const child = (0, child_process_1.spawn)('npm', ['install'], {
+                cwd: backendDir,
+                stdio: 'inherit',
+                shell: process.platform === 'win32',
+            });
+            child.on('exit', (code) => {
+                if (code === 0)
+                    resolve();
+                else
+                    reject(new Error(`npm install exited with code ${code}`));
+            });
+        });
+    }
+    launchFrontend(backendDir);
 }
 function printUsage() {
     console.log(`
 FuturLang — formal proof language
 
 Usage:
-  fl [--strict] <file.fl>           Auto-runs check mode for proof-shaped files, otherwise evaluates
+  fl [--strict] <file.fl>           Execute a file; proof-shaped files also show checker output
   fl check [--strict] <file.fl>     Check proof structure with the categorical kernel
-  fl web <file.fl>                  Generate a React app from the program truth chain
+  fl server <file.fl>               Run a server-style FL file
+
+App workflow (recommended):
+  fl create-app <name>              Scaffold a new FL app with a React backend
+  fl install                        Install React backend dependencies (run inside app dir)
+  fl start                          Regenerate React app and launch dev server (run inside app dir)
+
+Legacy / single-file:
+  fl start <file.fl> [out-dir]      Generate and launch a React app from a single FL file
+  fl web <file.fl> [out-dir]        Generate a React app without launching it
 
 Notes:
   --strict                          Reserved for future kernel tightening
+  --no-launch                       Generate frontend output without starting Vite
 `);
 }
 main().catch(e => { console.error(e.message); process.exit(1); });

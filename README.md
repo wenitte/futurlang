@@ -19,22 +19,24 @@ Visible chaining is a language law. FuturLang should not evolve toward hidden th
 
 ## Current Architecture
 
-FuturLang currently has two distinct execution modes:
+FuturLang has one language surface with a few CLI entrypoints:
 
 - `fl <file.fl>`
-  Auto-detects proof-shaped programs. If the file contains theorem-prover constructs, `fl` runs theorem-prover check mode automatically; otherwise it runs the JavaScript evaluator for the strict executable subset.
+  Executes the file. If the file contains theorem-prover constructs, `fl` prints checker output first and then runs the executable path as well.
   Standalone theorem/declaration files are presented as declaration-only proof programs instead of as failed paired proofs.
 - `fl check <file.fl>`
   Runs the self-contained kernel checker. This validates proof structure through a categorical kernel grounded in a Boolean category with partial maps and a resolution monad.
+- `fl start <file.fl> [out-dir]`
+  Starts the app. Server files run directly through the Node runtime. Frontend files generate a React app and launch the Vite dev server.
 - `fl web <file.fl> [out-dir]`
-  Generates an experimental React app where the FuturLang program is rendered and evaluated as a visible truth chain.
+  Generates the React app without launching it.
 
 The important boundary is intentional:
 
-- `fl` now defaults to checker behavior for proof-shaped programs
+- `fl` preserves the single language surface and auto-routes proof-shaped files through checker output before execution
 - the JS evaluator is strict and fails closed on unsupported mathematical notation
 - the kernel checker is self-contained — no external tools required
-- proof objects carry `PROVED` / `PENDING` / `FAILED` status — no silent fallback outside those three states
+- proof objects carry `PROVED` / `PENDING` / `FAILED` / `UNVERIFIED` status
 - pending claims cannot be used as inputs to classical derivation rules before Ra fires
 
 ## Installation
@@ -71,11 +73,14 @@ fl test/hello.fl
 
 FuturLang currently supports:
 
+- `import`
+- `fn`
 - `theorem`
 - `proof`
 - `lemma`
 - `definition`
 - `struct`
+- `type`
 
 These blocks are chained together with inter-block connectives:
 
@@ -95,6 +100,7 @@ Inside blocks, the main statements are:
 - `setVar(...)`
 - `let ...`
 - `contradiction()`
+- `match ...`
 
 Each statement also participates in the truth chain.
 
@@ -171,28 +177,55 @@ The current kernel subset also validates:
 
 ## What The Evaluator Supports
 
-The JS evaluator is intentionally narrow. It is designed for a strict executable subset such as:
+The executable runtime is still intentionally narrow, but it now supports real program structure:
 
-- boolean variables
-- string claims
-- equality and simple relational expressions
-- logical connectives
-- theorem/proof chaining
+- real `fn` declarations
+- `type` constructors and value-level `match`
+- `if ... then ... else ...`
+- `let ... in ...`
+- lambdas
+- list literals and `fold`
+- imports via `import "./other.fl"`
+- a small Node HTTP layer for servers and route dispatch
+
+Server example:
+
+```fl
+fn home(req ∈ Request) -> Response {
+  conclude(text("home"))
+} →
+
+let app = router([
+  route("GET", "/", home)
+]) →
+
+let server = serve(3000, app)
+```
+
+Running that file with either `fl examples/server/hello-http.fl` or `fl start examples/server/hello-http.fl` executes the runtime path directly and prints server startup status in the terminal.
 
 Examples:
 
 ```fl
-theorem ModusPonens() {
-  let p = true;
-  let q = true;
-  assert((p && (p -> q)) -> q);
-}
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [_, ...rest] => conclude(1 + length(rest))
+  }
+} →
+
+let size = length([1, 2, 3]) →
+assert(size == 3)
 ```
 
 ```fl
-theorem Claim() {
-  assert("This claim is carried as a proof label");
-}
+fn home(req ∈ Request) -> Response {
+  conclude(text("home"))
+} →
+
+let app = router([
+  route("GET", "/", home)
+])
 ```
 
 ## What The Evaluator Rejects
@@ -221,6 +254,8 @@ This is deliberate. If FuturLang cannot justify a claim in the strict evaluator,
 - kernel-checked equality substitution on membership claims
 - kernel-checked union/intersection membership reasoning
 - kernel-checked bounded quantifier elimination/introduction over set membership
+- kernel `List(A)` matching
+- structural list recursion
 - simple contradiction discharge
 - proof-path validation through explicit morphism composition
 
@@ -234,11 +269,16 @@ The checker supports:
 
 - full propositional proof flow in the current kernel subset: `IMPLIES_INTRO`, `IMPLIES_ELIM`, `AND_INTRO`, `AND_ELIM_LEFT`, `AND_ELIM_RIGHT`, `OR_INTRO_LEFT`, `OR_INTRO_RIGHT`, `OR_ELIM`, `NOT_INTRO`, `CONTRADICTION`, `BY_LEMMA`
 - set-theoretic rules used by the demo corpus: subset transport and transitivity, equality substitution, union/intersection membership reasoning, image/preimage reasoning, bounded `∀` and `∃` introduction and elimination over membership
+- kernel list destructuring and exhaustive list match
+- structural recursion checking for `fn` over `List(A)`
 - a Boolean-category interpretation where implication is read classically as `¬P ∨ Q`
 - a partial-map layer for unresolved domains
 - a resolution-monad layer for `ω`-state suspension and Ra-based resolution
 
-Proof object status is exactly `PROVED`, `PENDING`, or `FAILED`. `PENDING` claims cannot be used as inputs to classical derivation rules.
+Proof object status is exactly `PROVED`, `PENDING`, `FAILED`, or `UNVERIFIED`.
+
+- `PENDING` means unresolved `ω` remains in the proof path
+- `UNVERIFIED` means the structure checked, but the result is not trusted as kernel-proved
 
 ## Testing
 
@@ -263,6 +303,7 @@ Additional documentation now lives in `docs/`:
 
 - `docs/spec.md`
 - `docs/language-reference.md`
+- `docs/executable.md`
 - `docs/kernel.md`
 - `docs/checker.md`
 - `docs/roadmap.md`
@@ -270,22 +311,45 @@ Additional documentation now lives in `docs/`:
 
 If you want the internal prover model rather than just the surface syntax, start with `docs/kernel.md`. That file explains the Boolean-category foundation, partial maps, the resolution monad, and the current trust boundary.
 
-## React Backend
+## React Frontend
 
-FuturLang now also has an experimental web backend:
+FuturLang now has a frontend app path behind `fl start`:
+
+```bash
+fl start test/hello.fl
+```
+
+For non-server programs, this generates a React app in `generated/futurlang-webapp` and starts the Vite dev server.
+
+If you only want the generated frontend output without launching it:
 
 ```bash
 fl web test/hello.fl
 ```
 
-By default this generates a React app in `generated/futurlang-webapp`.
+or:
+
+```bash
+fl --no-launch start test/hello.fl
+```
 
 The generated app:
 
 - preserves the “single truth chain” model
-- evaluates the chain in the browser for the strict executable subset
+- evaluates the chain in the browser for the executable subset
 - renders proof steps and the final verdict as UI
 - marks unsupported advanced math as failing in the web runtime instead of pretending it passed
+
+## Example Programs
+
+- list proof demos: `examples/demo/list-length.fl`, `examples/demo/list-sum.fl`, `examples/demo/list-theorem.fl`
+- server example: `examples/server/hello-http.fl`
+
+To start the server example:
+
+```bash
+fl start examples/server/hello-http.fl
+```
 
 ## Roadmap
 

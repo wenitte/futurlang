@@ -36,6 +36,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const assert_1 = require("assert");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const vm = __importStar(require("vm"));
+const child_process_1 = require("child_process");
 const checker_1 = require("../checker/checker");
 const parser_1 = require("../parser/parser");
 const lexer_1 = require("../parser/lexer");
@@ -46,6 +48,9 @@ const revelation_1 = require("../kernel/revelation");
 const quantifiers_1 = require("../kernel/quantifiers");
 const values_1 = require("../kernel/values");
 const category_diagrams_1 = require("../kernel/category-diagrams");
+const codegen_1 = require("../codegen");
+const runtime_1 = require("../codegen/runtime");
+const formal_1 = require("../parser/formal");
 function runTest(name, fn) {
     try {
         fn();
@@ -58,6 +63,23 @@ function runTest(name, fn) {
 }
 function parseProgram(source) {
     return (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source));
+}
+function parseExecutableProgram(source) {
+    return (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: false });
+}
+function runExecutable(source) {
+    const ast = parseExecutableProgram(source);
+    const js = (0, codegen_1.generateJSFromAST)(ast, runtime_1.runtimePreamble);
+    const context = {
+        console: { log: () => { } },
+        globalThis: {},
+        require,
+        Buffer,
+        URL,
+    };
+    context.globalThis = context;
+    vm.runInNewContext(js, context);
+    return context;
 }
 function assertTruthTable(label, op, expected) {
     runTest(label, () => {
@@ -78,6 +100,11 @@ runTest('parseExpr recognizes fold and sigma sugar', () => {
     assert_1.strict.equal((0, propositions_1.exprToProp)(fold), 'fold(xs, 0, +)');
     const sigma = (0, expr_1.parseExpr)('Σ(i, 0, n)');
     assert_1.strict.equal((0, propositions_1.exprToProp)(sigma), 'fold([0..n], 0, +)');
+});
+runTest('parseExpr recognizes executable if, let-in, and lambda syntax', () => {
+    assert_1.strict.equal((0, propositions_1.exprToProp)((0, expr_1.parseExpr)('if true then 1 else 0')), 'if true then 1 else 0');
+    assert_1.strict.equal((0, propositions_1.exprToProp)((0, expr_1.parseExpr)('let x = 1 in x + 1')), 'let x = 1 in x + 1');
+    assert_1.strict.equal((0, propositions_1.exprToProp)((0, expr_1.parseExpr)('fn(x: Nat) => x + 1')), 'fn(x: Nat) => x + 1');
 });
 runTest('parser desugars fn declarations into theorem/proof pairs before checking', () => {
     const ast = parseProgram(`
@@ -145,6 +172,52 @@ proof ShapeCase() {
         throw new Error('proof missing');
     }
     assert_1.strict.equal(ast[2].body[0].type, 'Match');
+});
+runTest('parser captures kernel list patterns and multi-line case bodies', () => {
+    const ast = parseProgram(`
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] =>
+      conclude(0)
+    case [x, ...rest] =>
+      match x {
+        case _ => conclude(1 + length(rest))
+      }
+  }
+}
+`);
+    assert_1.strict.equal(ast.length, 2);
+    assert_1.strict.equal(ast[1].type, 'Proof');
+    if (ast[1].type !== 'Proof') {
+        throw new Error('proof missing');
+    }
+    assert_1.strict.deepEqual(ast[1].fnMeta, {
+        params: [{ name: 'xs', type: 'List(ℕ)' }],
+        returnType: 'ℕ',
+    });
+    const topMatch = ast[1].body[0];
+    assert_1.strict.equal(topMatch.type, 'Match');
+    if (topMatch.type !== 'Match') {
+        throw new Error('top-level match missing');
+    }
+    assert_1.strict.equal(topMatch.cases.length, 2);
+    assert_1.strict.deepEqual(topMatch.cases[0].pattern, { kind: 'list_nil' });
+    assert_1.strict.deepEqual(topMatch.cases[1].pattern, { kind: 'list_cons', head: 'x', tail: 'rest' });
+    assert_1.strict.equal(topMatch.cases[1].body[0].type, 'Match');
+});
+runTest('server-style executable files are not misclassified as proof programs', () => {
+    const ast = parseExecutableProgram(`
+fn home(req ∈ Request) -> Response {
+  conclude(text("home"))
+} →
+
+let app = router([
+  route("GET", "/", home)
+]) →
+
+let server = serve(3000, app)
+`);
+    assert_1.strict.equal(ast[0].type, 'FnDecl');
 });
 runTest('category proposition parsing recognizes morphisms and composites', () => {
     const morphism = (0, propositions_1.parseMorphismDeclarationCanonical)('f : A → B');
@@ -501,11 +574,192 @@ proof ShapeMiss() {
 `));
     assert_1.strict.equal(failed.state, 'FAILED');
 });
+runTest('checker proves list recursion on the tail and rejects non-structural recursion', () => {
+    const proved = (0, checker_1.checkFile)(parseProgram(`
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [_, ...rest] => conclude(1 + length(rest))
+  }
+}
+`));
+    assert_1.strict.equal(proved.state, 'PROVED');
+    assert_1.strict.equal(proved.reports[0].state, 'PROVED');
+    const unverified = (0, checker_1.checkFile)(parseProgram(`
+fn bad(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [x, ...rest] => conclude(1 + bad(xs))
+  }
+}
+`));
+    assert_1.strict.equal(unverified.state, 'UNVERIFIED');
+    assert_1.strict.equal(unverified.reports[0].state, 'UNVERIFIED');
+});
+runTest('eval mode preserves executable fn declarations and runs list recursion', () => {
+    const runtime = runExecutable(`
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [_, ...rest] => conclude(1 + length(rest))
+  }
+} →
+
+let answer = length([1, 2, 3]) →
+assert(answer == 3)
+`);
+    assert_1.strict.equal(runtime.answer, 3);
+});
+runTest('eval mode supports Result constructors, match, if, let-in, lambda, and fold', () => {
+    const runtime = runExecutable(`
+type Result =
+  | Ok(value ∈ Nat)
+  | Err(message ∈ String)
+} →
+
+fn unwrapOrZero(result ∈ Result) -> Nat {
+  match result {
+    case Ok(value) => conclude(value)
+    case Err(_) => conclude(0)
+  }
+} →
+
+let add1 = fn(x: Nat) => x + 1 →
+let picked = if true then Ok(4) else Err("nope") →
+let total = let base = unwrapOrZero(picked) in fold([1, 2], base, fn(acc: Nat, x: Nat) => acc + x) →
+assert(add1(total) == 8)
+`);
+    assert_1.strict.equal(typeof runtime.add1, 'function');
+    assert_1.strict.equal(runtime.total, 7);
+});
+runTest('eval mode expands imports before parsing', () => {
+    const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-import-'));
+    const libFile = path.join(tempDir, 'lib.fl');
+    const mainFile = path.join(tempDir, 'main.fl');
+    fs.writeFileSync(libFile, `
+fn inc(x ∈ Nat) -> Nat {
+  conclude(x + 1)
+}
+`);
+    fs.writeFileSync(mainFile, `
+import "./lib.fl"
+
+let answer = inc(4) →
+assert(answer == 5)
+`);
+    const js = (0, formal_1.parseFLFile)(mainFile);
+    const context = {
+        console: { log: () => { } },
+        globalThis: {},
+        require,
+        Buffer,
+        URL,
+    };
+    context.globalThis = context;
+    vm.runInNewContext(js, context);
+    assert_1.strict.equal(context.answer, 5);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+runTest('eval mode supports Node-style web server routing helpers', () => {
+    const runtime = runExecutable(`
+type Result =
+  | Ok(value ∈ Nat)
+  | Err(message ∈ String)
+} →
+
+fn homeHandler(req ∈ Request) -> Response {
+  conclude(text("home"))
+} →
+
+fn apiHandler(req ∈ Request) -> Response {
+  conclude(json(Ok(7)))
+} →
+
+let app = router([
+  route("GET", "/", homeHandler),
+  route("GET", "/api", apiHandler)
+]) →
+let home = dispatch(app, request("GET", "/")) →
+let api = dispatch(app, request("GET", "/api")) →
+let miss = dispatch(app, request("GET", "/missing")) →
+assert(home.status == 200) →
+assert(home.body == "home") →
+assert(api.status == 200) →
+assert(api.headers["content-type"] == "application/json; charset=utf-8") →
+assert(api.body.indexOf("Ok") >= 0) →
+assert(api.body.indexOf("7") >= 0) →
+assert(miss.status == 404)
+`);
+    assert_1.strict.equal(runtime.home.body, 'home');
+    assert_1.strict.equal(runtime.api.status, 200);
+    assert_1.strict.equal(runtime.miss.status, 404);
+});
+runTest('cli executes proof-shaped files and still prints checker output', () => {
+    const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-cli-proof-'));
+    const file = path.join(tempDir, 'proof-and-run.fl');
+    fs.writeFileSync(file, `
+theorem Identity() {
+  given(p) →
+  assert(p)
+} ↔
+
+proof Identity() {
+  assume(p) →
+  conclude(p)
+} →
+
+let answer = if true then 1 else 0 →
+assert(answer == 1)
+`);
+    const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', file], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    });
+    assert_1.strict.equal(result.status, 0, result.stderr || result.stdout);
+    assert_1.strict.match(result.stdout, /proof \+ runtime mode/);
+    assert_1.strict.match(result.stdout, /Checking/);
+    assert_1.strict.match(result.stdout, /Executing/);
+    assert_1.strict.match(result.stdout, /Program holds/);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+});
+runTest('cli auto-detects server files as executable runtime without theorem mode', () => {
+    const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', 'start', 'examples/server/hello-http.fl'], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    });
+    assert_1.strict.match(result.stdout + result.stderr, /server .*starting/);
+    assert_1.strict.doesNotMatch(result.stdout + result.stderr, /theorem-prover mode/);
+});
+runTest('fl web generates a buildable React app for executable files', () => {
+    const outDir = path.join(process.cwd(), 'generated', 'futurlang-webapp');
+    const generate = (0, child_process_1.spawnSync)('node', ['dist/cli.js', 'web', 'examples/demo/fn-double.fl', outDir], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    });
+    assert_1.strict.equal(generate.status, 0, generate.stderr || generate.stdout);
+    assert_1.strict.match(generate.stdout, /Generated React app/);
+    const build = (0, child_process_1.spawnSync)('npm', ['run', 'build'], {
+        cwd: outDir,
+        encoding: 'utf8',
+    });
+    assert_1.strict.equal(build.status, 0, build.stderr || build.stdout);
+});
+runTest('fl start generates frontend output without launching when --no-launch is set', () => {
+    const outDir = path.join(process.cwd(), 'generated', 'futurlang-webapp');
+    const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', '--no-launch', 'start', 'examples/demo/fn-double.fl', outDir], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    });
+    assert_1.strict.equal(result.status, 0, result.stderr || result.stdout);
+    assert_1.strict.match(result.stdout, /Generated React app/);
+    assert_1.strict.match(result.stdout, /Skipping frontend launch/);
+});
 runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
     const demoDir = path.resolve(__dirname, '../../examples/demo');
     const files = collectDemoFiles(demoDir);
     const expectedStates = new Map([
         ['match-exhaustive-fail.fl', 'FAILED'],
+        ['list-nonstructural-fail.fl', 'UNVERIFIED'],
     ]);
     for (const file of files) {
         const source = fs.readFileSync(file, 'utf8');
@@ -518,6 +772,28 @@ runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
         for (const theoremReport of report.reports) {
             assert_1.strict.equal(theoremReport.state, 'PROVED', `${label}:${theoremReport.name}`);
             assert_1.strict.equal(theoremReport.pendingCount, 0, `${label}:${theoremReport.name}`);
+        }
+    }
+});
+runTest('default fl command executes the full demo corpus with only intentional failures', () => {
+    const demoDir = path.resolve(__dirname, '../../examples/demo');
+    const files = collectDemoFiles(demoDir);
+    const expectedExit = new Map([
+        ['match-exhaustive-fail.fl', 1],
+    ]);
+    for (const file of files) {
+        const label = path.relative(demoDir, file);
+        const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', file], {
+            cwd: process.cwd(),
+            encoding: 'utf8',
+        });
+        const expected = expectedExit.get(label) ?? 0;
+        assert_1.strict.equal(result.status, expected, `${label}\n${result.stdout}\n${result.stderr}`);
+        if (expected === 0) {
+            assert_1.strict.match(result.stdout, /Program holds|server .*starting|proof \+ runtime mode|fn /);
+        }
+        else {
+            assert_1.strict.match(result.stdout + result.stderr, /FAILED|non-exhaustive/i);
         }
     }
 });

@@ -36,8 +36,8 @@ function parenDepth(s: string): number {
   for (const ch of s) {
     if (inStr) { if (ch === strChar) inStr = false; }
     else if (ch === '"' || ch === "'") { inStr = true; strChar = ch; }
-    else if (ch === '(') d++;
-    else if (ch === ')') d--;
+    else if (ch === '(' || ch === '[' || ch === '{') d++;
+    else if (ch === ')' || ch === ']' || ch === '}') d--;
   }
   return d;
 }
@@ -208,7 +208,11 @@ export function lexFL(text: string): ParsedLine[] {
 
     // ── let variable binding ──────────────────────────────────────────────────
     if (/^let\s+/.test(line)) {
-      const [cleaned, conn] = extractConnective(line);
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
       parsed.push({ type: 'setVar', content: cleaned, connective: conn });
       continue;
     }

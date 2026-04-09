@@ -60,6 +60,26 @@ export interface FoldNode {
   sugar?: 'fold' | 'sigma' | 'induction';
 }
 
+export interface IfNode {
+  type: 'If';
+  condition: ExprNode;
+  thenBranch: ExprNode;
+  elseBranch: ExprNode;
+}
+
+export interface LetExprNode {
+  type: 'LetExpr';
+  name: string;
+  value: ExprNode;
+  body: ExprNode;
+}
+
+export interface LambdaNode {
+  type: 'Lambda';
+  params: FnParam[];
+  body: ExprNode;
+}
+
 export interface AtomNode {
   type: 'Atom';
   condition: string;
@@ -77,6 +97,9 @@ export type ExprNode =
   | SetBuilderNode
   | IndexedUnionNode
   | FoldNode
+  | IfNode
+  | LetExprNode
+  | LambdaNode
   | AtomNode;
 
 // ── Statement-level AST nodes ───────────────────────────────────────────────
@@ -108,10 +131,23 @@ export interface TypeVariant {
   fields: StructField[];
 }
 
-export interface PatternNode {
-  constructor: string | '_';
-  bindings: string[];
-}
+export type PatternNode =
+  | {
+    kind: 'wildcard';
+  }
+  | {
+    kind: 'variant';
+    constructor: string;
+    bindings: string[];
+  }
+  | {
+    kind: 'list_nil';
+  }
+  | {
+    kind: 'list_cons';
+    head: string;
+    tail: string;
+  };
 
 export interface MatchCaseNode {
   pattern: PatternNode;
@@ -137,6 +173,10 @@ export interface ProofNode {
   name: string;
   body: ASTNode[];
   connective: BlockConnective;
+  fnMeta?: {
+    params: FnParam[];
+    returnType: string;
+  };
 }
 
 export interface LemmaNode {

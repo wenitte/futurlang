@@ -1,6 +1,8 @@
 import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as vm from 'vm';
+import { spawnSync } from 'child_process';
 import { checkFile } from '../checker/checker';
 import { parseLinesToAST } from '../parser/parser';
 import { lexFL } from '../parser/lexer';
@@ -11,6 +13,9 @@ import { applyRevelation, RevelationError } from '../kernel/revelation';
 import { evaluateExists, evaluateForAll, evaluateNotForAllNot } from '../kernel/quantifiers';
 import { and, implies, neg, or, WenittainValue } from '../kernel/values';
 import { CategoryDiagramKernel, CategoryDiagramError } from '../kernel/category-diagrams';
+import { generateJSFromAST } from '../codegen';
+import { runtimePreamble } from '../codegen/runtime';
+import { parseFLFile } from '../parser/formal';
 
 function runTest(name: string, fn: () => void) {
   try {
@@ -24,6 +29,25 @@ function runTest(name: string, fn: () => void) {
 
 function parseProgram(source: string) {
   return parseLinesToAST(lexFL(source));
+}
+
+function parseExecutableProgram(source: string) {
+  return parseLinesToAST(lexFL(source), { desugarFns: false });
+}
+
+function runExecutable(source: string) {
+  const ast = parseExecutableProgram(source);
+  const js = generateJSFromAST(ast, runtimePreamble);
+  const context: Record<string, unknown> = {
+    console: { log: () => {} },
+    globalThis: {} as Record<string, unknown>,
+    require,
+    Buffer,
+    URL,
+  };
+  context.globalThis = context;
+  vm.runInNewContext(js, context);
+  return context;
 }
 
 function assertTruthTable(
@@ -51,6 +75,21 @@ runTest('parseExpr recognizes fold and sigma sugar', () => {
   assert.equal(exprToProp(fold), 'fold(xs, 0, +)');
   const sigma = parseExpr('Σ(i, 0, n)');
   assert.equal(exprToProp(sigma), 'fold([0..n], 0, +)');
+});
+
+runTest('parseExpr recognizes executable if, let-in, and lambda syntax', () => {
+  assert.equal(
+    exprToProp(parseExpr('if true then 1 else 0')),
+    'if true then 1 else 0',
+  );
+  assert.equal(
+    exprToProp(parseExpr('let x = 1 in x + 1')),
+    'let x = 1 in x + 1',
+  );
+  assert.equal(
+    exprToProp(parseExpr('fn(x: Nat) => x + 1')),
+    'fn(x: Nat) => x + 1',
+  );
 });
 
 runTest('parser desugars fn declarations into theorem/proof pairs before checking', () => {
@@ -121,6 +160,54 @@ proof ShapeCase() {
     throw new Error('proof missing');
   }
   assert.equal(ast[2].body[0].type, 'Match');
+});
+
+runTest('parser captures kernel list patterns and multi-line case bodies', () => {
+  const ast = parseProgram(`
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] =>
+      conclude(0)
+    case [x, ...rest] =>
+      match x {
+        case _ => conclude(1 + length(rest))
+      }
+  }
+}
+`);
+  assert.equal(ast.length, 2);
+  assert.equal(ast[1].type, 'Proof');
+  if (ast[1].type !== 'Proof') {
+    throw new Error('proof missing');
+  }
+  assert.deepEqual(ast[1].fnMeta, {
+    params: [{ name: 'xs', type: 'List(ℕ)' }],
+    returnType: 'ℕ',
+  });
+  const topMatch = ast[1].body[0];
+  assert.equal(topMatch.type, 'Match');
+  if (topMatch.type !== 'Match') {
+    throw new Error('top-level match missing');
+  }
+  assert.equal(topMatch.cases.length, 2);
+  assert.deepEqual(topMatch.cases[0].pattern, { kind: 'list_nil' });
+  assert.deepEqual(topMatch.cases[1].pattern, { kind: 'list_cons', head: 'x', tail: 'rest' });
+  assert.equal(topMatch.cases[1].body[0].type, 'Match');
+});
+
+runTest('server-style executable files are not misclassified as proof programs', () => {
+  const ast = parseExecutableProgram(`
+fn home(req ∈ Request) -> Response {
+  conclude(text("home"))
+} →
+
+let app = router([
+  route("GET", "/", home)
+]) →
+
+let server = serve(3000, app)
+`);
+  assert.equal(ast[0].type, 'FnDecl');
 });
 
 runTest('category proposition parsing recognizes morphisms and composites', () => {
@@ -514,11 +601,203 @@ proof ShapeMiss() {
   assert.equal(failed.state, 'FAILED');
 });
 
+runTest('checker proves list recursion on the tail and rejects non-structural recursion', () => {
+  const proved = checkFile(parseProgram(`
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [_, ...rest] => conclude(1 + length(rest))
+  }
+}
+`));
+  assert.equal(proved.state, 'PROVED');
+  assert.equal(proved.reports[0].state, 'PROVED');
+
+  const unverified = checkFile(parseProgram(`
+fn bad(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [x, ...rest] => conclude(1 + bad(xs))
+  }
+}
+`));
+  assert.equal(unverified.state, 'UNVERIFIED');
+  assert.equal(unverified.reports[0].state, 'UNVERIFIED');
+});
+
+runTest('eval mode preserves executable fn declarations and runs list recursion', () => {
+  const runtime = runExecutable(`
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [_, ...rest] => conclude(1 + length(rest))
+  }
+} →
+
+let answer = length([1, 2, 3]) →
+assert(answer == 3)
+`);
+  assert.equal(runtime.answer, 3);
+});
+
+runTest('eval mode supports Result constructors, match, if, let-in, lambda, and fold', () => {
+  const runtime = runExecutable(`
+type Result =
+  | Ok(value ∈ Nat)
+  | Err(message ∈ String)
+} →
+
+fn unwrapOrZero(result ∈ Result) -> Nat {
+  match result {
+    case Ok(value) => conclude(value)
+    case Err(_) => conclude(0)
+  }
+} →
+
+let add1 = fn(x: Nat) => x + 1 →
+let picked = if true then Ok(4) else Err("nope") →
+let total = let base = unwrapOrZero(picked) in fold([1, 2], base, fn(acc: Nat, x: Nat) => acc + x) →
+assert(add1(total) == 8)
+`);
+  assert.equal(typeof runtime.add1, 'function');
+  assert.equal(runtime.total, 7);
+});
+
+runTest('eval mode expands imports before parsing', () => {
+  const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-import-'));
+  const libFile = path.join(tempDir, 'lib.fl');
+  const mainFile = path.join(tempDir, 'main.fl');
+  fs.writeFileSync(libFile, `
+fn inc(x ∈ Nat) -> Nat {
+  conclude(x + 1)
+}
+`);
+  fs.writeFileSync(mainFile, `
+import "./lib.fl"
+
+let answer = inc(4) →
+assert(answer == 5)
+`);
+  const js = parseFLFile(mainFile);
+  const context: Record<string, unknown> = {
+    console: { log: () => {} },
+    globalThis: {} as Record<string, unknown>,
+    require,
+    Buffer,
+    URL,
+  };
+  context.globalThis = context;
+  vm.runInNewContext(js, context);
+  assert.equal(context.answer, 5);
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+runTest('eval mode supports Node-style web server routing helpers', () => {
+  const runtime = runExecutable(`
+type Result =
+  | Ok(value ∈ Nat)
+  | Err(message ∈ String)
+} →
+
+fn homeHandler(req ∈ Request) -> Response {
+  conclude(text("home"))
+} →
+
+fn apiHandler(req ∈ Request) -> Response {
+  conclude(json(Ok(7)))
+} →
+
+let app = router([
+  route("GET", "/", homeHandler),
+  route("GET", "/api", apiHandler)
+]) →
+let home = dispatch(app, request("GET", "/")) →
+let api = dispatch(app, request("GET", "/api")) →
+let miss = dispatch(app, request("GET", "/missing")) →
+assert(home.status == 200) →
+assert(home.body == "home") →
+assert(api.status == 200) →
+assert(api.headers["content-type"] == "application/json; charset=utf-8") →
+assert(api.body.indexOf("Ok") >= 0) →
+assert(api.body.indexOf("7") >= 0) →
+assert(miss.status == 404)
+`);
+  assert.equal((runtime.home as any).body, 'home');
+  assert.equal((runtime.api as any).status, 200);
+  assert.equal((runtime.miss as any).status, 404);
+});
+
+runTest('cli executes proof-shaped files and still prints checker output', () => {
+  const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-cli-proof-'));
+  const file = path.join(tempDir, 'proof-and-run.fl');
+  fs.writeFileSync(file, `
+theorem Identity() {
+  given(p) →
+  assert(p)
+} ↔
+
+proof Identity() {
+  assume(p) →
+  conclude(p)
+} →
+
+let answer = if true then 1 else 0 →
+assert(answer == 1)
+`);
+  const result = spawnSync('node', ['dist/cli.js', file], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /proof \+ runtime mode/);
+  assert.match(result.stdout, /Checking/);
+  assert.match(result.stdout, /Executing/);
+  assert.match(result.stdout, /Program holds/);
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+runTest('cli auto-detects server files as executable runtime without theorem mode', () => {
+  const result = spawnSync('node', ['dist/cli.js', 'start', 'examples/server/hello-http.fl'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.match(result.stdout + result.stderr, /server .*starting/);
+  assert.doesNotMatch(result.stdout + result.stderr, /theorem-prover mode/);
+});
+
+runTest('fl web generates a buildable React app for executable files', () => {
+  const outDir = path.join(process.cwd(), 'generated', 'futurlang-webapp');
+  const generate = spawnSync('node', ['dist/cli.js', 'web', 'examples/demo/fn-double.fl', outDir], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(generate.status, 0, generate.stderr || generate.stdout);
+  assert.match(generate.stdout, /Generated React app/);
+
+  const build = spawnSync('npm', ['run', 'build'], {
+    cwd: outDir,
+    encoding: 'utf8',
+  });
+  assert.equal(build.status, 0, build.stderr || build.stdout);
+});
+
+runTest('fl start generates frontend output without launching when --no-launch is set', () => {
+  const outDir = path.join(process.cwd(), 'generated', 'futurlang-webapp');
+  const result = spawnSync('node', ['dist/cli.js', '--no-launch', 'start', 'examples/demo/fn-double.fl', outDir], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Generated React app/);
+  assert.match(result.stdout, /Skipping frontend launch/);
+});
+
 runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
   const demoDir = path.resolve(__dirname, '../../examples/demo');
   const files = collectDemoFiles(demoDir);
-  const expectedStates = new Map<string, 'PROVED' | 'FAILED'>([
+  const expectedStates = new Map<string, 'PROVED' | 'FAILED' | 'UNVERIFIED'>([
     ['match-exhaustive-fail.fl', 'FAILED'],
+    ['list-nonstructural-fail.fl', 'UNVERIFIED'],
   ]);
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8');
@@ -530,6 +809,33 @@ runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
     for (const theoremReport of report.reports) {
       assert.equal(theoremReport.state, 'PROVED', `${label}:${theoremReport.name}`);
       assert.equal(theoremReport.pendingCount, 0, `${label}:${theoremReport.name}`);
+    }
+  }
+});
+
+runTest('default fl command executes the full demo corpus with only intentional failures', () => {
+  const demoDir = path.resolve(__dirname, '../../examples/demo');
+  const files = collectDemoFiles(demoDir);
+  const expectedExit = new Map<string, number>([
+    ['match-exhaustive-fail.fl', 1],
+  ]);
+
+  for (const file of files) {
+    const label = path.relative(demoDir, file);
+    const result = spawnSync('node', ['dist/cli.js', file], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+    const expected = expectedExit.get(label) ?? 0;
+    assert.equal(
+      result.status,
+      expected,
+      `${label}\n${result.stdout}\n${result.stderr}`,
+    );
+    if (expected === 0) {
+      assert.match(result.stdout, /Program holds|server .*starting|proof \+ runtime mode|fn /);
+    } else {
+      assert.match(result.stdout + result.stderr, /FAILED|non-exhaustive/i);
     }
   }
 });

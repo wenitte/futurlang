@@ -1,0 +1,19 @@
+type ApiResult =
+  | Ok(value ∈ Nat)
+  | Err(message ∈ String)
+} →
+
+fn home(req ∈ Request) -> Response {
+  conclude(text("home"))
+} →
+
+fn api(req ∈ Request) -> Response {
+  conclude(json(Ok(7)))
+} →
+
+let app = router([
+  route("GET", "/", home),
+  route("GET", "/api", api)
+]) →
+
+let server = serve(3000, app)

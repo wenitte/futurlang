@@ -1,0 +1,11 @@
+
+theorem Identity() {
+  assert(true)
+} ↔
+
+proof Identity() {
+  conclude(true)
+} →
+
+let answer = if true then 1 else 0 →
+assert(answer == 1)

@@ -61,6 +61,13 @@ function checkPair(pair, lemmas, structs, types, _options) {
     const goal = theoremGoal(pair.theorem);
     const ctx = createContext(goal, lemmas, premises, structs, types);
     seedPremises(ctx, premises);
+    if (pair.proof.fnMeta) {
+        const recursionIssue = validateListStructuralRecursion(pair.proof);
+        if (recursionIssue) {
+            ctx.unverifiedReasons.push(recursionIssue);
+            ctx.diagnostics.push({ severity: 'warning', message: recursionIssue, rule: 'STRUCTURAL' });
+        }
+    }
     for (let index = 0; index < pair.proof.body.length; index++) {
         const step = index + 1;
         const node = pair.proof.body[index];
@@ -132,6 +139,7 @@ function createContext(goal, lemmas, premises, structs, types) {
         goal,
         structs,
         types,
+        unverifiedReasons: [],
     };
 }
 function seedPremises(ctx, premises) {
@@ -211,8 +219,14 @@ function handleMatch(ctx, node, step) {
     const scrutinee = (0, propositions_1.exprToProp)(node.scrutinee);
     const scrutineeMembership = requireAnyMembership(ctx, scrutinee);
     const scrutineeType = scrutineeMembership ? (0, propositions_1.parseMembershipCanonical)(scrutineeMembership.claim)?.set ?? null : null;
-    const typeDef = scrutineeType ? ctx.types.get(scrutineeType) : null;
-    if (!scrutineeMembership || !typeDef) {
+    const parsedSort = scrutineeType ? parseSort(scrutineeType) : null;
+    if (parsedSort?.kind === 'list' && scrutineeType) {
+        handleListMatch(ctx, node, step, scrutinee, scrutineeType, parsedSort);
+        return;
+    }
+    const boolType = inferBooleanMatchType(node);
+    const typeDef = scrutineeType ? ctx.types.get(scrutineeType) : boolType;
+    if ((!scrutineeMembership && !boolType) || !typeDef) {
         ctx.diagnostics.push({ severity: 'error', step, message: `Pattern match requires a scrutinee with a registered sum type: '${scrutinee}'`, rule: 'MATCH_EXHAUSTIVE' });
         ctx.proofSteps.push({
             step,
@@ -224,8 +238,10 @@ function handleMatch(ctx, node, step) {
         });
         return;
     }
-    const covered = new Set(node.cases.filter(matchCase => matchCase.pattern.constructor !== '_').map(matchCase => String(matchCase.pattern.constructor)));
-    const exhaustive = node.cases.some(matchCase => matchCase.pattern.constructor === '_')
+    const covered = new Set(node.cases
+        .filter(matchCase => matchCase.pattern.kind === 'variant')
+        .map(matchCase => matchCase.pattern.constructor));
+    const exhaustive = node.cases.some(matchCase => matchCase.pattern.kind === 'wildcard')
         || typeDef.variants.every(variant => covered.has(variant.name));
     if (!exhaustive) {
         ctx.diagnostics.push({ severity: 'error', step, message: 'MATCH_EXHAUSTIVE failed: non-exhaustive match', rule: 'MATCH_EXHAUSTIVE' });
@@ -243,15 +259,15 @@ function handleMatch(ctx, node, step) {
     const branchUses = [];
     for (const matchCase of node.cases) {
         const branch = createBranchContext(ctx);
-        const variant = matchCase.pattern.constructor === '_'
+        const variant = matchCase.pattern.kind !== 'variant'
             ? null
             : typeDef.variants.find(candidate => candidate.name === matchCase.pattern.constructor) ?? null;
-        if (matchCase.pattern.constructor !== '_' && !variant) {
+        if (matchCase.pattern.kind === 'variant' && !variant) {
             branchStates.push('FAILED');
             continue;
         }
-        if (variant) {
-            applyPatternBindings(branch, scrutinee, variant, matchCase.pattern.bindings, step);
+        if (variant && matchCase.pattern.kind === 'variant') {
+            applyVariantPatternBindings(branch, scrutinee, variant, matchCase.pattern.bindings, step);
             branchUses.push(`${scrutinee} ∈ ${variant.name}`);
         }
         else {
@@ -281,7 +297,7 @@ function handleMatch(ctx, node, step) {
         });
         return;
     }
-    const targetClaim = ctx.goal ?? scrutineeMembership.claim;
+    const targetClaim = ctx.goal ?? scrutineeMembership?.claim ?? scrutinee;
     createKernelObject(ctx, targetClaim, 'MATCH_EXHAUSTIVE', step);
     ctx.proofSteps.push({
         step,
@@ -292,6 +308,102 @@ function handleMatch(ctx, node, step) {
         uses: branchUses,
         message: 'Validated exhaustive proof by cases via categorical OR elimination',
     });
+}
+function handleListMatch(ctx, node, step, scrutinee, scrutineeType, parsedSort) {
+    if (!requireAnyMembership(ctx, scrutinee) || parsedSort.kind !== 'list' || !parsedSort.element) {
+        ctx.diagnostics.push({ severity: 'error', step, message: `Pattern match requires a scrutinee with a registered list sort: '${scrutinee}'`, rule: 'MATCH_EXHAUSTIVE' });
+        ctx.proofSteps.push({
+            step,
+            kind: 'match',
+            claim: scrutinee,
+            rule: 'MATCH_EXHAUSTIVE',
+            state: 'FAILED',
+            message: 'No kernel List sort information is available for this match scrutinee',
+        });
+        return;
+    }
+    const nilCase = node.cases.find(matchCase => matchCase.pattern.kind === 'list_nil') ?? null;
+    const consCase = node.cases.find(matchCase => matchCase.pattern.kind === 'list_cons') ?? null;
+    const exhaustive = node.cases.length === 2 && Boolean(nilCase) && Boolean(consCase);
+    if (!exhaustive) {
+        ctx.diagnostics.push({ severity: 'error', step, message: 'MATCH_EXHAUSTIVE failed: List matches must contain exactly [] and [x, ...rest]', rule: 'MATCH_EXHAUSTIVE' });
+        ctx.proofSteps.push({
+            step,
+            kind: 'match',
+            claim: scrutinee,
+            rule: 'MATCH_EXHAUSTIVE',
+            state: 'FAILED',
+            message: 'Kernel List matching requires both Nil and Cons cases',
+        });
+        return;
+    }
+    const branchStates = [];
+    const branchUses = [];
+    for (const matchCase of [nilCase, consCase]) {
+        if (!matchCase)
+            continue;
+        const branch = createBranchContext(ctx);
+        if (matchCase.pattern.kind === 'list_cons') {
+            applyListPatternBindings(branch, scrutinee, scrutineeType, parsedSort, matchCase.pattern.head, matchCase.pattern.tail, step);
+            branchUses.push(`[${matchCase.pattern.head}, ...${matchCase.pattern.tail}]`);
+        }
+        else {
+            branchUses.push('[]');
+        }
+        for (const branchNode of matchCase.body) {
+            try {
+                handleNode(branch, branchNode, step);
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : 'Unknown list match-branch failure';
+                branch.diagnostics.push({ severity: 'error', step, message, rule: 'OR_ELIM' });
+            }
+        }
+        branchStates.push(evaluateMatchBranch(branch, ctx.goal, step));
+    }
+    if (branchStates.some(state => state === 'FAILED' || state === 'UNVERIFIED')) {
+        ctx.diagnostics.push({ severity: 'error', step, message: 'At least one list match branch does not establish the required conclusion', rule: 'OR_ELIM' });
+        ctx.proofSteps.push({
+            step,
+            kind: 'match',
+            claim: ctx.goal ?? scrutinee,
+            rule: 'MATCH_EXHAUSTIVE',
+            state: 'FAILED',
+            uses: branchUses,
+            message: 'Exhaustive list case analysis failed because a branch does not discharge the branch goal',
+        });
+        return;
+    }
+    const targetClaim = ctx.goal ?? `${scrutinee} ∈ ${scrutineeType}`;
+    createKernelObject(ctx, targetClaim, 'MATCH_EXHAUSTIVE', step);
+    ctx.proofSteps.push({
+        step,
+        kind: 'match',
+        claim: targetClaim,
+        rule: 'MATCH_EXHAUSTIVE',
+        state: branchStates.some(state => state === 'PENDING') ? 'PENDING' : 'PROVED',
+        uses: branchUses,
+        message: 'Validated exhaustive proof by cases over the kernel List primitive',
+    });
+}
+function inferBooleanMatchType(node) {
+    const constructors = [];
+    for (const matchCase of node.cases) {
+        if (matchCase.pattern.kind === 'variant') {
+            constructors.push(matchCase.pattern.constructor);
+        }
+    }
+    const boolConstructors = new Set(['true', 'false']);
+    if (constructors.length === 0 || constructors.some(name => !boolConstructors.has(name))) {
+        return null;
+    }
+    return {
+        name: 'Bool',
+        variants: [
+            { name: 'true', parent: 'Bool', fields: [] },
+            { name: 'false', parent: 'Bool', fields: [] },
+        ],
+    };
 }
 function handleApply(ctx, target, step) {
     const lemma = ctx.lemmas.get(normalizeName(target));
@@ -1499,12 +1611,13 @@ function theoremGoal(node) {
 }
 function collectStructDefinitions(nodes, diagnostics) {
     const structs = new Map();
+    const typeNames = new Set(nodes.filter((node) => node.type === 'TypeDecl').map(node => node.name));
     for (const node of nodes) {
         if (node.type !== 'Struct')
             continue;
         const fields = node.fields.map(field => ({ name: field.name, type: field.type }));
         for (const field of fields) {
-            if (!isKnownSort(field.type, structs)) {
+            if (!isKnownSort(field.type, structs, typeNames)) {
                 diagnostics.push({
                     severity: 'error',
                     message: `Unknown sort '${field.type}' in struct '${node.name}' field '${field.name}'`,
@@ -1529,7 +1642,7 @@ function collectTypeDefinitions(nodes, structs, diagnostics) {
         const variants = node.variants.map(variant => ({ ...variant, parent: node.name }));
         for (const variant of variants) {
             for (const field of variant.fields) {
-                if (!BUILTIN_SORTS.has(field.type) && !structs.has(field.type) && !typeNames.has(field.type)) {
+                if (!isKnownSort(field.type, structs, typeNames)) {
                     diagnostics.push({
                         severity: 'error',
                         message: `Unknown sort '${field.type}' in variant '${variant.name}' of type '${node.name}'`,
@@ -1614,6 +1727,9 @@ function reportState(ctx, goal, derivedConclusion) {
     if (ctx.diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
         return 'FAILED';
     }
+    if (ctx.unverifiedReasons.length > 0) {
+        return 'UNVERIFIED';
+    }
     if (goal && !derivedConclusion) {
         return findExact(ctx.objects, goal, true) ? 'PENDING' : 'FAILED';
     }
@@ -1624,6 +1740,8 @@ function combineStates(states, fallback) {
         return fallback;
     if (states.includes('FAILED'))
         return 'FAILED';
+    if (states.includes('UNVERIFIED'))
+        return 'UNVERIFIED';
     if (states.includes('PENDING'))
         return 'PENDING';
     return 'PROVED';
@@ -1707,8 +1825,16 @@ function enrichStructMembership(ctx, source, step) {
         createKernelObject(ctx, fieldClaim, 'STRUCT_ELIM', step, [source.id]);
     }
 }
-function isKnownSort(sort, structs) {
-    return BUILTIN_SORTS.has(sort) || structs.has(sort);
+function isKnownSort(sort, structs, typeNames = new Set()) {
+    const parsed = parseSort(sort);
+    if (!parsed)
+        return false;
+    if (parsed.kind === 'list') {
+        return parsed.element ? isKnownSort(formatSort(parsed.element), structs, typeNames) : false;
+    }
+    if (!parsed.name)
+        return false;
+    return BUILTIN_SORTS.has(parsed.name) || structs.has(parsed.name) || typeNames.has(parsed.name);
 }
 function createBranchContext(ctx) {
     return {
@@ -1722,7 +1848,7 @@ function createBranchContext(ctx) {
         premises: [...ctx.premises],
     };
 }
-function applyPatternBindings(ctx, scrutinee, variant, bindings, step) {
+function applyVariantPatternBindings(ctx, scrutinee, variant, bindings, step) {
     createKernelObject(ctx, `${scrutinee} ∈ ${variant.name}`, 'OR_ELIM', step);
     for (let index = 0; index < variant.fields.length; index++) {
         const binding = bindings[index];
@@ -1733,6 +1859,18 @@ function applyPatternBindings(ctx, scrutinee, variant, bindings, step) {
         const assumption = createKernelObject(ctx, `${binding} ∈ ${field.type}`, 'ASSUMPTION', step);
         ctx.assumptions.push(assumption);
     }
+}
+function applyListPatternBindings(ctx, scrutinee, listType, parsedSort, head, tail, step) {
+    const elementType = formatSort(parsedSort.element ?? { kind: 'named', name: 'Element' });
+    createKernelObject(ctx, `${scrutinee} ∈ Cons`, 'OR_ELIM', step);
+    if (head !== '_') {
+        ctx.variables.push({ name: head, domain: elementType });
+        const headAssumption = createKernelObject(ctx, `${head} ∈ ${elementType}`, 'ASSUMPTION', step);
+        ctx.assumptions.push(headAssumption);
+    }
+    ctx.variables.push({ name: tail, domain: listType });
+    const tailAssumption = createKernelObject(ctx, `${tail} ∈ ${listType}`, 'ASSUMPTION', step);
+    ctx.assumptions.push(tailAssumption);
 }
 function evaluateMatchBranch(ctx, goal, step) {
     if (goal && findExact(ctx.objects, goal, false)) {
@@ -1762,11 +1900,38 @@ function branchConclusionMatchesType(claim, expectedType, ctx) {
     const inferred = inferExpressionType(claim, ctx);
     return inferred === expectedType;
 }
+function parseSort(value) {
+    const trimmed = value.trim();
+    const listMatch = trimmed.match(/^List\s*\(([\s\S]+)\)$/);
+    if (listMatch) {
+        const inner = parseSort(listMatch[1].trim());
+        return inner ? { kind: 'list', element: inner } : null;
+    }
+    if (!trimmed)
+        return null;
+    return { kind: 'named', name: trimmed };
+}
+function formatSort(sort) {
+    if (sort.kind === 'list') {
+        return `List(${formatSort(sort.element ?? { kind: 'named', name: 'Element' })})`;
+    }
+    return sort.name ?? 'Element';
+}
 function inferExpressionType(claim, ctx) {
     const membership = (0, propositions_1.parseMembershipCanonical)(claim);
     if (membership)
         return membership.set;
     const trimmed = claim.trim();
+    if (trimmed === '[]') {
+        const goalMembership = ctx.goal ? (0, propositions_1.parseMembershipCanonical)(ctx.goal) : null;
+        return goalMembership?.set ?? null;
+    }
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        const goalMembership = ctx.goal ? (0, propositions_1.parseMembershipCanonical)(ctx.goal) : null;
+        if (goalMembership?.set && parseSort(goalMembership.set)?.kind === 'list') {
+            return goalMembership.set;
+        }
+    }
     if (/^\d+$/.test(trimmed))
         return 'ℕ';
     if (/[π√]/.test(trimmed) || /\bsqrt\s*\(/.test(trimmed))
@@ -1792,6 +1957,114 @@ function inferExpressionType(claim, ctx) {
             return goalMembership.set;
     }
     return null;
+}
+function validateListStructuralRecursion(proof) {
+    const fnMeta = proof.fnMeta;
+    if (!fnMeta)
+        return null;
+    const listParams = fnMeta.params.filter(param => parseSort(param.type)?.kind === 'list');
+    if (listParams.length === 0)
+        return null;
+    const invalidCall = findInvalidRecursiveCall(proof.body, proof.name, new Map(), listParams);
+    if (!invalidCall)
+        return null;
+    return `UNVERIFIED: recursive call '${invalidCall.call}' is not structural on a List tail`;
+}
+function findInvalidRecursiveCall(nodes, fnName, allowedTails, listParams) {
+    for (const node of nodes) {
+        if (node.type === 'Match') {
+            const scrutinee = (0, propositions_1.exprToProp)(node.scrutinee).trim();
+            const listParam = listParams.find(param => param.name === scrutinee);
+            for (const matchCase of node.cases) {
+                const branchAllowed = new Map(allowedTails);
+                if (listParam && matchCase.pattern.kind === 'list_cons') {
+                    branchAllowed.set(listParam.name, matchCase.pattern.tail);
+                }
+                const nested = findInvalidRecursiveCall(matchCase.body, fnName, branchAllowed, listParams);
+                if (nested)
+                    return nested;
+            }
+            continue;
+        }
+        const claim = node.type === 'Assert' || node.type === 'Assume' || node.type === 'Conclude'
+            ? (0, propositions_1.exprToProp)(node.expr)
+            : node.type === 'Raw'
+                ? node.content
+                : null;
+        if (claim) {
+            const invalid = validateRecursiveCallsInText(claim, fnName, allowedTails, listParams);
+            if (invalid)
+                return invalid;
+        }
+    }
+    return null;
+}
+function validateRecursiveCallsInText(text, fnName, allowedTails, listParams) {
+    for (const call of extractNamedCalls(text, fnName)) {
+        const args = splitTopLevelCallArgs(call.args);
+        for (let index = 0; index < listParams.length; index++) {
+            const param = listParams[index];
+            const arg = args[index]?.trim();
+            const allowedTail = allowedTails.get(param.name);
+            if (!arg || arg !== allowedTail) {
+                return { call: `${fnName}(${call.args})` };
+            }
+        }
+    }
+    return null;
+}
+function extractNamedCalls(text, fnName) {
+    const calls = [];
+    const pattern = new RegExp(`\\b${escapeRegex(fnName)}\\s*\\(`, 'g');
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+        const openIndex = text.indexOf('(', match.index);
+        const closeIndex = findMatchingParenInText(text, openIndex);
+        if (openIndex === -1 || closeIndex === -1)
+            continue;
+        calls.push({ args: text.slice(openIndex + 1, closeIndex) });
+        pattern.lastIndex = closeIndex + 1;
+    }
+    return calls;
+}
+function findMatchingParenInText(value, start) {
+    let depth = 0;
+    for (let i = start; i < value.length; i++) {
+        const ch = value[i];
+        if (ch === '(')
+            depth++;
+        else if (ch === ')') {
+            depth--;
+            if (depth === 0)
+                return i;
+        }
+    }
+    return -1;
+}
+function splitTopLevelCallArgs(value) {
+    const args = [];
+    let start = 0;
+    let depth = 0;
+    let bracketDepth = 0;
+    for (let i = 0; i < value.length; i++) {
+        const ch = value[i];
+        if (ch === '(')
+            depth++;
+        else if (ch === ')')
+            depth = Math.max(0, depth - 1);
+        else if (ch === '[')
+            bracketDepth++;
+        else if (ch === ']')
+            bracketDepth = Math.max(0, bracketDepth - 1);
+        else if (ch === ',' && depth === 0 && bracketDepth === 0) {
+            args.push(value.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    const final = value.slice(start).trim();
+    if (final)
+        args.push(final);
+    return args;
 }
 function parseFieldAccess(value) {
     const trimmed = value.trim();

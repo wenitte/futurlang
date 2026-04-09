@@ -5,45 +5,27 @@ type EvalResult = { value: boolean; label: string; detail?: string | null };
 
 const program: ProgramNode[] = [
   {
-    "type": "Theorem",
-    "name": "Hello_World",
+    "type": "FnDecl",
+    "name": "double",
     "connective": null,
+    "params": [
+      {
+        "name": "n",
+        "type": "ℕ"
+      }
+    ],
+    "returnType": "Nat",
     "body": [
       {
-        "type": "Assert",
-        "connective": "∧",
+        "type": "Conclude",
+        "connective": null,
         "expr": {
           "type": "Atom",
-          "condition": "\"Hello World can be proven\"",
-          "atomKind": "string",
+          "condition": "n + n",
+          "atomKind": "expression",
           "unsupported": false,
           "reason": null
         }
-      },
-      {
-        "type": "Proof",
-        "name": "Hello_World",
-        "connective": null,
-        "body": [
-          {
-            "type": "SetVar",
-            "connective": null,
-            "varName": "message",
-            "varType": null,
-            "value": "\"Hello World\""
-          },
-          {
-            "type": "Assert",
-            "connective": null,
-            "expr": {
-              "type": "Atom",
-              "condition": "message ==\"Hello World\"",
-              "atomKind": "expression",
-              "unsupported": false,
-              "reason": null
-            }
-          }
-        ]
       }
     ]
   }
@@ -83,6 +65,28 @@ function evaluateNode(node: ProgramNode, scope: Record<string, unknown>) {
         detail: null,
         fields: node.fields,
       };
+    case 'TypeDecl':
+      registerType(node, scope);
+      return {
+        type: node.type,
+        name: node.name,
+        connective: node.connective,
+        value: true,
+        detail: null,
+        fields: node.variants,
+      };
+    case 'FnDecl': {
+      const fn = defineRuntimeFunction(node, scope);
+      scope[node.name] = fn;
+      return {
+        type: node.type,
+        name: node.name,
+        connective: node.connective,
+        value: true,
+        detail: `fn ${node.name}`,
+        label: node.name,
+      };
+    }
     case 'Assert':
     case 'Assume':
     case 'Conclude': {
@@ -122,6 +126,25 @@ function evaluateNode(node: ProgramNode, scope: Record<string, unknown>) {
         detail: node.content,
         label: node.content,
       };
+    case 'Match':
+      try {
+        const matched = evaluateMatchNode(node, scope);
+        return {
+          type: node.type,
+          connective: node.connective,
+          value: matched.value,
+          detail: matched.detail ?? null,
+          label: matched.label,
+        };
+      } catch (error) {
+        return {
+          type: node.type,
+          connective: node.connective,
+          value: false,
+          detail: error instanceof Error ? error.message : 'Match failed',
+          label: 'match',
+        };
+      }
     default:
       return {
         type: 'Unknown',
@@ -137,6 +160,36 @@ function evaluateExpr(expr: ProgramNode, scope: Record<string, unknown>): EvalRe
   switch (expr.type) {
     case 'Atom':
       return evaluateAtom(expr, scope);
+    case 'SetBuilder':
+    case 'IndexedUnion':
+      return {
+        value: false,
+        label: renderExprLabel(expr),
+        detail: 'Set-builder and indexed-union expressions are outside the executable subset.',
+      };
+    case 'Quantified':
+      return {
+        value: false,
+        label: renderExprLabel(expr),
+        detail: 'Quantified expressions are outside the executable subset.',
+      };
+    case 'If': {
+      const condition = evaluateExpr(expr.condition, scope);
+      return condition.value
+        ? evaluateExpr(expr.thenBranch, scope)
+        : evaluateExpr(expr.elseBranch, scope);
+    }
+    case 'LetExpr': {
+      const childScope = { ...scope };
+      childScope[expr.name] = resolveExprValue(expr.value, scope);
+      return evaluateExpr(expr.body, childScope);
+    }
+    case 'Lambda':
+      return {
+        value: true,
+        label: renderExprLabel(expr),
+        detail: null,
+      };
     case 'And': {
       const left = evaluateExpr(expr.left, scope);
       const right = evaluateExpr(expr.right, scope);
@@ -163,6 +216,42 @@ function evaluateExpr(expr: ProgramNode, scope: Record<string, unknown>): EvalRe
     }
     default:
       return { value: false, label: 'unsupported expression', detail: 'Unsupported expression node' };
+  }
+}
+
+function renderExprLabel(expr: ProgramNode): string {
+  switch (expr.type) {
+    case 'Atom':
+      return expr.condition;
+    case 'SetBuilder':
+      return '{' + expr.element + ' | ' + expr.variable + ' ∈ ' + expr.domain + '}';
+    case 'IndexedUnion':
+      return '∪' + renderExprLabel(expr.builder);
+    case 'Quantified': {
+      const symbol = expr.quantifier === 'forall' ? '∀' : expr.quantifier === 'exists' ? '∃' : '∃!';
+      const binder = expr.binderStyle === 'bounded'
+        ? expr.variable + ' ∈ ' + expr.domain
+        : expr.variable + ': ' + expr.domain;
+      return expr.body ? symbol + ' ' + binder + ', ' + renderExprLabel(expr.body) : symbol + ' ' + binder;
+    }
+    case 'And':
+      return '(' + renderExprLabel(expr.left) + ' ∧ ' + renderExprLabel(expr.right) + ')';
+    case 'Or':
+      return '(' + renderExprLabel(expr.left) + ' ∨ ' + renderExprLabel(expr.right) + ')';
+    case 'Implies':
+      return '(' + renderExprLabel(expr.left) + ' → ' + renderExprLabel(expr.right) + ')';
+    case 'Iff':
+      return '(' + renderExprLabel(expr.left) + ' ↔ ' + renderExprLabel(expr.right) + ')';
+    case 'Not':
+      return '¬' + renderExprLabel(expr.operand);
+    case 'If':
+      return 'if ' + renderExprLabel(expr.condition) + ' then ' + renderExprLabel(expr.thenBranch) + ' else ' + renderExprLabel(expr.elseBranch);
+    case 'LetExpr':
+      return 'let ' + expr.name + ' = ' + renderExprLabel(expr.value) + ' in ' + renderExprLabel(expr.body);
+    case 'Lambda':
+      return 'fn(' + expr.params.map((param: any) => param.name + ': ' + param.type).join(', ') + ') => ' + renderExprLabel(expr.body);
+    default:
+      return 'unsupported expression';
   }
 }
 
@@ -195,6 +284,145 @@ function resolveValue(raw: string | null, scope: Record<string, unknown>) {
   } catch {
     return trimmed;
   }
+}
+
+function resolveExprValue(expr: ProgramNode, scope: Record<string, unknown>): unknown {
+  switch (expr.type) {
+    case 'Atom':
+      return resolveValue(expr.condition, scope);
+    case 'If':
+      return evaluateExpr(expr.condition, scope).value
+        ? resolveExprValue(expr.thenBranch, scope)
+        : resolveExprValue(expr.elseBranch, scope);
+    case 'LetExpr': {
+      const childScope = { ...scope };
+      childScope[expr.name] = resolveExprValue(expr.value, scope);
+      return resolveExprValue(expr.body, childScope);
+    }
+    case 'Lambda':
+      return (...args: unknown[]) => {
+        const childScope = { ...scope };
+        expr.params.forEach((param: any, index: number) => {
+          childScope[param.name] = args[index];
+        });
+        return resolveExprValue(expr.body, childScope);
+      };
+    case 'And':
+    case 'Or':
+    case 'Implies':
+    case 'Iff':
+    case 'Not':
+      return evaluateExpr(expr, scope).value;
+    case 'Fold': {
+      const sequence = resolveValue(expr.sequence, scope);
+      const init = resolveValue(expr.init, scope);
+      const fn = resolveValue(expr.fn, scope);
+      if (!Array.isArray(sequence) || typeof fn !== 'function') return null;
+      return sequence.reduce((acc, item) => fn(acc, item), init);
+    }
+    default:
+      return null;
+  }
+}
+
+function defineRuntimeFunction(node: ProgramNode, scope: Record<string, unknown>) {
+  return (...args: unknown[]) => {
+    const childScope: Record<string, unknown> = { ...scope };
+    node.params.forEach((param: any, index: number) => {
+      childScope[param.name] = args[index];
+    });
+    for (const child of node.body) {
+      if (child.type === 'SetVar') {
+        childScope[child.varName] = resolveValue(child.value, childScope);
+        continue;
+      }
+      if (child.type === 'Conclude') {
+        return resolveExprValue(child.expr, childScope);
+      }
+      if (child.type === 'Match') {
+        return evaluateMatchValue(child, childScope);
+      }
+      if (child.type === 'Assert') {
+        const result = evaluateExpr(child.expr, childScope);
+        if (!result.value) throw new Error(result.detail ?? 'Assertion failed');
+      }
+    }
+    return undefined;
+  };
+}
+
+function registerType(node: ProgramNode, scope: Record<string, unknown>) {
+  for (const variant of node.variants) {
+    const fieldNames = variant.fields.map((field: any) => field.name);
+    if (fieldNames.length === 0) {
+      scope[variant.name] = { tag: variant.name };
+      continue;
+    }
+    scope[variant.name] = (...args: unknown[]) => {
+      const value: Record<string, unknown> = { tag: variant.name };
+      fieldNames.forEach((fieldName: string, index: number) => {
+        value[fieldName] = args[index];
+      });
+      return value;
+    };
+  }
+}
+
+function evaluateMatchNode(node: ProgramNode, scope: Record<string, unknown>) {
+  const value = evaluateMatchValue(node, scope);
+  return {
+    value: true,
+    label: 'match',
+    detail: value === undefined ? null : String(value),
+  };
+}
+
+function evaluateMatchValue(node: ProgramNode, scope: Record<string, unknown>) {
+  const scrutinee = resolveExprValue(node.scrutinee, scope);
+  for (const matchCase of node.cases) {
+    const bindings = matchPattern(matchCase.pattern, scrutinee);
+    if (!bindings) continue;
+    const childScope = { ...scope, ...bindings };
+    for (const child of matchCase.body) {
+      if (child.type === 'Conclude') {
+        return resolveExprValue(child.expr, childScope);
+      }
+      if (child.type === 'Match') {
+        return evaluateMatchValue(child, childScope);
+      }
+      if (child.type === 'SetVar') {
+        childScope[child.varName] = resolveValue(child.value, childScope);
+      }
+    }
+    return undefined;
+  }
+  throw new Error('Non-exhaustive match in web runtime');
+}
+
+function matchPattern(pattern: any, value: unknown): Record<string, unknown> | null {
+  if (pattern.kind === 'wildcard') return {};
+  if (pattern.kind === 'list_nil') return Array.isArray(value) && value.length === 0 ? {} : null;
+  if (pattern.kind === 'list_cons') {
+    if (!Array.isArray(value) || value.length === 0) return null;
+    return {
+      ...(pattern.head !== '_' ? { [pattern.head]: value[0] } : {}),
+      [pattern.tail]: value.slice(1),
+    };
+  }
+  if (pattern.kind === 'variant') {
+    if (pattern.constructor === 'true' || pattern.constructor === 'false') {
+      return value === (pattern.constructor === 'true') ? {} : null;
+    }
+    if (!value || typeof value !== 'object' || (value as any).tag !== pattern.constructor) return null;
+    const entries: Record<string, unknown> = {};
+    pattern.bindings.forEach((binding: string, index: number) => {
+      if (!binding || binding === '_') return;
+      const keys = Object.keys(value as Record<string, unknown>).filter(key => key !== 'tag');
+      entries[binding] = (value as Record<string, unknown>)[keys[index]];
+    });
+    return entries;
+  }
+  return null;
 }
 
 function foldChain(items: Array<{ value: boolean; connective: string | null }>) {

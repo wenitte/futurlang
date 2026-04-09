@@ -12,5 +12,10 @@ They cover:
 - union, intersection, image, and preimage reasoning
 - bounded `∀` and `∃` rules over membership
 - lemma import
+- kernel `List(A)` matching and structural recursion
 
-All shipped demo proofs are expected to return `PROVED`.
+Most shipped demo proofs are expected to return `PROVED`.
+
+The explicit exception is:
+
+- `list-nonstructural-fail.fl` → `UNVERIFIED`

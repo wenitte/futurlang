@@ -15,9 +15,14 @@ import {
 
 type BlockNode = TheoremNode | DefinitionNode | StructNode | TypeDeclNode | ProofNode | LemmaNode | FnDeclNode;
 
-export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
+export interface ParserOptions {
+  desugarFns?: boolean;
+}
+
+export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}): ASTNode[] {
   const ast: ASTNode[] = [];
   const stack: BlockNode[] = [];
+  const desugarFns = options.desugarFns ?? true;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -75,7 +80,7 @@ export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
           finished.variants = (finished.variants as unknown as string[]).map(variant => parseTypeVariant(variant));
         }
 
-        const lowered = finished.type === 'FnDecl' ? desugarFnDecl(finished) : [finished];
+        const lowered = finished.type === 'FnDecl' && desugarFns ? desugarFnDecl(finished) : [finished];
 
         if (stack.length === 0) {
           ast.push(...lowered);
@@ -351,7 +356,7 @@ function desugarFnDecl(node: FnDeclNode): [TheoremNode, ProofNode] {
 
   const goalExpr = conclusion
     ? conclusion.expr
-    : parseExpr(`${node.name}(${node.params.map(param => param.name).join(', ')}) ∈ ${normalizeSortName(node.returnType)}`);
+    : parseFnGoalExpr(node);
 
   const theoremBody: ASTNode[] = node.params.map(param => ({
     type: 'Given' as const,
@@ -387,9 +392,26 @@ function desugarFnDecl(node: FnDeclNode): [TheoremNode, ProofNode] {
     name: node.name,
     body: proofBody,
     connective: node.connective,
+    fnMeta: {
+      params: node.params,
+      returnType: normalizeSortName(node.returnType),
+    },
   };
 
   return [theorem, proof];
+}
+
+function parseFnGoalExpr(node: FnDeclNode) {
+  const goal = `${node.name}(${node.params.map(param => param.name).join(', ')}) ∈ ${normalizeSortName(node.returnType)}`;
+  try {
+    return parseExpr(goal);
+  } catch {
+    return {
+      type: 'Atom' as const,
+      condition: goal,
+      atomKind: 'opaque' as const,
+    };
+  }
 }
 
 function normalizeSortName(value: string): string {
@@ -433,8 +455,9 @@ function parseMatch(lines: ParsedLine[], start: number): { node: MatchNode; next
     if (current.type !== 'case') {
       throw new Error(`Unexpected line inside match block: ${current.content}`);
     }
-    cases.push(parseMatchCase(current.content));
-    cursor++;
+    const parsedCase = parseMatchCase(lines, cursor);
+    cases.push(parsedCase.node);
+    cursor = parsedCase.nextIndex;
   }
 
   if (cursor >= lines.length || lines[cursor].type !== 'blockEnd') {
@@ -452,30 +475,63 @@ function parseMatch(lines: ParsedLine[], start: number): { node: MatchNode; next
   };
 }
 
-function parseMatchCase(content: string): MatchCaseNode {
+function parseMatchCase(lines: ParsedLine[], start: number): { node: MatchCaseNode; nextIndex: number } {
+  const content = lines[start].content;
   const match = content.match(/^case\s+(.+?)\s*=>\s*([\s\S]+)$/);
-  if (!match) {
+  const emptyMatch = content.match(/^case\s+(.+?)\s*=>\s*$/);
+  if (!match && !emptyMatch) {
     throw new Error(`Malformed case clause: ${content}`);
   }
+  const pattern = parsePattern((match ?? emptyMatch)![1].trim());
+  const body: ASTNode[] = [];
+  const inlineBody = match?.[2]?.trim() ?? '';
+  if (inlineBody) {
+    body.push(parseInlineStatement(inlineBody));
+  }
+
+  let cursor = start + 1;
+  while (cursor < lines.length) {
+    const current = lines[cursor];
+    if (current.type === 'case' || current.type === 'blockEnd') break;
+    const parsed = parseNestedStatement(lines, cursor);
+    body.push(parsed.node);
+    cursor = parsed.nextIndex + 1;
+  }
+
   return {
-    pattern: parsePattern(match[1].trim()),
-    body: [parseInlineStatement(match[2].trim())],
+    node: { pattern, body },
+    nextIndex: cursor,
   };
 }
 
 function parsePattern(value: string): PatternNode {
   if (value === '_') {
-    return { constructor: '_', bindings: [] };
+    return { kind: 'wildcard' };
+  }
+  if (value === '[]') {
+    return { kind: 'list_nil' };
+  }
+  const listMatch = value.match(/^\[\s*([^,\]]+)\s*,\s*\.\.\.\s*([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*\]$/);
+  if (listMatch) {
+    return {
+      kind: 'list_cons',
+      head: listMatch[1].trim(),
+      tail: listMatch[2].trim(),
+    };
   }
   const match = value.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*\(([\s\S]*)\)\s*$/);
   if (!match) {
-    throw new Error(`Malformed pattern: ${value}`);
+    const bare = value.match(/^([A-Za-z_][\w₀-₉ₐ-ₙ]*)$/);
+    if (!bare) {
+      throw new Error(`Malformed pattern: ${value}`);
+    }
+    return { kind: 'variant', constructor: bare[1], bindings: [] };
   }
   const [, constructor, rawBindings] = match;
   const bindings = rawBindings.trim()
     ? splitFnParams(rawBindings).map(binding => binding.trim()).map(binding => binding === '_' ? '_' : binding)
     : [];
-  return { constructor, bindings };
+  return { kind: 'variant', constructor, bindings };
 }
 
 function parseInlineStatement(content: string): ASTNode {
@@ -493,6 +549,32 @@ function parseInlineStatement(content: string): ASTNode {
     return { type: 'Apply', target, connective: null };
   }
   return { type: 'Raw', content, connective: null };
+}
+
+function parseNestedStatement(lines: ParsedLine[], start: number): { node: ASTNode; nextIndex: number } {
+  const line = lines[start];
+  switch (line.type) {
+    case 'assert':
+      return { node: { type: 'Assert', expr: parseCallExpr(line.content, 'assert'), connective: line.connective }, nextIndex: start };
+    case 'assume':
+      return { node: { type: 'Assume', expr: parseCallExpr(line.content, 'assume'), connective: line.connective }, nextIndex: start };
+    case 'conclude':
+      return { node: { type: 'Conclude', expr: parseCallExpr(line.content, 'conclude'), connective: line.connective }, nextIndex: start };
+    case 'apply': {
+      const target = line.content.match(/^apply\s*\((.+)\)/)?.[1]?.trim() ?? line.content;
+      return { node: { type: 'Apply', target, connective: line.connective }, nextIndex: start };
+    }
+    case 'setVar':
+      return { node: parseSetVar(line.content, line.connective), nextIndex: start };
+    case 'match':
+      return parseMatch(lines, start);
+    case 'raw':
+    case 'return':
+    case 'level':
+      return { node: { type: 'Raw', content: line.content, connective: line.connective }, nextIndex: start };
+    default:
+      throw new Error(`Unexpected nested statement: ${line.content}`);
+  }
 }
 
 function validateTopLevelConnectives(ast: ASTNode[]) {

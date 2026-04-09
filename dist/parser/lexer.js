@@ -32,9 +32,9 @@ function parenDepth(s) {
             inStr = true;
             strChar = ch;
         }
-        else if (ch === '(')
+        else if (ch === '(' || ch === '[' || ch === '{')
             d++;
-        else if (ch === ')')
+        else if (ch === ')' || ch === ']' || ch === '}')
             d--;
     }
     return d;
@@ -198,7 +198,12 @@ function lexFL(text) {
         }
         // ── let variable binding ──────────────────────────────────────────────────
         if (/^let\s+/.test(line)) {
-            const [cleaned, conn] = extractConnective(line);
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
             parsed.push({ type: 'setVar', content: cleaned, connective: conn });
             continue;
         }

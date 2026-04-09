@@ -2,29 +2,45 @@
 // src/codegen/index.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateJSFromAST = generateJSFromAST;
+const typecheck_1 = require("./typecheck");
+const expr_1 = require("../parser/expr");
 function generateJSFromAST(nodes, runtime) {
+    (0, typecheck_1.typecheckExecutableProgram)(nodes);
     let code = runtime + '\n';
-    // Fold the full program into one expression
-    const expr = foldNodes(nodes);
+    const ctx = buildCodegenContext(nodes);
+    const expr = foldNodes(nodes, ctx);
     code += `\n// ── Evaluate program as single logical expression ──\n`;
     code += `const _result = ${expr};\n`;
     code += `if (!_resolve(_result)) throw new Error('Program does not hold: ' + _describe(_result));\n`;
     code += `console.log('\\n✓ Program holds: ' + _describe(_result));\n`;
     return code;
 }
-// ── Fold a list of nodes into one nested JS expression ──────────────────────
-function foldNodes(nodes) {
-    return foldNodesWithMode(nodes, false);
+function buildCodegenContext(nodes) {
+    const variants = new Map();
+    for (const node of nodes) {
+        if (node.type !== 'TypeDecl')
+            continue;
+        for (const variant of node.variants) {
+            variants.set(variant.name, {
+                typeName: node.name,
+                fieldNames: variant.fields.map(field => field.name),
+            });
+        }
+    }
+    return { variants };
 }
-function foldNodesWithMode(nodes, symbolicMode) {
+function foldNodes(nodes, ctx) {
+    return foldNodesWithMode(nodes, false, ctx);
+}
+function foldNodesWithMode(nodes, symbolicMode, ctx) {
     const meaningful = nodes.filter(n => !(n.type === 'Raw' && n.content.trim().length === 0));
     if (meaningful.length === 0)
         return 'atom(true, "∅")';
-    let acc = nodeToExpr(meaningful[meaningful.length - 1], symbolicMode);
+    let acc = nodeToExpr(meaningful[meaningful.length - 1], symbolicMode, ctx);
     for (let i = meaningful.length - 2; i >= 0; i--) {
         const node = meaningful[i];
         const conn = node.connective ?? '→';
-        const left = nodeToExpr(node, symbolicMode);
+        const left = nodeToExpr(node, symbolicMode, ctx);
         acc = applyConnective(conn, left, acc);
     }
     return acc;
@@ -37,128 +53,271 @@ function applyConnective(conn, left, right) {
         default: return `seq(()=>${left}, ()=>${right})`;
     }
 }
-// ── Convert a single node to a JS expression string ─────────────────────────
-function nodeToExpr(node, symbolicMode = false) {
+function nodeToExpr(node, symbolicMode, ctx) {
     switch (node.type) {
-        case 'Theorem': return generateTheorem(node);
-        case 'Proof': return generateProof(node);
-        case 'Lemma': return generateLemma(node);
-        case 'Definition': return generateDefinition(node);
+        case 'Theorem': return generateTheorem(node, ctx);
+        case 'Proof': return generateProof(node, ctx);
+        case 'Lemma': return generateLemma(node, ctx);
+        case 'Definition': return generateDefinition(node, ctx);
         case 'Struct': return generateStruct(node);
         case 'TypeDecl': return generateTypeDecl(node);
+        case 'FnDecl': return generateFnDecl(node, ctx);
         case 'Assert':
             return symbolicMode
                 ? `assertExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
-                : `assertExpr(${generateExpr(node.expr)})`;
+                : `assertExpr(atom(() => !!(${generateRuntimeExpr(node.expr)}), ${JSON.stringify(renderExprSource(node.expr))}))`;
         case 'Given': return `assumeExpr(${JSON.stringify(renderExprSource(node.expr))})`;
         case 'Assume': return `assumeExpr(${JSON.stringify(renderExprSource(node.expr))})`;
         case 'Conclude':
             return symbolicMode
                 ? `concludeExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
-                : `concludeExpr(${generateExpr(node.expr)})`;
+                : `concludeExpr(atom(() => ${generateRuntimeExpr(node.expr)}, ${JSON.stringify(renderExprSource(node.expr))}))`;
         case 'Apply': return `applyLemma(${JSON.stringify(node.target)})`;
         case 'SetVar': return generateSetVar(node);
-        case 'Induction': return `unsupportedExpr(${JSON.stringify(renderExprSource(node.fold))}, "Iteration is kernel-only in FuturLang. Use 'fl check' for fold and induction.")`;
-        case 'Match': return `unsupportedExpr(${JSON.stringify('match')}, "Pattern matching is checker-only in FuturLang. Use 'fl check' for match proofs.")`;
-        case 'FnDecl': throw new Error('FnDecl should be desugared before code generation');
-        case 'Raw': return `atom(true, ${JSON.stringify(node.content)})`;
+        case 'Induction':
+            return symbolicMode
+                ? `atom(true, ${JSON.stringify(renderExprSource(node.fold))})`
+                : `unsupportedExpr(${JSON.stringify(renderExprSource(node.fold))}, "Iteration is kernel-only in FuturLang. Use 'fl check' for induction.")`;
+        case 'Match':
+            return symbolicMode
+                ? `atom(true, ${JSON.stringify(`match ${renderExprSource(node.scrutinee)}`)})`
+                : `execExpr(() => { ${generateMatchStatement(node, ctx, true)} }, "match")`;
+        case 'Raw':
+            return symbolicMode
+                ? `atom(true, ${JSON.stringify(node.content)})`
+                : `execExpr(() => { ${generateRawNode(node)} }, ${JSON.stringify(node.content)})`;
         default: {
             const _ = node;
             throw new Error('Unhandled node type');
         }
     }
 }
-// ── Block generators ─────────────────────────────────────────────────────────
-function generateTheorem(node) {
-    const inner = foldNodesWithMode(node.body, blockUsesSymbolicProofMode(node.body));
+function generateTheorem(node, ctx) {
+    const inner = foldNodesWithMode(node.body, true, ctx);
     return `theorem(${JSON.stringify(node.name)}, () => ${inner})`;
 }
-function generateProof(node) {
-    const inner = foldNodesWithMode(node.body, blockUsesSymbolicProofMode(node.body));
+function generateProof(node, ctx) {
+    const inner = foldNodesWithMode(node.body, true, ctx);
     return `proof(${JSON.stringify(node.name)}, () => ${inner})`;
 }
-function generateLemma(node) {
-    const inner = foldNodesWithMode(node.body, blockUsesSymbolicProofMode(node.body));
+function generateLemma(node, ctx) {
+    const inner = foldNodesWithMode(node.body, true, ctx);
     return `lemma(${JSON.stringify(node.name)}, () => ${inner})`;
 }
-function generateDefinition(node) {
-    const inner = node.body.length > 0 ? foldNodes(node.body) : 'atom(true, "defined")';
+function generateDefinition(node, ctx) {
+    const inner = node.body.length > 0 ? foldNodes(node.body, ctx) : 'atom(true, "defined")';
     return `definition(${JSON.stringify(node.name)}, () => ${inner})`;
 }
 function generateStruct(node) {
     return `struct_(${JSON.stringify(node.name)}, ${JSON.stringify(node.fields)})`;
 }
 function generateTypeDecl(node) {
-    return `atom(true, ${JSON.stringify(`type(${node.name})`)})`;
+    const meta = Object.fromEntries(node.variants.map(variant => [variant.name, variant.fields.map(field => field.name)]));
+    return `defineType(${JSON.stringify(node.name)}, ${JSON.stringify(meta)})`;
+}
+function generateFnDecl(node, ctx) {
+    const params = node.params.map(param => param.name).join(', ');
+    const body = generateExecutableStatements(node.body, ctx);
+    const meta = {
+        params: node.params,
+        returnType: node.returnType,
+    };
+    return `defineFn(${JSON.stringify(node.name)}, function ${node.name}(${params}) {\n${indent(body, 1)}\n}, ${JSON.stringify(meta)})`;
 }
 function generateSetVar(node) {
     const label = node.varType ? `${node.varName}: ${node.varType}` : node.varName;
     if (node.value !== null) {
-        // Only pass as raw JS for simple literals (true, false, numbers, quoted strings)
-        const isSimple = /^(true|false|-?\d+(\.\d+)?|"[^"]*"|'[^']*')$/.test(node.value.trim());
-        const safeVal = isSimple ? node.value : JSON.stringify(node.value);
-        return `setVar(${JSON.stringify(node.varName)}, ${safeVal}, ${JSON.stringify(label)})`;
+        return `setVar(${JSON.stringify(node.varName)}, () => (${compileSetVarValue(node.value)}), ${JSON.stringify(label)})`;
     }
-    return `setVar(${JSON.stringify(node.varName)}, undefined, ${JSON.stringify(label)})`;
+    return `setVar(${JSON.stringify(node.varName)}, () => undefined, ${JSON.stringify(label)})`;
 }
-// ── Expression nodes ─────────────────────────────────────────────────────────
-function generateExpr(node) {
+function generateExecutableStatements(nodes, ctx) {
+    const lines = [];
+    for (const node of nodes) {
+        lines.push(generateExecutableNode(node, ctx));
+    }
+    return lines.join('\n');
+}
+function generateExecutableNode(node, ctx) {
     switch (node.type) {
-        case 'Atom': return generateAtom(node);
+        case 'SetVar':
+            return `let ${node.varName} = ${node.value === null ? 'undefined' : compileSetVarValue(node.value)};`;
+        case 'Assert':
+            return `_runtimeAssert(${generateRuntimeExpr(node.expr)}, ${JSON.stringify(renderExprSource(node.expr))});`;
+        case 'Conclude':
+            return `return ${generateRuntimeExpr(node.expr)};`;
+        case 'Match':
+            return generateMatchStatement(node, ctx, false);
+        case 'Raw':
+            return generateRawNode(node);
+        case 'Assume':
+        case 'Given':
+            return `/* assumption: ${renderExprSource(node.expr)} */`;
+        case 'Apply':
+            return `applyLemma(${JSON.stringify(node.target)});`;
+        default:
+            return `throw new Error(${JSON.stringify(`Unsupported executable statement: ${node.type}`)});`;
+    }
+}
+function generateMatchStatement(node, ctx, asExpression) {
+    const scrutineeVar = `_match_${Math.random().toString(36).slice(2, 8)}`;
+    const lines = [`const ${scrutineeVar} = ${generateRuntimeExpr(node.scrutinee)};`];
+    node.cases.forEach((matchCase, index) => {
+        const condition = patternCondition(matchCase.pattern, scrutineeVar);
+        const prefix = index === 0 ? 'if' : 'else if';
+        lines.push(`${prefix} (${condition}) {`);
+        const bindings = patternBindings(matchCase.pattern, scrutineeVar, ctx);
+        if (bindings)
+            lines.push(indent(bindings, 1));
+        const branch = generateExecutableStatements(matchCase.body, ctx);
+        lines.push(indent(branch, 1));
+        lines.push('}');
+    });
+    lines.push('else { throw new Error("Non-exhaustive match"); }');
+    if (asExpression)
+        lines.push('return true;');
+    return lines.join('\n');
+}
+function patternCondition(pattern, target) {
+    switch (pattern.kind) {
+        case 'wildcard':
+            return 'true';
+        case 'list_nil':
+            return `Array.isArray(${target}) && ${target}.length === 0`;
+        case 'list_cons':
+            return `Array.isArray(${target}) && ${target}.length > 0`;
+        case 'variant':
+            if (pattern.constructor === 'true' || pattern.constructor === 'false') {
+                return `${target} === ${pattern.constructor}`;
+            }
+            return `${target} && ${target}.tag === ${JSON.stringify(pattern.constructor)}`;
+    }
+}
+function patternBindings(pattern, target, ctx) {
+    switch (pattern.kind) {
+        case 'wildcard':
+        case 'list_nil':
+            return '';
+        case 'list_cons':
+            return [
+                pattern.head !== '_' ? `const ${pattern.head} = ${target}[0];` : '',
+                `const ${pattern.tail} = ${target}.slice(1);`,
+            ].filter(Boolean).join('\n');
+        case 'variant': {
+            const info = ctx.variants.get(pattern.constructor);
+            if (!info)
+                return '';
+            const lines = [];
+            pattern.bindings.forEach((binding, index) => {
+                if (!binding || binding === '_')
+                    return;
+                const fieldName = info.fieldNames[index];
+                if (!fieldName)
+                    return;
+                lines.push(`const ${binding} = ${target}[${JSON.stringify(fieldName)}];`);
+            });
+            return lines.join('\n');
+        }
+    }
+}
+function generateRawNode(node) {
+    const trimmed = node.content.trim();
+    if (trimmed.startsWith('return '))
+        return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
+    if (trimmed === 'return')
+        return 'return;';
+    return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
+}
+function generateRuntimeExpr(node) {
+    switch (node.type) {
+        case 'Atom':
+            return generateRuntimeExprFromString(node.condition);
+        case 'And':
+            return `(${generateRuntimeExpr(node.left)} && ${generateRuntimeExpr(node.right)})`;
+        case 'Or':
+            return `(${generateRuntimeExpr(node.left)} || ${generateRuntimeExpr(node.right)})`;
+        case 'Implies':
+            return `((!(${generateRuntimeExpr(node.left)})) || (${generateRuntimeExpr(node.right)}))`;
+        case 'Iff':
+            return `((${generateRuntimeExpr(node.left)}) === (${generateRuntimeExpr(node.right)}))`;
+        case 'Not':
+            return `(!(${generateRuntimeExpr(node.operand)}))`;
+        case 'If':
+            return `((${generateRuntimeExpr(node.condition)}) ? (${generateRuntimeExpr(node.thenBranch)}) : (${generateRuntimeExpr(node.elseBranch)}))`;
+        case 'LetExpr':
+            return `(() => { const ${node.name} = ${generateRuntimeExpr(node.value)}; return ${generateRuntimeExpr(node.body)}; })()`;
+        case 'Lambda':
+            return `((${node.params.map(param => param.name).join(', ')}) => ${generateRuntimeExpr(node.body)})`;
+        case 'Fold':
+            return `_fold(${compileSetVarValue(node.sequence)}, ${compileSetVarValue(node.init)}, ${compileSetVarValue(node.fn)})`;
+        case 'Quantified':
         case 'SetBuilder':
         case 'IndexedUnion':
-            return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported set-builder notation in the JS evaluator. Use 'fl check' for categorical proof checking.")`;
-        case 'And': return `and(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
-        case 'Or': return `or(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
-        case 'Implies': return `implies(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
-        case 'Iff': return `iff(${generateExpr(node.left)}, ${generateExpr(node.right)})`;
-        case 'Not': return `not(${generateExpr(node.operand)})`;
-        case 'Quantified':
-            return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported quantified notation in the JS evaluator. Use 'fl check' for categorical proof checking.")`;
-        case 'Fold':
-            return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Iteration is kernel-only in FuturLang. Use 'fl check' for fold and induction.")`;
+            return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported expression in executable mode")`;
         default: {
             const _ = node;
             throw new Error('Unhandled expr node type');
         }
     }
 }
-function generateAtom(node) {
-    const c = node.condition.trim();
-    const lbl = JSON.stringify(c);
-    if (node.atomKind === 'opaque') {
-        return `unsupportedExpr(${lbl}, "JS evaluator only supports the strict logical subset. Use 'fl check' for advanced mathematical claims.")`;
+function generateRuntimeExprFromString(value) {
+    const trimmed = value.trim();
+    if (!trimmed)
+        return 'undefined';
+    return normalizeJsEquality(trimmed);
+}
+function compileSetVarValue(value) {
+    try {
+        return generateRuntimeExpr((0, expr_1.parseExpr)(value));
     }
-    // Already a string literal
-    if (node.atomKind === 'string') {
-        return `atom(true, ${lbl})`;
+    catch {
+        return generateRuntimeExprFromString(value);
     }
-    if (c === 'true')
-        return `atom(true,  "true")`;
-    if (c === 'false')
-        return `atom(false, "false")`;
-    // Contains mathematical notation that isn't valid JS — treat as an asserted claim
-    const MATH_CHARS = /[∀∃⇒≥≤≠∈∉⊆⊇∪∩∧∨¬→↔λΣ∑∏√∞·]/;
-    // Also catch |X| cardinality, [G:H] index notation, set-builder {x | ...}
-    const MATH_NOTATION = /\|[^|]|\bmod\b|divides|\{.*\|/;
-    if (MATH_CHARS.test(c) || MATH_NOTATION.test(c)) {
-        return `unsupportedExpr(${lbl}, "Unsupported mathematical notation in the JS evaluator. Use 'fl check' for categorical proof checking.")`;
-    }
-    // Relational JS expression
-    if (/[=<>!]/.test(c) || /\b(===|!==|>=|<=)\b/.test(c)) {
-        // Guard against single = (assignment) — use == for equality checks
-        const safe = c.replace(/(?<![=!<>])=(?!=)/g, '==');
-        try {
-            // Quick syntax check
-            new Function(`return !!(${safe})`);
-            return `atom(() => { try { return !!(${safe}); } catch(e) { return true; } }, ${lbl})`;
+}
+function normalizeJsEquality(value) {
+    let result = '';
+    let inString = false;
+    let quote = '';
+    for (let index = 0; index < value.length; index++) {
+        const ch = value[index];
+        if (inString) {
+            result += ch;
+            if (ch === quote && value[index - 1] !== '\\') {
+                inString = false;
+                quote = '';
+            }
+            continue;
         }
-        catch {
-            return `atom(true, ${lbl})`;
+        if (ch === '"' || ch === "'") {
+            inString = true;
+            quote = ch;
+            result += ch;
+            continue;
         }
+        if (ch === '≥') {
+            result += '>=';
+            continue;
+        }
+        if (ch === '≤') {
+            result += '<=';
+            continue;
+        }
+        if (ch === '≠') {
+            result += '!=';
+            continue;
+        }
+        if (ch === '=' &&
+            value[index - 1] !== '=' &&
+            value[index - 1] !== '!' &&
+            value[index - 1] !== '<' &&
+            value[index - 1] !== '>' &&
+            value[index + 1] !== '=') {
+            result += '==';
+            continue;
+        }
+        result += ch;
     }
-    // Bare identifier
-    return `atom(() => !!${c}, ${lbl})`;
+    return result;
 }
 function renderExprSource(node) {
     switch (node.type) {
@@ -178,6 +337,12 @@ function renderExprSource(node) {
             return `(${renderExprSource(node.left)} ↔ ${renderExprSource(node.right)})`;
         case 'Not':
             return `¬${renderExprSource(node.operand)}`;
+        case 'If':
+            return `if ${renderExprSource(node.condition)} then ${renderExprSource(node.thenBranch)} else ${renderExprSource(node.elseBranch)}`;
+        case 'LetExpr':
+            return `let ${node.name} = ${renderExprSource(node.value)} in ${renderExprSource(node.body)}`;
+        case 'Lambda':
+            return `fn(${node.params.map(param => `${param.name}: ${param.type}`).join(', ')}) => ${renderExprSource(node.body)}`;
         case 'Quantified': {
             const symbol = node.quantifier === 'forall' ? '∀' : node.quantifier === 'exists' ? '∃' : '∃!';
             const binder = node.binderStyle === 'bounded'
@@ -197,8 +362,9 @@ function blockUsesSymbolicProofMode(nodes) {
     return nodes.some(node => node.type === 'Given' ||
         node.type === 'Assume' ||
         node.type === 'Apply' ||
-        node.type === 'Induction' ||
-        node.type === 'Conclude');
+        node.type === 'Induction');
 }
-// keep for compatibility
-function generateNode(node) { return nodeToExpr(node); }
+function indent(value, depth) {
+    const prefix = '  '.repeat(depth);
+    return value.split('\n').map(line => line.length > 0 ? `${prefix}${line}` : line).join('\n');
+}
