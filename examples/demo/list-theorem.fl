@@ -1,0 +1,11 @@
+theorem ListCaseProof() {
+  given(xs ∈ List(Nat)) →
+  assert(xs ∈ List(Nat))
+} ↔
+
+proof ListCaseProof() {
+  match xs {
+    case [] => conclude(xs ∈ List(Nat))
+    case [x, ...rest] => conclude(xs ∈ List(Nat))
+  }
+}

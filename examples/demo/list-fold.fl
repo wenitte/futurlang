@@ -1,0 +1,7 @@
+theorem ListFoldSum() {
+  assert(fold(xs, 0, +))
+} ↔
+
+proof ListFoldSum() {
+  conclude(fold(xs, 0, +))
+}

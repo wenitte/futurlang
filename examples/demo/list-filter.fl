@@ -1,0 +1,10 @@
+fn filter(xs ∈ List(A), p ∈ A -> Bool) -> List(A) {
+  match xs {
+    case [] => conclude([])
+    case [x, ...rest] =>
+      match p(x) {
+        case true => conclude([x, ...filter(rest, p)])
+        case false => conclude(filter(rest, p))
+      }
+  }
+}

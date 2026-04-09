@@ -1,0 +1,6 @@
+fn sum(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [x, ...rest] => conclude(x + sum(rest))
+  }
+}

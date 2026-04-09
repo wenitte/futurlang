@@ -1,0 +1,6 @@
+fn bad(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [x, ...rest] => conclude(1 + bad(xs))
+  }
+}

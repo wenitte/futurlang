@@ -1,0 +1,6 @@
+fn length(xs ∈ List(Nat)) -> Nat {
+  match xs {
+    case [] => conclude(0)
+    case [_, ...rest] => conclude(1 + length(rest))
+  }
+}

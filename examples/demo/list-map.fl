@@ -1,0 +1,6 @@
+fn map(xs ∈ List(A), f ∈ A -> B) -> List(B) {
+  match xs {
+    case [] => conclude([])
+    case [x, ...rest] => conclude([f(x), ...map(rest, f)])
+  }
+}
