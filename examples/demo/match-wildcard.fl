@@ -1,0 +1,16 @@
+type Shape =
+  | Circle(r ∈ Real)
+  | Rectangle(w ∈ Real, h ∈ Real)
+} →
+
+theorem WildMatch() {
+  given(s ∈ Shape) →
+  assert(s ∈ Shape)
+} ↔
+
+proof WildMatch() {
+  match s {
+    case Circle(r) => conclude(s ∈ Shape)
+    case _ => conclude(s ∈ Shape)
+  }
+}

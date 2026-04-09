@@ -4,9 +4,9 @@ import { BlockConnective } from './ast';
 
 export interface ParsedLine {
   type:
-    | 'theorem' | 'definition' | 'struct' | 'proof' | 'lemma'
+    | 'theorem' | 'definition' | 'struct' | 'typeDecl' | 'proof' | 'lemma' | 'fn'
     | 'assert'  | 'given'      | 'assume'   | 'conclude' | 'apply'
-    | 'setVar'  | 'blockEnd'   | 'level'    | 'return' | 'raw';
+    | 'setVar'  | 'blockEnd'   | 'level'    | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw';
   content: string;
   name?: string;
   // Connective trailing the line/block-end: → ∧ ↔ or null
@@ -77,10 +77,32 @@ export function lexFL(text: string): ParsedLine[] {
         name: cleaned.match(/^struct\s+(\w+)/)?.[1] ?? 'unnamed', connective: conn });
       continue;
     }
+    if (/^type\b/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'typeDecl', content: cleaned,
+        name: cleaned.match(/^type\s+(\w+)/)?.[1] ?? 'unnamed', connective: conn });
+      continue;
+    }
     if (/^proof\b/.test(line)) {
       const [cleaned, conn] = extractConnective(line);
       const name = cleaned.match(/^proof\s+(\w+)/)?.[1] ?? 'unnamed';
       parsed.push({ type: 'proof', content: cleaned, name, connective: conn });
+      continue;
+    }
+    if (/^fn\b/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      const name = cleaned.match(/^fn\s+(\w+)/)?.[1] ?? 'unnamed';
+      parsed.push({ type: 'fn', content: cleaned, name, connective: conn });
+      continue;
+    }
+    if (/^induction\s*\(/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'induction', content: cleaned, connective: conn });
+      continue;
+    }
+    if (/^match\s+/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'match', content: cleaned, connective: conn });
       continue;
     }
     if (/^lemma\b/.test(line)) {
@@ -164,6 +186,23 @@ export function lexFL(text: string): ParsedLine[] {
       }
       const [cleaned, conn] = extractConnective(combined);
       parsed.push({ type: 'setVar', content: cleaned, connective: conn });
+      continue;
+    }
+
+    if (/^base\s*:/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'base', content: cleaned, connective: conn });
+      continue;
+    }
+
+    if (/^step\s*:/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'step', content: cleaned, connective: conn });
+      continue;
+    }
+    if (/^case\b/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'case', content: cleaned, connective: conn });
       continue;
     }
 

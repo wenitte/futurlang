@@ -1,0 +1,7 @@
+theorem FoldSum() {
+  assert(fold([0..n], 0, +))
+} ↔
+
+proof FoldSum() {
+  conclude(fold([0..n], 0, +))
+}

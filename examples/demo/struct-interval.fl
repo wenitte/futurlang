@@ -1,0 +1,13 @@
+struct Interval {
+  lo ∈ Real,
+  hi ∈ Real
+} →
+
+theorem IntervalFieldProjection() {
+  given(i ∈ Interval) →
+  assert(i.lo ∈ Real)
+} ↔
+
+proof IntervalFieldProjection() {
+  conclude(i.lo ∈ Real)
+}

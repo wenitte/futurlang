@@ -41,6 +41,10 @@ export type KernelRule =
   | 'FUNCTOR_INTRO'
   | 'FUNCTOR_ID'
   | 'FUNCTOR_COMPOSE'
+  | 'FOLD_ELIM'
+  | 'STRUCT_INTRO'
+  | 'STRUCT_ELIM'
+  | 'MATCH_EXHAUSTIVE'
   | 'STRUCTURAL';
 
 export type ProofState = 'PROVED' | 'PENDING' | 'FAILED';
@@ -78,7 +82,7 @@ export interface DerivationNode {
 
 export interface ProofStepTrace {
   step: number;
-  kind: 'assume' | 'assert' | 'conclude' | 'apply' | 'setVar' | 'raw';
+  kind: 'assume' | 'assert' | 'conclude' | 'apply' | 'setVar' | 'induction' | 'match' | 'raw';
   claim: string;
   rule: KernelRule;
   state: ProofState;

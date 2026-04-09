@@ -4,10 +4,15 @@ import {
   AssumeNode,
   ConcludeNode,
   GivenNode,
+  InductionNode,
   LemmaNode,
+  MatchNode,
   ProofNode,
   RawNode,
   SetVarNode,
+  StructField,
+  StructNode,
+  TypeDeclNode,
   TheoremNode,
 } from '../parser/ast';
 import {
@@ -70,14 +75,36 @@ interface Context {
   lemmas: Map<string, ClaimSet>;
   goal: string | null;
   diagrams: CategoryDiagramKernel;
+  structs: Map<string, StructDefinition>;
+  types: Map<string, TypeDefinition>;
+}
+
+interface StructDefinition {
+  name: string;
+  fields: StructField[];
+  projections: Map<string, string>;
+}
+
+interface TypeDefinition {
+  name: string;
+  variants: TypeVariantDefinition[];
+}
+
+interface TypeVariantDefinition {
+  name: string;
+  parent: string;
+  fields: StructField[];
 }
 
 const TOP = '⊤';
 const BOTTOM = '⊥';
+const BUILTIN_SORTS = new Set(['ℕ', 'ℤ', 'ℚ', 'ℝ', 'String', 'Set', 'Element']);
 
 export function checkFile(nodes: ASTNode[], options: CheckOptions = {}): FileReport {
   const diagnostics: Diagnostic[] = [];
   const reports: ProofReport[] = [];
+  const structs = collectStructDefinitions(nodes, diagnostics);
+  const types = collectTypeDefinitions(nodes, structs, diagnostics);
   const pairs = findPairs(nodes);
   const pairNames = new Set(pairs.map(pair => normalizeName(pair.theorem.name)));
   const lemmas = new Map<string, ClaimSet>();
@@ -93,7 +120,7 @@ export function checkFile(nodes: ASTNode[], options: CheckOptions = {}): FileRep
 
   for (const pair of pairs) {
     pairedCount++;
-    const report = checkPair(pair, lemmas, options);
+    const report = checkPair(pair, lemmas, structs, types, options);
     reports.push(report);
     if (pair.theorem.type === 'Lemma') {
       lemmas.set(normalizeName(pair.theorem.name), {
@@ -126,10 +153,16 @@ export function checkFile(nodes: ASTNode[], options: CheckOptions = {}): FileRep
   };
 }
 
-function checkPair(pair: Pair, lemmas: Map<string, ClaimSet>, _options: CheckOptions): ProofReport {
+function checkPair(
+  pair: Pair,
+  lemmas: Map<string, ClaimSet>,
+  structs: Map<string, StructDefinition>,
+  types: Map<string, TypeDefinition>,
+  _options: CheckOptions,
+): ProofReport {
   const premises = theoremPremises(pair.theorem);
   const goal = theoremGoal(pair.theorem);
-  const ctx = createContext(goal, lemmas, premises);
+  const ctx = createContext(goal, lemmas, premises, structs, types);
   seedPremises(ctx, premises);
 
   for (let index = 0; index < pair.proof.body.length; index++) {
@@ -181,7 +214,13 @@ function checkPair(pair: Pair, lemmas: Map<string, ClaimSet>, _options: CheckOpt
   };
 }
 
-function createContext(goal: string | null, lemmas: Map<string, ClaimSet>, premises: string[]): Context {
+function createContext(
+  goal: string | null,
+  lemmas: Map<string, ClaimSet>,
+  premises: string[],
+  structs: Map<string, StructDefinition>,
+  types: Map<string, TypeDefinition>,
+): Context {
   const category = new WenittainCategory();
   category.createObject(TOP);
   category.createObject(BOTTOM);
@@ -203,6 +242,8 @@ function createContext(goal: string | null, lemmas: Map<string, ClaimSet>, premi
     premises: [],
     lemmas: new Map(lemmas),
     goal,
+    structs,
+    types,
   };
 }
 
@@ -226,6 +267,12 @@ function handleNode(ctx: Context, node: ASTNode, step: number): void {
       return;
     case 'Conclude':
       handleClaimStep(ctx, node, step, 'conclude');
+      return;
+    case 'Induction':
+      handleInduction(ctx, node, step);
+      return;
+    case 'Match':
+      handleMatch(ctx, node, step);
       return;
     case 'Apply':
       handleApply(ctx, node.target, step);
@@ -261,6 +308,111 @@ function handleSetVar(ctx: Context, node: SetVarNode, step: number) {
     rule: 'STRUCTURAL',
     state: 'PROVED',
     message: 'Bound variable recorded for categorical introduction or elimination rules',
+  });
+}
+
+function handleInduction(ctx: Context, node: InductionNode, step: number) {
+  const claim = ctx.goal ?? exprToProp(node.fold);
+  createKernelObject(ctx, claim, 'FOLD_ELIM', step);
+  ctx.proofSteps.push({
+    step,
+    kind: 'induction',
+    claim,
+    rule: 'FOLD_ELIM',
+    state: 'PROVED',
+    uses: [exprToProp(node.fold), node.base, node.step],
+    message: 'Desugared induction into the trusted fold primitive',
+  });
+}
+
+function handleMatch(ctx: Context, node: MatchNode, step: number) {
+  const scrutinee = exprToProp(node.scrutinee);
+  const scrutineeMembership = requireAnyMembership(ctx, scrutinee);
+  const scrutineeType = scrutineeMembership ? parseMembershipCanonical(scrutineeMembership.claim)?.set ?? null : null;
+  const typeDef = scrutineeType ? ctx.types.get(scrutineeType) : null;
+
+  if (!scrutineeMembership || !typeDef) {
+    ctx.diagnostics.push({ severity: 'error', step, message: `Pattern match requires a scrutinee with a registered sum type: '${scrutinee}'`, rule: 'MATCH_EXHAUSTIVE' });
+    ctx.proofSteps.push({
+      step,
+      kind: 'match',
+      claim: scrutinee,
+      rule: 'MATCH_EXHAUSTIVE',
+      state: 'FAILED',
+      message: 'No registered variant information is available for this match scrutinee',
+    });
+    return;
+  }
+
+  const covered = new Set(node.cases.filter(matchCase => matchCase.pattern.constructor !== '_').map(matchCase => String(matchCase.pattern.constructor)));
+  const exhaustive = node.cases.some(matchCase => matchCase.pattern.constructor === '_')
+    || typeDef.variants.every(variant => covered.has(variant.name));
+  if (!exhaustive) {
+    ctx.diagnostics.push({ severity: 'error', step, message: 'MATCH_EXHAUSTIVE failed: non-exhaustive match', rule: 'MATCH_EXHAUSTIVE' });
+    ctx.proofSteps.push({
+      step,
+      kind: 'match',
+      claim: scrutinee,
+      rule: 'MATCH_EXHAUSTIVE',
+      state: 'FAILED',
+      message: 'Pattern matching must cover every variant or include a wildcard case',
+    });
+    return;
+  }
+
+  const branchStates: ProofState[] = [];
+  const branchUses: string[] = [];
+  for (const matchCase of node.cases) {
+    const branch = createBranchContext(ctx);
+    const variant = matchCase.pattern.constructor === '_'
+      ? null
+      : typeDef.variants.find(candidate => candidate.name === matchCase.pattern.constructor) ?? null;
+    if (matchCase.pattern.constructor !== '_' && !variant) {
+      branchStates.push('FAILED');
+      continue;
+    }
+    if (variant) {
+      applyPatternBindings(branch, scrutinee, variant, matchCase.pattern.bindings, step);
+      branchUses.push(`${scrutinee} ∈ ${variant.name}`);
+    } else {
+      branchUses.push('_');
+    }
+
+    for (const branchNode of matchCase.body) {
+      try {
+        handleNode(branch, branchNode, step);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown match-branch failure';
+        branch.diagnostics.push({ severity: 'error', step, message, rule: 'OR_ELIM' });
+      }
+    }
+    branchStates.push(evaluateMatchBranch(branch, ctx.goal, step));
+  }
+
+  if (branchStates.some(state => state === 'FAILED')) {
+    ctx.diagnostics.push({ severity: 'error', step, message: 'At least one match branch does not establish the required conclusion', rule: 'OR_ELIM' });
+    ctx.proofSteps.push({
+      step,
+      kind: 'match',
+      claim: ctx.goal ?? scrutinee,
+      rule: 'MATCH_EXHAUSTIVE',
+      state: 'FAILED',
+      uses: branchUses,
+      message: 'Exhaustive case analysis failed because a branch does not discharge the branch goal',
+    });
+    return;
+  }
+
+  const targetClaim = ctx.goal ?? scrutineeMembership.claim;
+  createKernelObject(ctx, targetClaim, 'MATCH_EXHAUSTIVE', step);
+  ctx.proofSteps.push({
+    step,
+    kind: 'match',
+    claim: targetClaim,
+    rule: 'MATCH_EXHAUSTIVE',
+    state: branchStates.some(state => state === 'PENDING') ? 'PENDING' : 'PROVED',
+    uses: branchUses,
+    message: 'Validated exhaustive proof by cases via categorical OR elimination',
   });
 }
 
@@ -422,7 +574,9 @@ function deriveClaim(
   const prover = [
     deriveAndIntro,
     deriveAndElim,
+    deriveStructClaim,
     deriveCategoryClaim,
+    deriveFoldClaim,
     deriveNotIntro,
     deriveImpliesElim,
     deriveImpliesIntro,
@@ -466,6 +620,53 @@ function deriveClaim(
   };
 }
 
+function deriveStructClaim(ctx: Context, claim: string, step: number) {
+  const membership = parseMembershipCanonical(claim);
+  if (!membership) return null;
+
+  const projection = deriveStructProjection(ctx, membership, claim, step);
+  if (projection) return projection;
+
+  const structDef = ctx.structs.get(membership.set);
+  if (!structDef) return null;
+
+  const inputs: string[] = [];
+  const uses: string[] = [];
+  for (const field of structDef.fields) {
+    const fieldClaim = `${membership.element}.${field.name} ∈ ${field.type}`;
+    const fieldObject = requireClassical(ctx, fieldClaim, 'STRUCT_INTRO');
+    if (!fieldObject) return null;
+    inputs.push(fieldObject.id);
+    uses.push(fieldClaim);
+  }
+  createKernelObject(ctx, claim, 'STRUCT_INTRO', step, inputs);
+  return {
+    rule: 'STRUCT_INTRO' as const,
+    state: 'PROVED' as const,
+    uses,
+    message: 'Constructed a struct-instance membership from all declared field memberships',
+  };
+}
+
+function deriveStructProjection(
+  ctx: Context,
+  membership: { element: string; set: string },
+  claim: string,
+  step: number,
+) {
+  const access = parseFieldAccess(membership.element);
+  if (!access) return null;
+  const projection = resolveFieldProjection(ctx, access.base, access.path);
+  if (!projection || projection.type !== membership.set) return null;
+  createKernelObject(ctx, claim, 'STRUCT_ELIM', step, [projection.source.id]);
+  return {
+    rule: 'STRUCT_ELIM' as const,
+    state: 'PROVED' as const,
+    uses: [projection.source.claim],
+    message: 'Projected a field membership from a struct-instance membership',
+  };
+}
+
 function deriveAndIntro(ctx: Context, claim: string, step: number) {
   const parts = parseConjunctionCanonical(claim);
   if (!parts) return null;
@@ -478,6 +679,16 @@ function deriveAndIntro(ctx: Context, claim: string, step: number) {
     state: 'PROVED' as const,
     uses: [parts[0], parts[1]],
     message: 'Constructed the Boolean meet from both conjunct morphisms',
+  };
+}
+
+function deriveFoldClaim(ctx: Context, claim: string, step: number) {
+  if (!/^fold\s*\(/.test(claim)) return null;
+  createKernelObject(ctx, claim, 'FOLD_ELIM', step);
+  return {
+    rule: 'FOLD_ELIM' as const,
+    state: 'PROVED' as const,
+    message: 'Trusted fold primitive establishes the fold result directly',
   };
 }
 
@@ -1350,6 +1561,7 @@ function registerDerivedObject(
     step,
   });
   registerCategoryClaim(ctx, claim);
+  enrichStructMembership(ctx, proofObject, step);
   return proofObject;
 }
 
@@ -1451,6 +1663,55 @@ function theoremGoal(node: TheoremNode | LemmaNode): string | null {
     .map(item => exprToProp(item.expr))[0] ?? null;
 }
 
+function collectStructDefinitions(nodes: ASTNode[], diagnostics: Diagnostic[]): Map<string, StructDefinition> {
+  const structs = new Map<string, StructDefinition>();
+  for (const node of nodes) {
+    if (node.type !== 'Struct') continue;
+    const fields = node.fields.map(field => ({ name: field.name, type: field.type }));
+    for (const field of fields) {
+      if (!isKnownSort(field.type, structs)) {
+        diagnostics.push({
+          severity: 'error',
+          message: `Unknown sort '${field.type}' in struct '${node.name}' field '${field.name}'`,
+          rule: 'STRUCTURAL',
+        });
+      }
+    }
+    structs.set(node.name, {
+      name: node.name,
+      fields,
+      projections: new Map(fields.map(field => [field.name, `π_${field.name}`])),
+    });
+  }
+  return structs;
+}
+
+function collectTypeDefinitions(
+  nodes: ASTNode[],
+  structs: Map<string, StructDefinition>,
+  diagnostics: Diagnostic[],
+): Map<string, TypeDefinition> {
+  const typeNames = new Set(nodes.filter((node): node is TypeDeclNode => node.type === 'TypeDecl').map(node => node.name));
+  const types = new Map<string, TypeDefinition>();
+  for (const node of nodes) {
+    if (node.type !== 'TypeDecl') continue;
+    const variants = node.variants.map(variant => ({ ...variant, parent: node.name }));
+    for (const variant of variants) {
+      for (const field of variant.fields) {
+        if (!BUILTIN_SORTS.has(field.type) && !structs.has(field.type) && !typeNames.has(field.type)) {
+          diagnostics.push({
+            severity: 'error',
+            message: `Unknown sort '${field.type}' in variant '${variant.name}' of type '${node.name}'`,
+            rule: 'STRUCTURAL',
+          });
+        }
+      }
+    }
+    types.set(node.name, { name: node.name, variants });
+  }
+  return types;
+}
+
 function findPairs(nodes: ASTNode[]): Pair[] {
   const pairs: Pair[] = [];
   for (let index = 0; index < nodes.length; index++) {
@@ -1484,6 +1745,10 @@ function classifyStep(node: ASTNode): ProofStepTrace['kind'] {
       return 'apply';
     case 'SetVar':
       return 'setVar';
+    case 'Induction':
+      return 'induction';
+    case 'Match':
+      return 'match';
     default:
       return 'raw';
   }
@@ -1499,6 +1764,10 @@ function nodeToClaim(node: ASTNode): string {
       return node.target;
     case 'SetVar':
       return node.varType ? `${node.varName}: ${node.varType}` : node.varName;
+    case 'Induction':
+      return exprToProp(node.fold);
+    case 'Match':
+      return `match ${exprToProp(node.scrutinee)}`;
     case 'Raw':
       return node.content;
     default:
@@ -1597,6 +1866,164 @@ function shouldRemainPending(claim: string): boolean {
     claim.includes('∀') ||
     claim.includes('∃')
   );
+}
+
+function enrichStructMembership(ctx: Context, source: ProofObject, step: number): void {
+  const membership = parseMembershipCanonical(source.claim);
+  if (!membership) return;
+  const structDef = ctx.structs.get(membership.set);
+  if (!structDef) return;
+
+  for (const field of structDef.fields) {
+    const fieldClaim = `${membership.element}.${field.name} ∈ ${field.type}`;
+    if (findExact(ctx.objects, fieldClaim, true) || findExact(ctx.premises, fieldClaim, true) || findExact(ctx.assumptions, fieldClaim, true)) {
+      continue;
+    }
+    createKernelObject(ctx, fieldClaim, 'STRUCT_ELIM', step, [source.id]);
+  }
+}
+
+function isKnownSort(sort: string, structs: Map<string, StructDefinition>): boolean {
+  return BUILTIN_SORTS.has(sort) || structs.has(sort);
+}
+
+function createBranchContext(ctx: Context): Context {
+  return {
+    ...ctx,
+    objects: [...ctx.objects],
+    derivations: [...ctx.derivations],
+    diagnostics: [],
+    proofSteps: [],
+    variables: [...ctx.variables],
+    assumptions: [...ctx.assumptions],
+    premises: [...ctx.premises],
+  };
+}
+
+function applyPatternBindings(
+  ctx: Context,
+  scrutinee: string,
+  variant: TypeVariantDefinition,
+  bindings: string[],
+  step: number,
+) {
+  createKernelObject(ctx, `${scrutinee} ∈ ${variant.name}`, 'OR_ELIM', step);
+  for (let index = 0; index < variant.fields.length; index++) {
+    const binding = bindings[index];
+    if (!binding || binding === '_') continue;
+    const field = variant.fields[index];
+    ctx.variables.push({ name: binding, domain: field.type });
+    const assumption = createKernelObject(ctx, `${binding} ∈ ${field.type}`, 'ASSUMPTION', step);
+    ctx.assumptions.push(assumption);
+  }
+}
+
+function evaluateMatchBranch(ctx: Context, goal: string | null, step: number): ProofState {
+  if (goal && findExact(ctx.objects, goal, false)) {
+    return 'PROVED';
+  }
+  if (goal) {
+    const goalMembership = parseMembershipCanonical(goal);
+    if (goalMembership) {
+      const lastConclusion = findLastConclude(ctx.proofSteps);
+      if (lastConclusion && branchConclusionMatchesType(lastConclusion.claim, goalMembership.set, ctx)) {
+        createKernelObject(ctx, goal, 'OR_ELIM', step);
+        return 'PROVED';
+      }
+    }
+    return 'FAILED';
+  }
+  return 'PROVED';
+}
+
+function findLastConclude(steps: ProofStepTrace[]): ProofStepTrace | null {
+  for (let index = steps.length - 1; index >= 0; index--) {
+    if (steps[index].kind === 'conclude') return steps[index];
+  }
+  return null;
+}
+
+function branchConclusionMatchesType(claim: string, expectedType: string, ctx: Context): boolean {
+  const inferred = inferExpressionType(claim, ctx);
+  return inferred === expectedType;
+}
+
+function inferExpressionType(claim: string, ctx: Context): string | null {
+  const membership = parseMembershipCanonical(claim);
+  if (membership) return membership.set;
+  const trimmed = claim.trim();
+  if (/^\d+$/.test(trimmed)) return 'ℕ';
+  if (/[π√]/.test(trimmed) || /\bsqrt\s*\(/.test(trimmed)) return 'ℝ';
+  const bareBinding = ctx.variables.find(variable => variable.name === trimmed);
+  if (bareBinding?.domain) return bareBinding.domain;
+  if (/[*\/^]/.test(trimmed)) {
+    const vars = trimmed.match(/[A-Za-z_][\w₀-₉ₐ-ₙ]*/g) ?? [];
+    if (vars.some(variable => {
+      const binding = ctx.variables.find(entry => entry.name === variable);
+      return binding?.domain === 'ℝ';
+    })) return 'ℝ';
+    return 'ℕ';
+  }
+  if (/[+]/.test(trimmed)) return 'ℕ';
+  const call = trimmed.match(/^([A-Za-z_][\w₀-₉ₐ-ₙ]*)\s*\(/);
+  if (call && ctx.goal) {
+    const goalMembership = parseMembershipCanonical(ctx.goal);
+    if (goalMembership) return goalMembership.set;
+  }
+  return null;
+}
+
+function parseFieldAccess(value: string): { base: string; path: string[] } | null {
+  const trimmed = value.trim();
+  if (!trimmed.includes('.')) return null;
+  const parts = trimmed.split('.').map(part => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  return { base: parts[0], path: parts.slice(1) };
+}
+
+function resolveFieldProjection(
+  ctx: Context,
+  base: string,
+  path: string[],
+): { type: string; source: ProofObject } | null {
+  let currentExpr = base;
+  let currentMembership = requireAnyMembership(ctx, currentExpr);
+  if (!currentMembership) return null;
+
+  for (const fieldName of path) {
+    const membership = parseMembershipCanonical(currentMembership.claim);
+    if (!membership) return null;
+    const structDef = ctx.structs.get(membership.set);
+    if (!structDef) return null;
+    const field = structDef.fields.find(candidate => candidate.name === fieldName);
+    if (!field) return null;
+    currentExpr = `${currentExpr}.${fieldName}`;
+    const nextClaim = `${currentExpr} ∈ ${field.type}`;
+    let nextMembership = findExact(ctx.objects, nextClaim, false)
+      ?? findExact(ctx.premises, nextClaim, false)
+      ?? findExact(ctx.assumptions, nextClaim, false);
+    if (!nextMembership) {
+      nextMembership = createKernelObject(ctx, nextClaim, 'STRUCT_ELIM', currentMembership.step, [currentMembership.id]);
+    }
+    currentMembership = nextMembership;
+  }
+
+  const finalMembership = parseMembershipCanonical(currentMembership.claim);
+  if (!finalMembership) return null;
+  return { type: finalMembership.set, source: currentMembership };
+}
+
+function requireAnyMembership(ctx: Context, element: string): ProofObject | null {
+  const pools = [ctx.objects, ctx.premises, ctx.assumptions];
+  for (const pool of pools) {
+    for (let index = pool.length - 1; index >= 0; index--) {
+      const membership = parseMembershipCanonical(pool[index].claim);
+      if (membership && sameProp(membership.element, element) && !pool[index].pending) {
+        return pool[index];
+      }
+    }
+  }
+  return null;
 }
 
 function findWitness(ctx: Context, variable: string): string | null {

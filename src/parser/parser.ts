@@ -6,20 +6,21 @@
 // program can be folded into a single logical expression.
 
 import { ParsedLine } from './lexer';
-import { parseExpr } from './expr';
+import { normalizeSurfaceSyntax, parseExpr } from './expr';
 import {
   ASTNode, BlockConnective,
-  TheoremNode, DefinitionNode, StructNode, ProofNode, LemmaNode,
-  AssertNode, GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode,
+  TheoremNode, DefinitionNode, StructField, StructNode, TypeDeclNode, TypeVariant, PatternNode, MatchCaseNode, MatchNode, ProofNode, LemmaNode, FnDeclNode, FnParam,
+  AssertNode, GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode, InductionNode, FoldNode,
 } from './ast';
 
-type BlockNode = TheoremNode | DefinitionNode | StructNode | ProofNode | LemmaNode;
+type BlockNode = TheoremNode | DefinitionNode | StructNode | TypeDeclNode | ProofNode | LemmaNode | FnDeclNode;
 
 export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
   const ast: ASTNode[] = [];
   const stack: BlockNode[] = [];
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     switch (line.type) {
 
       // ── Block openers ──────────────────────────────────────────────────────
@@ -35,12 +36,28 @@ export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
         const node: StructNode = { type: 'Struct', name: line.name!, fields: [], connective: null };
         stack.push(node); break;
       }
+      case 'typeDecl': {
+        const node: TypeDeclNode = { type: 'TypeDecl', name: line.name!, variants: [], connective: null };
+        stack.push(node); break;
+      }
       case 'proof': {
         const node: ProofNode = { type: 'Proof', name: line.name!, body: [], connective: null };
         stack.push(node); break;
       }
       case 'lemma': {
         const node: LemmaNode = { type: 'Lemma', name: line.name!, body: [], connective: null };
+        stack.push(node); break;
+      }
+      case 'fn': {
+        const signature = parseFnSignature(line.content);
+        const node: FnDeclNode = {
+          type: 'FnDecl',
+          name: signature.name,
+          params: signature.params,
+          returnType: signature.returnType,
+          body: [],
+          connective: null,
+        };
         stack.push(node); break;
       }
 
@@ -51,10 +68,21 @@ export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
         // The connective on the } belongs to this block
         finished.connective = line.connective;
 
+        if (finished.type === 'Struct') {
+          finished.fields = (finished.fields as unknown as string[]).map(field => parseStructField(field));
+        }
+        if (finished.type === 'TypeDecl') {
+          finished.variants = (finished.variants as unknown as string[]).map(variant => parseTypeVariant(variant));
+        }
+
+        const lowered = finished.type === 'FnDecl' ? desugarFnDecl(finished) : [finished];
+
         if (stack.length === 0) {
-          ast.push(finished);
+          ast.push(...lowered);
         } else {
-          pushToBlock(stack[stack.length - 1], finished);
+          for (const node of lowered) {
+            pushToBlock(stack[stack.length - 1], node);
+          }
         }
         break;
       }
@@ -88,13 +116,31 @@ export function parseLinesToAST(lines: ParsedLine[]): ASTNode[] {
         const node = parseSetVar(line.content, line.connective);
         pushOrTop(stack, ast, node); break;
       }
+      case 'induction': {
+        const parsed = parseInduction(lines, i);
+        i = parsed.nextIndex;
+        pushOrTop(stack, ast, parsed.node);
+        break;
+      }
+      case 'match': {
+        const parsed = parseMatch(lines, i);
+        i = parsed.nextIndex;
+        pushOrTop(stack, ast, parsed.node);
+        break;
+      }
+      case 'base':
+      case 'step':
+      case 'case':
+        throw new Error(`${line.type}: may only appear inside induction(...)`);
       case 'return':
       case 'level':
       case 'raw': {
         const node: RawNode = { type: 'Raw', content: line.content, connective: line.connective };
         // Struct fields go into fields[], others go into body
         if (stack.length > 0 && stack[stack.length - 1].type === 'Struct') {
-          (stack[stack.length - 1] as StructNode).fields.push(line.content);
+          (stack[stack.length - 1] as unknown as { fields: string[] }).fields.push(line.content);
+        } else if (stack.length > 0 && stack[stack.length - 1].type === 'TypeDecl') {
+          (stack[stack.length - 1] as unknown as { variants: string[] }).variants.push(line.content);
         } else {
           pushOrTop(stack, ast, node);
         }
@@ -119,11 +165,11 @@ function pushOrTop(stack: BlockNode[], ast: ASTNode[], node: ASTNode) {
 }
 
 function pushToBlock(block: BlockNode, node: ASTNode) {
-  if (block.type === 'Struct') {
+  if (block.type === 'Struct' || block.type === 'TypeDecl') {
     // structs don't have a body[] for statement nodes — skip
     return;
   }
-  (block as TheoremNode | DefinitionNode | ProofNode | LemmaNode).body.push(node);
+  (block as TheoremNode | DefinitionNode | ProofNode | LemmaNode | FnDeclNode).body.push(node);
 }
 
 function extractCallBody(content: string, keyword: string): string {
@@ -175,6 +221,280 @@ function parseCallExpr(content: string, keyword: string) {
   }
 }
 
+function parseInduction(lines: ParsedLine[], start: number): { node: InductionNode; nextIndex: number } {
+  const line = lines[start];
+  const match = line.content.match(/^induction\s*\(([\s\S]+)\)\s*\{$/);
+  if (!match) {
+    throw new Error('Malformed induction block');
+  }
+  const iterator = match[1].trim();
+  let base: string | null = null;
+  let step: string | null = null;
+  let connective: BlockConnective = line.connective;
+  let cursor = start + 1;
+
+  while (cursor < lines.length) {
+    const current = lines[cursor];
+    if (current.type === 'blockEnd') {
+      connective = current.connective;
+      break;
+    }
+    if (current.type === 'base') {
+      base = current.content.replace(/^base\s*:\s*/, '').trim();
+    } else if (current.type === 'step') {
+      step = current.content.replace(/^step\s*:\s*/, '').trim();
+    } else {
+      throw new Error(`Unexpected line inside induction block: ${current.content}`);
+    }
+    cursor++;
+  }
+
+  if (cursor >= lines.length || lines[cursor].type !== 'blockEnd') {
+    throw new Error('Unclosed induction block');
+  }
+  if (!base || !step) {
+    throw new Error('induction(...) requires both base: and step:');
+  }
+
+  const fold: FoldNode = {
+    type: 'Fold',
+    sequence: `[0..${iterator}]`,
+    init: `proof(${base})`,
+    fn: `step_fn(${step})`,
+    sugar: 'induction',
+  };
+
+  return {
+    node: {
+      type: 'Induction',
+      iterator,
+      fold,
+      base,
+      step,
+      connective,
+    },
+    nextIndex: cursor,
+  };
+}
+
+function parseFnSignature(content: string): { name: string; params: FnParam[]; returnType: string } {
+  const match = content.match(/^fn\s+(\w+)\s*\(([\s\S]*)\)\s*->\s*([^{]+)\s*\{$/);
+  if (!match) {
+    throw new Error(`Malformed fn signature: ${content}`);
+  }
+  const [, name, rawParams, returnType] = match;
+  const params = rawParams.trim()
+    ? splitFnParams(rawParams).map(parseFnParam)
+    : [];
+  return {
+    name,
+    params,
+    returnType: returnType.trim(),
+  };
+}
+
+function splitFnParams(value: string): string[] {
+  const params: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (ch === ',' && depth === 0) {
+      params.push(value.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  const final = value.slice(start).trim();
+  if (final) params.push(final);
+  return params;
+}
+
+function parseFnParam(value: string): FnParam {
+  const match = value.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)$/);
+  if (!match) {
+    throw new Error(`Malformed fn parameter: ${value}`);
+  }
+  return { name: match[1], type: normalizeSortName(match[2]) };
+}
+
+function parseStructField(value: string): StructField {
+  const trimmed = value.trim().replace(/,+$/, '').trim();
+  const match = trimmed.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)$/);
+  if (!match) {
+    throw new Error(`Malformed struct field: ${value}`);
+  }
+  return {
+    name: match[1],
+    type: normalizeSortName(match[2]),
+  };
+}
+
+function parseTypeVariant(value: string): TypeVariant {
+  const trimmed = value.trim().replace(/,+$/, '').trim();
+  const match = trimmed.match(/^\|\s*(\w[\w₀-₉ₐ-ₙ]*)\s*\(([\s\S]*)\)\s*$/);
+  if (!match) {
+    throw new Error(`Malformed type variant: ${value}`);
+  }
+  const [, name, rawFields] = match;
+  const fields = rawFields.trim() ? splitFnParams(rawFields).map(parseStructField) : [];
+  return { name, fields };
+}
+
+function desugarFnDecl(node: FnDeclNode): [TheoremNode, ProofNode] {
+  const conclusion = findFnConclusion(node.body);
+  const matchBody = findTopLevelMatch(node.body);
+  if (!conclusion && !matchBody) {
+    throw new Error(`fn '${node.name}' requires a conclude(...) statement`);
+  }
+
+  const goalExpr = conclusion
+    ? conclusion.expr
+    : parseExpr(`${node.name}(${node.params.map(param => param.name).join(', ')}) ∈ ${normalizeSortName(node.returnType)}`);
+
+  const theoremBody: ASTNode[] = node.params.map(param => ({
+    type: 'Given' as const,
+    expr: parseExpr(`${param.name} ∈ ${param.type}`),
+    connective: '→' as const,
+  }));
+  theoremBody.push({
+    type: 'Assert' as const,
+    expr: goalExpr,
+    connective: null,
+  });
+
+  const theorem: TheoremNode = {
+    type: 'Theorem',
+    name: node.name,
+    body: theoremBody,
+    connective: '↔',
+  };
+
+  const proofBody: ASTNode[] = conclusion
+    ? [
+      {
+        type: 'Assume',
+        expr: conclusion.expr,
+        connective: node.body.length > 0 ? '→' : null,
+      },
+      ...node.body,
+    ]
+    : node.body;
+
+  const proof: ProofNode = {
+    type: 'Proof',
+    name: node.name,
+    body: proofBody,
+    connective: node.connective,
+  };
+
+  return [theorem, proof];
+}
+
+function normalizeSortName(value: string): string {
+  return normalizeSurfaceSyntax(value).trim();
+}
+
+function findFnConclusion(body: ASTNode[]): ConcludeNode | null {
+  for (let i = body.length - 1; i >= 0; i--) {
+    const node = body[i];
+    if (node.type === 'Conclude') {
+      return node;
+    }
+  }
+  return null;
+}
+
+function findTopLevelMatch(body: ASTNode[]): MatchNode | null {
+  for (const node of body) {
+    if (node.type === 'Match') return node;
+  }
+  return null;
+}
+
+function parseMatch(lines: ParsedLine[], start: number): { node: MatchNode; nextIndex: number } {
+  const line = lines[start];
+  const match = line.content.match(/^match\s+([\s\S]+)\s*\{$/);
+  if (!match) {
+    throw new Error('Malformed match block');
+  }
+  const scrutinee = parseExpr(match[1].trim());
+  const cases: MatchCaseNode[] = [];
+  let connective: BlockConnective = line.connective;
+  let cursor = start + 1;
+
+  while (cursor < lines.length) {
+    const current = lines[cursor];
+    if (current.type === 'blockEnd') {
+      connective = current.connective;
+      break;
+    }
+    if (current.type !== 'case') {
+      throw new Error(`Unexpected line inside match block: ${current.content}`);
+    }
+    cases.push(parseMatchCase(current.content));
+    cursor++;
+  }
+
+  if (cursor >= lines.length || lines[cursor].type !== 'blockEnd') {
+    throw new Error('Unclosed match block');
+  }
+
+  return {
+    node: {
+      type: 'Match',
+      scrutinee,
+      cases,
+      connective,
+    },
+    nextIndex: cursor,
+  };
+}
+
+function parseMatchCase(content: string): MatchCaseNode {
+  const match = content.match(/^case\s+(.+?)\s*=>\s*([\s\S]+)$/);
+  if (!match) {
+    throw new Error(`Malformed case clause: ${content}`);
+  }
+  return {
+    pattern: parsePattern(match[1].trim()),
+    body: [parseInlineStatement(match[2].trim())],
+  };
+}
+
+function parsePattern(value: string): PatternNode {
+  if (value === '_') {
+    return { constructor: '_', bindings: [] };
+  }
+  const match = value.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*\(([\s\S]*)\)\s*$/);
+  if (!match) {
+    throw new Error(`Malformed pattern: ${value}`);
+  }
+  const [, constructor, rawBindings] = match;
+  const bindings = rawBindings.trim()
+    ? splitFnParams(rawBindings).map(binding => binding.trim()).map(binding => binding === '_' ? '_' : binding)
+    : [];
+  return { constructor, bindings };
+}
+
+function parseInlineStatement(content: string): ASTNode {
+  if (/^conclude\s*\(/.test(content)) {
+    return { type: 'Conclude', expr: parseCallExpr(content, 'conclude'), connective: null };
+  }
+  if (/^assert\s*\(/.test(content)) {
+    return { type: 'Assert', expr: parseCallExpr(content, 'assert'), connective: null };
+  }
+  if (/^assume\s*\(/.test(content)) {
+    return { type: 'Assume', expr: parseCallExpr(content, 'assume'), connective: null };
+  }
+  if (/^apply\s*\(/.test(content)) {
+    const target = content.match(/^apply\s*\((.+)\)/)?.[1]?.trim() ?? content;
+    return { type: 'Apply', target, connective: null };
+  }
+  return { type: 'Raw', content, connective: null };
+}
+
 function validateTopLevelConnectives(ast: ASTNode[]) {
   for (let i = 0; i < ast.length - 1; i++) {
     const node = ast[i];
@@ -188,8 +508,10 @@ function isTopLevelBlock(node: ASTNode): node is BlockNode {
   return node.type === 'Theorem' ||
     node.type === 'Definition' ||
     node.type === 'Struct' ||
+    node.type === 'TypeDecl' ||
     node.type === 'Proof' ||
-    node.type === 'Lemma';
+    node.type === 'Lemma' ||
+    node.type === 'FnDecl';
 }
 
 function describeTopLevelNode(node: BlockNode): string {
@@ -197,8 +519,10 @@ function describeTopLevelNode(node: BlockNode): string {
     case 'Theorem':
     case 'Definition':
     case 'Struct':
+    case 'TypeDecl':
     case 'Proof':
     case 'Lemma':
+    case 'FnDecl':
       return `${node.type.toLowerCase()} '${node.name}'`;
   }
 }

@@ -46,6 +46,83 @@ runTest('parseExpr preserves FuturLang connective syntax', () => {
   assert.equal(exprToProp(expr), 'x ∈ A → x ∈ B');
 });
 
+runTest('parseExpr recognizes fold and sigma sugar', () => {
+  const fold = parseExpr('fold(xs, 0, +)');
+  assert.equal(exprToProp(fold), 'fold(xs, 0, +)');
+  const sigma = parseExpr('Σ(i, 0, n)');
+  assert.equal(exprToProp(sigma), 'fold([0..n], 0, +)');
+});
+
+runTest('parser desugars fn declarations into theorem/proof pairs before checking', () => {
+  const ast = parseProgram(`
+fn double(n ∈ Nat) -> Nat {
+  conclude(n + n)
+}
+`);
+  assert.equal(ast.length, 2);
+  assert.equal(ast[0].type, 'Theorem');
+  assert.equal(ast[1].type, 'Proof');
+  if (ast[0].type !== 'Theorem' || ast[1].type !== 'Proof') {
+    throw new Error('fn did not desugar to theorem/proof');
+  }
+  assert.equal(ast[0].name, 'double');
+  assert.equal(ast[1].name, 'double');
+  assert.equal(ast[0].body[0].type, 'Given');
+  assert.equal(ast[0].body[ast[0].body.length - 1].type, 'Assert');
+  assert.equal(ast[1].body[0].type, 'Assume');
+  assert.equal(ast[1].body[1].type, 'Conclude');
+});
+
+runTest('parser captures struct field declarations as typed fields', () => {
+  const ast = parseProgram(`
+struct Point {
+  x ∈ Real,
+  y ∈ Real
+}
+`);
+  assert.equal(ast.length, 1);
+  assert.equal(ast[0].type, 'Struct');
+  if (ast[0].type !== 'Struct') {
+    throw new Error('struct did not parse');
+  }
+  assert.equal(ast[0].name, 'Point');
+  assert.deepEqual(ast[0].fields, [
+    { name: 'x', type: 'ℝ' },
+    { name: 'y', type: 'ℝ' },
+  ]);
+});
+
+runTest('parser captures type variants and match cases', () => {
+  const ast = parseProgram(`
+type Shape =
+  | Circle(r ∈ Real)
+  | Rectangle(w ∈ Real, h ∈ Real)
+} →
+
+theorem ShapeCase() {
+  given(s ∈ Shape) →
+  assert(s ∈ Shape)
+} ↔
+
+proof ShapeCase() {
+  match s {
+    case Circle(r) => conclude(s ∈ Shape)
+    case Rectangle(w, h) => conclude(s ∈ Shape)
+  }
+}
+`);
+  assert.equal(ast[0].type, 'TypeDecl');
+  if (ast[0].type !== 'TypeDecl') {
+    throw new Error('type did not parse');
+  }
+  assert.equal(ast[0].variants.length, 2);
+  assert.equal(ast[2].type, 'Proof');
+  if (ast[2].type !== 'Proof') {
+    throw new Error('proof missing');
+  }
+  assert.equal(ast[2].body[0].type, 'Match');
+});
+
 runTest('category proposition parsing recognizes morphisms and composites', () => {
   const morphism = parseMorphismDeclarationCanonical('f : A → B');
   assert.ok(morphism);
@@ -323,14 +400,133 @@ proof FunctorCompose() {
   assert.equal(report.state, 'PROVED');
 });
 
+runTest('checker proves fold as a trusted kernel primitive', () => {
+  const report = checkFile(parseProgram(`
+theorem FoldSum() {
+  assert(fold([0..n], 0, +))
+} ↔
+
+proof FoldSum() {
+  conclude(fold([0..n], 0, +))
+}
+`));
+  assert.equal(report.state, 'PROVED');
+  assert.equal(report.reports[0].proofSteps[0].rule, 'FOLD_ELIM');
+});
+
+runTest('checker desugars induction onto the fold kernel path', () => {
+  const report = checkFile(parseProgram(`
+theorem InductionSum() {
+  assert(SumTo(n))
+} ↔
+
+proof InductionSum() {
+  induction(n) {
+    base: SumTo(0)
+    step: given(SumTo(k)) → conclude(SumTo(k+1))
+  }
+}
+`));
+  assert.equal(report.state, 'PROVED');
+  assert.equal(report.reports[0].proofSteps[0].rule, 'FOLD_ELIM');
+});
+
+runTest('checker projects struct fields from struct membership', () => {
+  const report = checkFile(parseProgram(`
+struct Point {
+  x ∈ Real,
+  y ∈ Real
+} →
+
+theorem PointProjection() {
+  given(p ∈ Point) →
+  assert(p.x ∈ Real)
+} ↔
+
+proof PointProjection() {
+  conclude(p.x ∈ Real)
+}
+`));
+  assert.equal(report.state, 'PROVED');
+  assert.equal(report.reports[0].proofSteps[0].rule, 'STRUCT_ELIM');
+});
+
+runTest('checker introduces struct membership from field memberships', () => {
+  const report = checkFile(parseProgram(`
+struct Point {
+  x ∈ Real,
+  y ∈ Real
+} →
+
+theorem PointIntro() {
+  given(p.x ∈ Real) →
+  given(p.y ∈ Real) →
+  assert(p ∈ Point)
+} ↔
+
+proof PointIntro() {
+  conclude(p ∈ Point)
+}
+`));
+  assert.equal(report.state, 'PROVED');
+  assert.equal(report.reports[0].proofSteps[0].rule, 'STRUCT_INTRO');
+});
+
+runTest('checker validates exhaustive match and rejects incomplete coverage', () => {
+  const proved = checkFile(parseProgram(`
+type Shape =
+  | Circle(r ∈ Real)
+  | Rectangle(w ∈ Real, h ∈ Real)
+} →
+
+theorem ShapeCovered() {
+  given(s ∈ Shape) →
+  assert(s ∈ Shape)
+} ↔
+
+proof ShapeCovered() {
+  match s {
+    case Circle(r) => conclude(s ∈ Shape)
+    case Rectangle(w, h) => conclude(s ∈ Shape)
+  }
+}
+`));
+  assert.equal(proved.state, 'PROVED');
+  assert.equal(proved.reports[0].proofSteps[0].rule, 'MATCH_EXHAUSTIVE');
+
+  const failed = checkFile(parseProgram(`
+type Shape =
+  | Circle(r ∈ Real)
+  | Rectangle(w ∈ Real, h ∈ Real)
+} →
+
+theorem ShapeMiss() {
+  given(s ∈ Shape) →
+  assert(s ∈ Shape)
+} ↔
+
+proof ShapeMiss() {
+  match s {
+    case Circle(r) => conclude(s ∈ Shape)
+  }
+}
+`));
+  assert.equal(failed.state, 'FAILED');
+});
+
 runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
   const demoDir = path.resolve(__dirname, '../../examples/demo');
   const files = collectDemoFiles(demoDir);
+  const expectedStates = new Map<string, 'PROVED' | 'FAILED'>([
+    ['match-exhaustive-fail.fl', 'FAILED'],
+  ]);
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8');
     const report = checkFile(parseProgram(source));
     const label = path.relative(demoDir, file);
-    assert.equal(report.state, 'PROVED', label);
+    const expected = expectedStates.get(label) ?? 'PROVED';
+    assert.equal(report.state, expected, label);
+    if (expected !== 'PROVED') continue;
     for (const theoremReport of report.reports) {
       assert.equal(theoremReport.state, 'PROVED', `${label}:${theoremReport.name}`);
       assert.equal(theoremReport.pendingCount, 0, `${label}:${theoremReport.name}`);

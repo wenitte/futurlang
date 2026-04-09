@@ -1,0 +1,11 @@
+type Shape =
+  | Circle(r ∈ Real)
+  | Rectangle(w ∈ Real, h ∈ Real)
+} →
+
+fn area(s ∈ Shape) -> Real {
+  match s {
+    case Circle(r) => conclude(π * r^2)
+    case Rectangle(w, h) => conclude(w * h)
+  }
+}

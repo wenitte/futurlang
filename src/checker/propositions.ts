@@ -67,6 +67,8 @@ export function exprToProp(expr: ExprNode): string {
       return `{${expr.element} | ${expr.variable} ∈ ${expr.domain}}`;
     case 'IndexedUnion':
       return `∪${exprToProp(expr.builder)}`;
+    case 'Fold':
+      return `fold(${expr.sequence}, ${expr.init}, ${expr.fn})`;
     case 'And':     return `${exprToProp(expr.left)} ∧ ${exprToProp(expr.right)}`;
     case 'Or':      return `${exprToProp(expr.left)} ∨ ${exprToProp(expr.right)}`;
     case 'Implies': return `${exprToProp(expr.left)} → ${exprToProp(expr.right)}`;
@@ -423,6 +425,8 @@ function propKey(expr: ExprNode | CanonicalProp): string {
       const body = expr.body ? propKey(canonicalizeExpr(expr.body)) : '';
       return `${expr.quantifier}(${expr.binderStyle},${binder},${body})`;
     }
+    case 'Fold':
+      return `fold(${normalizeTerm(expr.sequence)},${normalizeTerm(expr.init)},${normalizeTerm(expr.fn)})`;
     case 'Atom':
       return canonicalAtomKey(canonicalizeAtom(expr.condition));
   }

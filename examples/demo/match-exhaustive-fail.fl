@@ -1,0 +1,15 @@
+type Shape =
+  | Circle(r ∈ Real)
+  | Rectangle(w ∈ Real, h ∈ Real)
+} →
+
+theorem BadMatch() {
+  given(s ∈ Shape) →
+  assert(s ∈ Shape)
+} ↔
+
+proof BadMatch() {
+  match s {
+    case Circle(r) => conclude(s ∈ Shape)
+  }
+}

@@ -45,6 +45,7 @@ function nodeToExpr(node, symbolicMode = false) {
         case 'Lemma': return generateLemma(node);
         case 'Definition': return generateDefinition(node);
         case 'Struct': return generateStruct(node);
+        case 'TypeDecl': return generateTypeDecl(node);
         case 'Assert':
             return symbolicMode
                 ? `assertExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
@@ -57,6 +58,9 @@ function nodeToExpr(node, symbolicMode = false) {
                 : `concludeExpr(${generateExpr(node.expr)})`;
         case 'Apply': return `applyLemma(${JSON.stringify(node.target)})`;
         case 'SetVar': return generateSetVar(node);
+        case 'Induction': return `unsupportedExpr(${JSON.stringify(renderExprSource(node.fold))}, "Iteration is kernel-only in FuturLang. Use 'fl check' for fold and induction.")`;
+        case 'Match': return `unsupportedExpr(${JSON.stringify('match')}, "Pattern matching is checker-only in FuturLang. Use 'fl check' for match proofs.")`;
+        case 'FnDecl': throw new Error('FnDecl should be desugared before code generation');
         case 'Raw': return `atom(true, ${JSON.stringify(node.content)})`;
         default: {
             const _ = node;
@@ -84,6 +88,9 @@ function generateDefinition(node) {
 function generateStruct(node) {
     return `struct_(${JSON.stringify(node.name)}, ${JSON.stringify(node.fields)})`;
 }
+function generateTypeDecl(node) {
+    return `atom(true, ${JSON.stringify(`type(${node.name})`)})`;
+}
 function generateSetVar(node) {
     const label = node.varType ? `${node.varName}: ${node.varType}` : node.varName;
     if (node.value !== null) {
@@ -108,6 +115,8 @@ function generateExpr(node) {
         case 'Not': return `not(${generateExpr(node.operand)})`;
         case 'Quantified':
             return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Unsupported quantified notation in the JS evaluator. Use 'fl check' for categorical proof checking.")`;
+        case 'Fold':
+            return `unsupportedExpr(${JSON.stringify(renderExprSource(node))}, "Iteration is kernel-only in FuturLang. Use 'fl check' for fold and induction.")`;
         default: {
             const _ = node;
             throw new Error('Unhandled expr node type');
@@ -176,6 +185,8 @@ function renderExprSource(node) {
                 : `${node.variable}: ${node.domain}`;
             return node.body ? `${symbol} ${binder}, ${renderExprSource(node.body)}` : `${symbol} ${binder}`;
         }
+        case 'Fold':
+            return `fold(${node.sequence}, ${node.init}, ${node.fn})`;
         default: {
             const _ = node;
             throw new Error('Unhandled expr node type');
@@ -186,6 +197,7 @@ function blockUsesSymbolicProofMode(nodes) {
     return nodes.some(node => node.type === 'Given' ||
         node.type === 'Assume' ||
         node.type === 'Apply' ||
+        node.type === 'Induction' ||
         node.type === 'Conclude');
 }
 // keep for compatibility

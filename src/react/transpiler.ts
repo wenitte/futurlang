@@ -43,6 +43,13 @@ function serializeNode(node: ASTNode): unknown {
         connective: node.connective,
         fields: node.fields,
       };
+    case 'TypeDecl':
+      return {
+        type: node.type,
+        name: node.name,
+        connective: node.connective,
+        variants: node.variants,
+      };
     case 'Assert':
     case 'Assume':
     case 'Conclude':
@@ -63,6 +70,16 @@ function serializeNode(node: ASTNode): unknown {
       };
     case 'Raw':
       return { type: node.type, connective: node.connective, content: node.content };
+    case 'Match':
+      return {
+        type: node.type,
+        connective: node.connective,
+        scrutinee: serializeExpr(node.scrutinee),
+        cases: node.cases.map(matchCase => ({
+          pattern: matchCase.pattern,
+          body: matchCase.body.map(serializeNode),
+        })),
+      };
     default:
       return node;
   }
@@ -163,13 +180,14 @@ function evaluateNode(node: ProgramNode, scope: Record<string, unknown>) {
       };
     }
     case 'Struct':
+    case 'TypeDecl':
       return {
         type: node.type,
         name: node.name,
         connective: node.connective,
         value: true,
         detail: null,
-        fields: node.fields,
+        fields: node.fields ?? node.variants,
       };
     case 'Assert':
     case 'Assume':
@@ -209,6 +227,14 @@ function evaluateNode(node: ProgramNode, scope: Record<string, unknown>) {
         value: true,
         detail: node.content,
         label: node.content,
+      };
+    case 'Match':
+      return {
+        type: node.type,
+        connective: node.connective,
+        value: false,
+        detail: 'Pattern matching is checker-only in the web runtime.',
+        label: 'match',
       };
     default:
       return {

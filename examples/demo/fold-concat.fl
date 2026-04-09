@@ -1,0 +1,7 @@
+theorem FoldConcat() {
+  assert(fold(xs, "", concat))
+} ↔
+
+proof FoldConcat() {
+  conclude(fold(xs, "", concat))
+}

@@ -1,0 +1,13 @@
+struct Point {
+  x ∈ Real,
+  y ∈ Real
+} →
+
+theorem PointFieldProjection() {
+  given(p ∈ Point) →
+  assert(p.x ∈ Real)
+} ↔
+
+proof PointFieldProjection() {
+  conclude(p.x ∈ Real)
+}

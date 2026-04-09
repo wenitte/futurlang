@@ -1,0 +1,16 @@
+type Result =
+  | Ok(v ∈ Nat)
+  | Err(msg ∈ String)
+} →
+
+theorem ResultValid() {
+  given(r ∈ Result) →
+  assert(r ∈ Result)
+} ↔
+
+proof ResultValid() {
+  match r {
+    case Ok(v) => conclude(r ∈ Result)
+    case Err(_) => conclude(r ∈ Result)
+  }
+}

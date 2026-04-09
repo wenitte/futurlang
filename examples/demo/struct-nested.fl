@@ -1,0 +1,19 @@
+struct Point {
+  x ∈ Real,
+  y ∈ Real
+} →
+
+struct Rectangle {
+  origin ∈ Point,
+  width ∈ Real,
+  height ∈ Real
+} →
+
+theorem RectangleOriginProjection() {
+  given(r ∈ Rectangle) →
+  assert(r.origin ∈ Point)
+} ↔
+
+proof RectangleOriginProjection() {
+  conclude(r.origin ∈ Point)
+}

@@ -1,0 +1,11 @@
+type Tree =
+  | Leaf(v ∈ Nat)
+  | Node(left ∈ Tree, right ∈ Tree)
+} →
+
+fn depth(t ∈ Tree) -> Nat {
+  match t {
+    case Leaf(_) => conclude(1)
+    case Node(l, r) => conclude(1 + max(depth(l), depth(r)))
+  }
+}

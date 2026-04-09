@@ -1,0 +1,13 @@
+fn double(n ∈ Nat) -> Nat {
+  conclude(n + n)
+} →
+
+theorem DoubleStable() {
+  given(n ∈ Nat) →
+  assert(double(n) -> double(n))
+} ↔
+
+proof DoubleStable() {
+  assume(double(n)) →
+  conclude(double(n))
+}

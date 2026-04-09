@@ -1,0 +1,10 @@
+theorem InductionSum() {
+  assert(SumTo(n))
+} ↔
+
+proof InductionSum() {
+  induction(n) {
+    base: SumTo(0)
+    step: given(SumTo(k)) → conclude(SumTo(k+1))
+  }
+}

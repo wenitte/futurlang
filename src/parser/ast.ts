@@ -52,6 +52,14 @@ export interface IndexedUnionNode {
   builder: SetBuilderNode;
 }
 
+export interface FoldNode {
+  type: 'Fold';
+  sequence: string;
+  init: string;
+  fn: string;
+  sugar?: 'fold' | 'sigma' | 'induction';
+}
+
 export interface AtomNode {
   type: 'Atom';
   condition: string;
@@ -68,6 +76,7 @@ export type ExprNode =
   | QuantifiedNode
   | SetBuilderNode
   | IndexedUnionNode
+  | FoldNode
   | AtomNode;
 
 // ── Statement-level AST nodes ───────────────────────────────────────────────
@@ -89,10 +98,37 @@ export interface DefinitionNode {
   connective: BlockConnective;
 }
 
+export interface StructField {
+  name: string;
+  type: string;
+}
+
+export interface TypeVariant {
+  name: string;
+  fields: StructField[];
+}
+
+export interface PatternNode {
+  constructor: string | '_';
+  bindings: string[];
+}
+
+export interface MatchCaseNode {
+  pattern: PatternNode;
+  body: ASTNode[];
+}
+
 export interface StructNode {
   type: 'Struct';
   name: string;
-  fields: string[];           // raw field lines, for now
+  fields: StructField[];
+  connective: BlockConnective;
+}
+
+export interface TypeDeclNode {
+  type: 'TypeDecl';
+  name: string;
+  variants: TypeVariant[];
   connective: BlockConnective;
 }
 
@@ -106,6 +142,20 @@ export interface ProofNode {
 export interface LemmaNode {
   type: 'Lemma';
   name: string;
+  body: ASTNode[];
+  connective: BlockConnective;
+}
+
+export interface FnParam {
+  name: string;
+  type: string;
+}
+
+export interface FnDeclNode {
+  type: 'FnDecl';
+  name: string;
+  params: FnParam[];
+  returnType: string;
   body: ASTNode[];
   connective: BlockConnective;
 }
@@ -154,18 +204,38 @@ export interface RawNode {
   connective: BlockConnective;
 }
 
+export interface InductionNode {
+  type: 'Induction';
+  iterator: string;
+  fold: FoldNode;
+  base: string;
+  step: string;
+  connective: BlockConnective;
+}
+
+export interface MatchNode {
+  type: 'Match';
+  scrutinee: ExprNode;
+  cases: MatchCaseNode[];
+  connective: BlockConnective;
+}
+
 export type ASTNode =
   | TheoremNode
   | DefinitionNode
   | StructNode
+  | TypeDeclNode
   | ProofNode
   | LemmaNode
+  | FnDeclNode
   | AssertNode
   | GivenNode
   | AssumeNode
   | ConcludeNode
   | ApplyNode
   | SetVarNode
+  | InductionNode
+  | MatchNode
   | RawNode;
 
 // The top-level program is a single chained expression built from these nodes.

@@ -1,0 +1,3 @@
+fn double(n ∈ Nat) -> Nat {
+  conclude(n + n)
+}

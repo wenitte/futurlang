@@ -348,6 +348,14 @@ class ExprParser {
 // ── Public API ────────────────────────────────────────────────────────────────
 function parseExpr(src) {
     const normalized = normalizeSurfaceSyntax(src).trim();
+    const fold = parseFoldExpr(normalized);
+    if (fold) {
+        return fold;
+    }
+    const sigma = parseSigmaExpr(normalized);
+    if (sigma) {
+        return sigma;
+    }
     const indexedUnion = parseIndexedUnionExpr(normalized);
     if (indexedUnion) {
         return indexedUnion;
@@ -361,6 +369,38 @@ function parseExpr(src) {
         return quantified;
     }
     return new ExprParser(tokenise(normalized)).parse();
+}
+function parseFoldExpr(value) {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('fold(') || !trimmed.endsWith(')'))
+        return null;
+    const inner = trimmed.slice(5, -1);
+    const args = splitTopLevelArgs(inner);
+    if (args.length !== 3)
+        return null;
+    return {
+        type: 'Fold',
+        sequence: args[0],
+        init: args[1],
+        fn: args[2],
+        sugar: 'fold',
+    };
+}
+function parseSigmaExpr(value) {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('Σ(') || !trimmed.endsWith(')'))
+        return null;
+    const inner = trimmed.slice(2, -1);
+    const args = splitTopLevelArgs(inner);
+    if (args.length !== 3)
+        return null;
+    return {
+        type: 'Fold',
+        sequence: `[${args[1]}..${args[2]}]`,
+        init: '0',
+        fn: '+',
+        sugar: 'sigma',
+    };
 }
 function parseQuantifiedExpr(value) {
     const trimmed = value.trim();
@@ -412,6 +452,36 @@ function findTopLevelComma(value, start) {
             return i;
     }
     return -1;
+}
+function splitTopLevelArgs(value) {
+    const args = [];
+    let start = 0;
+    let depth = 0;
+    let braceDepth = 0;
+    let bracketDepth = 0;
+    for (let i = 0; i < value.length; i++) {
+        const ch = value[i];
+        if (ch === '(')
+            depth++;
+        else if (ch === ')')
+            depth = Math.max(0, depth - 1);
+        else if (ch === '{')
+            braceDepth++;
+        else if (ch === '}')
+            braceDepth = Math.max(0, braceDepth - 1);
+        else if (ch === '[')
+            bracketDepth++;
+        else if (ch === ']')
+            bracketDepth = Math.max(0, bracketDepth - 1);
+        else if (ch === ',' && depth === 0 && braceDepth === 0 && bracketDepth === 0) {
+            args.push(value.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    const final = value.slice(start).trim();
+    if (final)
+        args.push(final);
+    return args;
 }
 function parseSetBuilderExpr(value) {
     const trimmed = value.trim();
