@@ -1,0 +1,20 @@
+fn double(n ∈ Nat) -> Nat {
+  conclude(n + n)
+} →
+
+fn clamp(x ∈ Real, lo ∈ Real, hi ∈ Real) -> Real {
+  assume(lo <= hi) →
+  conclude(max(lo, min(x, hi)))
+} →
+
+theorem DoubleIsPositive() {
+  let n = 4 →
+  let result = double(n) →
+  assert(result > 0)
+} →
+
+proof DoubleIsPositive() {
+  let n = 4 →
+  let result = double(n) →
+  conclude(result > 0)
+}

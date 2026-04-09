@@ -1,0 +1,5 @@
+{
+  "name": "myapp",
+  "main": "app.fl",
+  "backend": "_react"
+}
