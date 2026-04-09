@@ -1,0 +1,11 @@
+theorem MeasureMonotone() {
+  given(Measure(μ, Σ)) →
+  given(A ∈ Σ) →
+  given(B ∈ Σ) →
+  given(A ⊆ B) →
+  assert(μ(A) ≤ μ(B))
+} ↔
+
+proof MeasureMonotone() {
+  conclude(μ(A) ≤ μ(B))
+}

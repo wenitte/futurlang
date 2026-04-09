@@ -1,0 +1,10 @@
+theorem MeasureSubadditive() {
+  given(Measure(μ, Σ)) →
+  given(A ∈ Σ) →
+  given(B ∈ Σ) →
+  assert(μ(A ∪ B) ≤ μ(A) + μ(B))
+} ↔
+
+proof MeasureSubadditive() {
+  conclude(μ(A ∪ B) ≤ μ(A) + μ(B))
+}

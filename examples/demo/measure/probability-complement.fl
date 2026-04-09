@@ -1,0 +1,9 @@
+theorem ProbabilityComplement() {
+  given(ProbabilityMeasure(P, Σ, X)) →
+  given(A ∈ Σ) →
+  assert(P(complement(A, X)) = 1 - P(A))
+} ↔
+
+proof ProbabilityComplement() {
+  conclude(P(complement(A, X)) = 1 - P(A))
+}

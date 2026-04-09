@@ -1,0 +1,9 @@
+theorem SigmaClosedComplement() {
+  given(SigmaAlgebra(Σ, X)) →
+  given(A ∈ Σ) →
+  assert(complement(A, X) ∈ Σ)
+} ↔
+
+proof SigmaClosedComplement() {
+  conclude(complement(A, X) ∈ Σ)
+}

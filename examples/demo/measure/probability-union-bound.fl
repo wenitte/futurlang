@@ -1,0 +1,10 @@
+theorem ProbabilityUnionBound() {
+  given(ProbabilityMeasure(P, Σ, X)) →
+  given(A ∈ Σ) →
+  given(B ∈ Σ) →
+  assert(P(A ∪ B) ≤ P(A) + P(B))
+} ↔
+
+proof ProbabilityUnionBound() {
+  conclude(P(A ∪ B) ≤ P(A) + P(B))
+}

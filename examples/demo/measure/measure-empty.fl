@@ -1,0 +1,8 @@
+theorem MeasureEmpty() {
+  given(Measure(μ, Σ)) →
+  assert(μ(∅) = 0)
+} ↔
+
+proof MeasureEmpty() {
+  conclude(μ(∅) = 0)
+}

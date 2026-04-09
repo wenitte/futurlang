@@ -1,0 +1,10 @@
+theorem SigmaClosedUnion() {
+  given(SigmaAlgebra(Σ, X)) →
+  given(A ∈ Σ) →
+  given(B ∈ Σ) →
+  assert(A ∪ B ∈ Σ)
+} ↔
+
+proof SigmaClosedUnion() {
+  conclude(A ∪ B ∈ Σ)
+}

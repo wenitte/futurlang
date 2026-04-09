@@ -1,0 +1,9 @@
+theorem MeasurableComposition() {
+  given(Measurable(f, Σ_X, Σ_Y)) →
+  given(Measurable(g, Σ_Y, Σ_Z)) →
+  assert(Measurable(g ∘ f, Σ_X, Σ_Z))
+} ↔
+
+proof MeasurableComposition() {
+  conclude(Measurable(g ∘ f, Σ_X, Σ_Z))
+}

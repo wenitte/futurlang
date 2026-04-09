@@ -1,0 +1,11 @@
+theorem MeasureAdditive() {
+  given(Measure(μ, Σ)) →
+  given(A ∈ Σ) →
+  given(B ∈ Σ) →
+  given(A ∩ B = ∅) →
+  assert(μ(A ∪ B) = μ(A) + μ(B))
+} ↔
+
+proof MeasureAdditive() {
+  conclude(μ(A ∪ B) = μ(A) + μ(B))
+}

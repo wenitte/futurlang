@@ -1,0 +1,9 @@
+theorem MeasurablePreimage() {
+  given(Measurable(f, Σ_X, Σ_Y)) →
+  given(B ∈ Σ_Y) →
+  assert(preimage(f, B) ∈ Σ_X)
+} ↔
+
+proof MeasurablePreimage() {
+  conclude(preimage(f, B) ∈ Σ_X)
+}

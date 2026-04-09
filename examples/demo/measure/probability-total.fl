@@ -1,0 +1,8 @@
+theorem ProbabilityTotal() {
+  given(ProbabilityMeasure(P, Σ, X)) →
+  assert(P(X) = 1)
+} ↔
+
+proof ProbabilityTotal() {
+  conclude(P(X) = 1)
+}

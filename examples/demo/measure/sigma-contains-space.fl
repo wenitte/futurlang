@@ -1,0 +1,8 @@
+theorem SigmaContainsSpace() {
+  given(SigmaAlgebra(Σ, X)) →
+  assert(X ∈ Σ)
+} ↔
+
+proof SigmaContainsSpace() {
+  conclude(X ∈ Σ)
+}
