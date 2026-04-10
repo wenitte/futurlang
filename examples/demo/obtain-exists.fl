@@ -1,0 +1,9 @@
+theorem ObtainExists() {
+  given(∃ x ∈ S, x ∈ T) →
+  assert(∃ y ∈ T, y ∈ S)
+} ↔
+
+proof ObtainExists() {
+  obtain(a, ∃ x ∈ S, x ∈ T) →
+  conclude(∃ y ∈ T, y ∈ S)
+}

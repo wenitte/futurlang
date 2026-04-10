@@ -6,7 +6,8 @@ export interface ParsedLine {
   type:
     | 'theorem' | 'definition' | 'struct' | 'typeDecl' | 'proof' | 'lemma' | 'fn'
     | 'assert'  | 'given'      | 'assume'   | 'conclude' | 'apply'
-    | 'setVar'  | 'blockEnd'   | 'level'    | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw';
+    | 'setVar'  | 'blockEnd'   | 'level'    | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw'
+    | 'intro' | 'rewrite' | 'exact' | 'obtain';
   content: string;
   name?: string;
   // Connective trailing the line/block-end: → ∧ ↔ or null
@@ -175,6 +176,36 @@ export function lexFL(text: string): ParsedLine[] {
       const [cleaned, conn] = extractConnective(line);
       const target = cleaned.match(/^apply\s*\((.+)\)/)?.[1]?.trim() ?? cleaned;
       parsed.push({ type: 'apply', content: cleaned, name: target, connective: conn });
+      continue;
+    }
+
+    if (/^intro\s*\(/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'intro', content: cleaned, connective: conn });
+      continue;
+    }
+    if (/^rewrite\s*\(/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'rewrite', content: cleaned, connective: conn });
+      continue;
+    }
+    if (/^exact\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'exact', content: cleaned, connective: conn });
+      continue;
+    }
+
+    if (/^obtain\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'obtain', content: cleaned, connective: conn });
       continue;
     }
 

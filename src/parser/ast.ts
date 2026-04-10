@@ -260,6 +260,33 @@ export interface MatchNode {
   connective: BlockConnective;
 }
 
+export interface IntroNode {
+  type: 'Intro';
+  varName: string;
+  varType: string;
+  connective: BlockConnective;
+}
+
+export interface RewriteNode {
+  type: 'Rewrite';
+  hypothesis: string;   // name of the equality to rewrite with
+  direction: 'ltr' | 'rtl';
+  connective: BlockConnective;
+}
+
+export interface ExactNode {
+  type: 'Exact';
+  expr: ExprNode;
+  connective: BlockConnective;
+}
+
+export interface ObtainNode {
+  type: 'Obtain';
+  varName: string;
+  source: string;   // the existential claim to destructure, e.g. "∃ x ∈ S, P(x)"
+  connective: BlockConnective;
+}
+
 export type ASTNode =
   | TheoremNode
   | DefinitionNode
@@ -276,6 +303,10 @@ export type ASTNode =
   | SetVarNode
   | InductionNode
   | MatchNode
-  | RawNode;
+  | RawNode
+  | IntroNode
+  | RewriteNode
+  | ExactNode
+  | ObtainNode;
 
 // The top-level program is a single chained expression built from these nodes.

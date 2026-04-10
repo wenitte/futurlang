@@ -113,6 +113,42 @@ function parseLinesToAST(lines, options = {}) {
                 pushOrTop(stack, ast, node);
                 break;
             }
+            case 'intro': {
+                const inner = line.content.replace(/^intro\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const colonMatch = inner.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*[:\s]\s*(.+)$/);
+                const memMatch = inner.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)$/);
+                const m = colonMatch ?? memMatch;
+                const varName = m?.[1] ?? inner;
+                const varType = m?.[2]?.trim() ?? '';
+                const node = { type: 'Intro', varName, varType, connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'rewrite': {
+                const inner = line.content.replace(/^rewrite\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const parts = inner.split(',').map(s => s.trim());
+                const hyp = parts[0];
+                const direction = parts[1] === 'rtl' ? 'rtl' : 'ltr';
+                const node = { type: 'Rewrite', hypothesis: hyp, direction, connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'exact': {
+                const expr = parseCallExpr(line.content, 'exact');
+                const node = { type: 'Exact', expr, connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'obtain': {
+                // obtain(varName, ∃ x ∈ S, P(x))
+                const inner = line.content.replace(/^obtain\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const commaIdx = inner.indexOf(',');
+                const varName = commaIdx >= 0 ? inner.slice(0, commaIdx).trim() : inner;
+                const source = commaIdx >= 0 ? inner.slice(commaIdx + 1).trim() : '';
+                const node = { type: 'Obtain', varName, source, connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
             case 'setVar': {
                 const node = parseSetVar(line.content, line.connective);
                 pushOrTop(stack, ast, node);
@@ -537,6 +573,26 @@ function parseNestedStatement(lines, start) {
         }
         case 'setVar':
             return { node: parseSetVar(line.content, line.connective), nextIndex: start };
+        case 'intro': {
+            const inner = line.content.replace(/^intro\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+            const colonMatch = inner.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*[:\s]\s*(.+)$/);
+            const memMatch = inner.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)$/);
+            const m = colonMatch ?? memMatch;
+            const varName = m?.[1] ?? inner;
+            const varType = m?.[2]?.trim() ?? '';
+            return { node: { type: 'Intro', varName, varType, connective: line.connective }, nextIndex: start };
+        }
+        case 'rewrite': {
+            const inner = line.content.replace(/^rewrite\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+            const parts = inner.split(',').map(s => s.trim());
+            const hyp = parts[0];
+            const direction = parts[1] === 'rtl' ? 'rtl' : 'ltr';
+            return { node: { type: 'Rewrite', hypothesis: hyp, direction, connective: line.connective }, nextIndex: start };
+        }
+        case 'exact': {
+            const expr = parseCallExpr(line.content, 'exact');
+            return { node: { type: 'Exact', expr, connective: line.connective }, nextIndex: start };
+        }
         case 'match':
             return parseMatch(lines, start);
         case 'raw':

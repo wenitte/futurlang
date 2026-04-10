@@ -1,0 +1,9 @@
+theorem IntroImplication() {
+  assert(p → q → p)
+} ↔
+
+proof IntroImplication() {
+  intro(hp) →
+  intro(hq) →
+  exact(p)
+}

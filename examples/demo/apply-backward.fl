@@ -1,0 +1,10 @@
+theorem ApplyBackward() {
+  given(p → q) →
+  given(p) →
+  assert(q)
+} ↔
+
+proof ApplyBackward() {
+  apply(p → q) →
+  conclude(p)
+}

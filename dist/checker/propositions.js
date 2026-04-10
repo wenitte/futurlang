@@ -15,6 +15,7 @@ exports.parseMorphismExprCanonical = parseMorphismExprCanonical;
 exports.formatMorphismExpr = formatMorphismExpr;
 exports.parseCategoricalEqualityCanonical = parseCategoricalEqualityCanonical;
 exports.parseCategoryPredicateCanonical = parseCategoryPredicateCanonical;
+exports.parseMeasurePredicateCanonical = parseMeasurePredicateCanonical;
 exports.parseImplicationCanonical = parseImplicationCanonical;
 exports.parseConjunctionCanonical = parseConjunctionCanonical;
 exports.parseDisjunctionCanonical = parseDisjunctionCanonical;
@@ -251,6 +252,15 @@ function parseCategoricalEqualityCanonical(prop) {
 function parseCategoryPredicateCanonical(prop) {
     const value = normalizeTerm((0, expr_1.normalizeSurfaceSyntax)(prop));
     const match = value.match(/^(Category|Object|Morphism|Iso|Product|ProductMediator|Coproduct|Pullback|Pushout|Functor)\((.*)\)$/);
+    if (!match)
+        return null;
+    const name = match[1];
+    const args = splitTopLevelArgs(match[2]);
+    return { name, args };
+}
+function parseMeasurePredicateCanonical(claim) {
+    const value = normalizeTerm((0, expr_1.normalizeSurfaceSyntax)(claim));
+    const match = value.match(/^(SigmaAlgebra|Measure|ProbabilityMeasure|Measurable)\s*\((.*)\)$/);
     if (!match)
         return null;
     const name = match[1];

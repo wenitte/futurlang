@@ -297,6 +297,20 @@ export function parseCategoryPredicateCanonical(prop: string): CategoryPredicate
   return { name, args };
 }
 
+export interface MeasurePredicateProp {
+  name: 'SigmaAlgebra' | 'Measure' | 'ProbabilityMeasure' | 'Measurable';
+  args: string[];
+}
+
+export function parseMeasurePredicateCanonical(claim: string): MeasurePredicateProp | null {
+  const value = normalizeTerm(normalizeSurfaceSyntax(claim));
+  const match = value.match(/^(SigmaAlgebra|Measure|ProbabilityMeasure|Measurable)\s*\((.*)\)$/);
+  if (!match) return null;
+  const name = match[1] as MeasurePredicateProp['name'];
+  const args = splitTopLevelArgs(match[2]);
+  return { name, args };
+}
+
 export function parseImplicationCanonical(prop: string): [string, string] | null {
   return splitTopLevelProp(prop, '→');
 }

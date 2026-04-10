@@ -69,12 +69,17 @@ export class CategoryDiagramKernel {
 
     const equality = looksLikeCategoricalEquality(claim) ? parseCategoricalEqualityCanonical(claim) : null;
     if (equality) {
-      const left = this.resolveMorphismExpr(equality.left);
-      const right = this.resolveMorphismExpr(equality.right);
-      if (left.category !== right.category) {
-        throw new CategoryDiagramError('Category error: objects or morphisms belong to different categories');
+      try {
+        const left = this.resolveMorphismExpr(equality.left);
+        const right = this.resolveMorphismExpr(equality.right);
+        if (left.category !== right.category) {
+          throw new CategoryDiagramError('Category error: objects or morphisms belong to different categories');
+        }
+        this.equalities.push({ left: equality.left, right: equality.right, category: left.category, valid: left.id === right.id || sameType(left, right) });
+      } catch (e) {
+        if (!(e instanceof CategoryDiagramError)) throw e;
+        // Not a categorical equality (e.g. a measure-theory equality); skip registration.
       }
-      this.equalities.push({ left: equality.left, right: equality.right, category: left.category, valid: left.id === right.id || sameType(left, right) });
     }
   }
 

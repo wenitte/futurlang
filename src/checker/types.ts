@@ -45,7 +45,20 @@ export type KernelRule =
   | 'STRUCT_INTRO'
   | 'STRUCT_ELIM'
   | 'MATCH_EXHAUSTIVE'
-  | 'STRUCTURAL';
+  | 'REWRITE'
+  | 'STRUCTURAL'
+  | 'SIGMA_CLOSED_COMPLEMENT'
+  | 'SIGMA_CLOSED_UNION'
+  | 'SIGMA_CONTAINS_SPACE'
+  | 'SIGMA_CONTAINS_EMPTY'
+  | 'MEASURE_EMPTY'
+  | 'MEASURE_MONO'
+  | 'MEASURE_SUBADDITIVE'
+  | 'MEASURE_ADDITIVE'
+  | 'PROB_COMPLEMENT'
+  | 'PROB_TOTAL'
+  | 'MEASURABLE_PREIMAGE'
+  | 'MEASURABLE_COMPOSE';
 
 export type ProofState = 'PROVED' | 'PENDING' | 'FAILED' | 'UNVERIFIED';
 
@@ -60,6 +73,7 @@ export interface Diagnostic {
 export interface ProofObject {
   id: string;
   claim: string;
+  term?: import('../kernel/term').Term;
   domain: string;
   codomain: string;
   domainRestriction: string;
@@ -82,7 +96,7 @@ export interface DerivationNode {
 
 export interface ProofStepTrace {
   step: number;
-  kind: 'assume' | 'assert' | 'conclude' | 'apply' | 'setVar' | 'induction' | 'match' | 'raw';
+  kind: 'assume' | 'assert' | 'conclude' | 'apply' | 'setVar' | 'induction' | 'match' | 'raw' | 'intro' | 'rewrite' | 'exact';
   claim: string;
   rule: KernelRule;
   state: ProofState;
@@ -126,4 +140,5 @@ export interface ClaimSet {
   premises: string[];
   conclusion: string | null;
   state: ProofState;
+  metavars?: string[];
 }

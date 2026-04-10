@@ -1,0 +1,10 @@
+theorem RewriteEquality() {
+  given(a = b) →
+  given(a ∈ S) →
+  assert(b ∈ S)
+} ↔
+
+proof RewriteEquality() {
+  rewrite(a = b) →
+  conclude(b ∈ S)
+}

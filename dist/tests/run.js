@@ -319,7 +319,7 @@ proof Identity() {
     assert_1.strict.equal(report.state, 'PROVED');
     assert_1.strict.equal(report.reports[0].state, 'PROVED');
 });
-runTest('checker returns PENDING for structurally present but unsupported derivations', () => {
+runTest('checker returns FAILED for unresolvable existential without witness', () => {
     const report = (0, checker_1.checkFile)(parseProgram(`
 theorem PendingWitness() {
   assert(∃ x ∈ A, P(x))
@@ -329,8 +329,8 @@ proof PendingWitness() {
   assert(∃ x ∈ A, P(x))
 }
 `));
-    assert_1.strict.equal(report.state, 'PENDING');
-    assert_1.strict.equal(report.reports[0].state, 'PENDING');
+    assert_1.strict.equal(report.state, 'FAILED');
+    assert_1.strict.equal(report.reports[0].state, 'FAILED');
 });
 runTest('checker returns FAILED for invalid proof paths', () => {
     const report = (0, checker_1.checkFile)(parseProgram(`
@@ -593,8 +593,8 @@ fn bad(xs ∈ List(Nat)) -> Nat {
   }
 }
 `));
-    assert_1.strict.equal(unverified.state, 'UNVERIFIED');
-    assert_1.strict.equal(unverified.reports[0].state, 'UNVERIFIED');
+    assert_1.strict.equal(unverified.state, 'FAILED');
+    assert_1.strict.equal(unverified.reports[0].state, 'FAILED');
 });
 runTest('eval mode preserves executable fn declarations and runs list recursion', () => {
     const runtime = runExecutable(`
@@ -754,12 +754,104 @@ runTest('fl start generates frontend output without launching when --no-launch i
     assert_1.strict.match(result.stdout, /Generated React app/);
     assert_1.strict.match(result.stdout, /Skipping frontend launch/);
 });
+runTest('obtain destructures existential into membership and body assumptions', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem ObtainTest() {
+  given(∃ x ∈ S, x ∈ T) →
+  assert(∃ y ∈ T, y ∈ S)
+} ↔
+proof ObtainTest() {
+  obtain(a, ∃ x ∈ S, x ∈ T) →
+  conclude(∃ y ∈ T, y ∈ S)
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+    assert_1.strict.equal(report.reports[0].state, 'PROVED');
+});
+runTest('intro on forall goal adds domain membership to context', () => {
+    // intro(x) on ∀ x ∈ ℕ, P(x) must add "x ∈ ℕ" to context, not bare "x".
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem ForallDomain() {
+  given(A ⊆ B) →
+  assert(∀ x ∈ A, x ∈ B)
+} ↔
+proof ForallDomain() {
+  intro(x) →
+  conclude(x ∈ B)
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+    assert_1.strict.equal(report.reports[0].state, 'PROVED');
+});
+runTest('apply reduces goal via backward implication from context hypothesis', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem ApplyBack() {
+  given(p → q) →
+  given(p) →
+  assert(q)
+} ↔
+proof ApplyBack() {
+  apply(p → q) →
+  conclude(p)
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+    assert_1.strict.equal(report.reports[0].state, 'PROVED');
+});
+runTest('apply chained backward through two implications', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem ApplyChain() {
+  given(p → q) →
+  given(q → r) →
+  given(p) →
+  assert(r)
+} ↔
+proof ApplyChain() {
+  apply(q → r) →
+  apply(p → q) →
+  conclude(p)
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+    assert_1.strict.equal(report.reports[0].state, 'PROVED');
+});
+runTest('rewrite substitutes structurally, not by raw string', () => {
+    // "ab" contains "a" as a substring — string splitting would corrupt it,
+    // but term-based rewrite should leave it untouched.
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem RewriteStructural() {
+  given(a = b) →
+  given(a ∈ S) →
+  assert(b ∈ S)
+} ↔
+proof RewriteStructural() {
+  rewrite(a = b) →
+  conclude(b ∈ S)
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+    assert_1.strict.equal(report.reports[0].state, 'PROVED');
+});
+runTest('intro strips implication antecedent and updates goal', () => {
+    const report = (0, checker_1.checkFile)(parseProgram(`
+theorem IntroImp() {
+  assert(p → q → p)
+} ↔
+proof IntroImp() {
+  intro(hp) →
+  intro(hq) →
+  exact(p)
+}
+`));
+    assert_1.strict.equal(report.state, 'PROVED');
+    assert_1.strict.equal(report.reports[0].state, 'PROVED');
+});
 runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
     const demoDir = path.resolve(__dirname, '../../examples/demo');
     const files = collectDemoFiles(demoDir);
     const expectedStates = new Map([
         ['match-exhaustive-fail.fl', 'FAILED'],
-        ['list-nonstructural-fail.fl', 'UNVERIFIED'],
+        ['list-nonstructural-fail.fl', 'FAILED'],
     ]);
     for (const file of files) {
         const source = fs.readFileSync(file, 'utf8');

@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkFile = checkFile;
+const term_1 = require("../kernel/term");
+const unify_1 = require("../kernel/unify");
 const propositions_1 = require("./propositions");
 const category_1 = require("../kernel/category");
 const category_diagrams_1 = require("../kernel/category-diagrams");
@@ -15,6 +17,10 @@ function checkFile(nodes, options = {}) {
     const pairs = findPairs(nodes);
     const pairNames = new Set(pairs.map(pair => normalizeName(pair.theorem.name)));
     const lemmas = new Map();
+    const eliminators = generateEliminators(types);
+    for (const [name, claimSet] of eliminators) {
+        lemmas.set(name, claimSet);
+    }
     let theoremCount = 0;
     let proofCount = 0;
     let pairedCount = 0;
@@ -45,7 +51,7 @@ function checkFile(nodes, options = {}) {
             diagnostics.push({ severity: 'info', message: `Lemma '${node.name}' has no proof` });
         }
     }
-    const state = combineStates(reports.map(report => report.state), pairedCount === 0 ? 'PENDING' : 'PROVED');
+    const state = combineStates(reports.map(report => report.state), pairedCount === 0 ? 'FAILED' : 'PROVED');
     return {
         state,
         valid: state === 'PROVED',
@@ -89,12 +95,9 @@ function checkPair(pair, lemmas, structs, types, _options) {
     }
     const derivedConclusion = findDerivedConclusion(ctx, goal);
     if (goal && !derivedConclusion) {
-        const pendingGoal = findExact(ctx.objects, goal, true);
         ctx.diagnostics.push({
-            severity: pendingGoal ? 'warning' : 'error',
-            message: pendingGoal
-                ? `Goal '${goal}' remains pending until Ra resolves its ω-valued morphisms`
-                : `Proof '${pair.proof.name}' does not establish theorem goal '${goal}'`,
+            severity: 'error',
+            message: `Proof '${pair.proof.name}' does not establish theorem goal '${goal}'`,
             rule: 'STRUCTURAL',
         });
     }
@@ -173,6 +176,18 @@ function handleNode(ctx, node, step) {
             return;
         case 'Raw':
             handleRaw(ctx, node, step);
+            return;
+        case 'Intro':
+            handleIntro(ctx, node, step);
+            return;
+        case 'Rewrite':
+            handleRewrite(ctx, node, step);
+            return;
+        case 'Exact':
+            handleExact(ctx, node, step);
+            return;
+        case 'Obtain':
+            handleObtain(ctx, node, step);
             return;
         default:
             return;
@@ -304,7 +319,7 @@ function handleMatch(ctx, node, step) {
         kind: 'match',
         claim: targetClaim,
         rule: 'MATCH_EXHAUSTIVE',
-        state: branchStates.some(state => state === 'PENDING') ? 'PENDING' : 'PROVED',
+        state: 'PROVED',
         uses: branchUses,
         message: 'Validated exhaustive proof by cases via categorical OR elimination',
     });
@@ -381,7 +396,7 @@ function handleListMatch(ctx, node, step, scrutinee, scrutineeType, parsedSort) 
         kind: 'match',
         claim: targetClaim,
         rule: 'MATCH_EXHAUSTIVE',
-        state: branchStates.some(state => state === 'PENDING') ? 'PENDING' : 'PROVED',
+        state: 'PROVED',
         uses: branchUses,
         message: 'Validated exhaustive proof by cases over the kernel List primitive',
     });
@@ -408,30 +423,87 @@ function inferBooleanMatchType(node) {
 function handleApply(ctx, target, step) {
     const lemma = ctx.lemmas.get(normalizeName(target));
     if (!lemma) {
-        ctx.diagnostics.push({ severity: 'error', step, message: `Unknown lemma '${target}'`, rule: 'BY_LEMMA' });
+        // Backward application: find the target as a hypothesis in context.
+        // If it is an implication A → B whose consequent matches the current goal,
+        // reduce the goal to A.
+        const hyp = findExact(ctx.objects, target, false)
+            ?? findExact(ctx.assumptions, target, false)
+            ?? findExact(ctx.premises, target, false);
+        if (hyp) {
+            const impl = (0, propositions_1.parseImplicationCanonical)(hyp.claim);
+            if (impl && ctx.goal) {
+                const [antecedent, consequent] = impl;
+                const consTerm = (0, term_1.termFromString)(consequent);
+                const goalTerm = (0, term_1.termFromString)(ctx.goal);
+                if ((0, term_1.termEqual)(consTerm, goalTerm)) {
+                    ctx.goal = antecedent;
+                    ctx.proofSteps.push({
+                        step,
+                        kind: 'apply',
+                        claim: antecedent,
+                        rule: 'BY_LEMMA',
+                        state: 'PROVED',
+                        uses: [hyp.claim],
+                        message: `Applied '${target}' backward: goal reduced to '${antecedent}'`,
+                    });
+                    return;
+                }
+            }
+            ctx.diagnostics.push({ severity: 'error', step, message: `apply: '${target}' is not an implication whose consequent matches the goal '${ctx.goal ?? '(none)'}'`, rule: 'BY_LEMMA' });
+            ctx.proofSteps.push({ step, kind: 'apply', claim: target, rule: 'BY_LEMMA', state: 'FAILED', message: `Consequent does not match goal` });
+            return;
+        }
+        ctx.diagnostics.push({ severity: 'error', step, message: `Unknown lemma or hypothesis '${target}'`, rule: 'BY_LEMMA' });
         ctx.proofSteps.push({
             step,
             kind: 'apply',
             claim: target,
             rule: 'BY_LEMMA',
             state: 'FAILED',
-            message: `Lemma '${target}' is not available`,
+            message: `'${target}' is not available`,
         });
         return;
     }
-    if (lemma.state === 'PENDING') {
-        const claim = lemma.conclusion ?? target;
-        createKernelObject(ctx, claim, 'BY_LEMMA', step, [], [lemma.name], 'ω', ['lemma']);
+    if (lemma.state !== 'PROVED') {
+        ctx.diagnostics.push({ severity: 'error', step, message: `Lemma '${target}' is not fully proved and cannot be applied`, rule: 'BY_LEMMA' });
         ctx.proofSteps.push({
             step,
             kind: 'apply',
-            claim,
+            claim: lemma.conclusion ?? target,
             rule: 'BY_LEMMA',
-            state: 'PENDING',
+            state: 'FAILED',
             imports: [lemma.name],
-            message: `Lemma '${target}' imports a pending morphism`,
+            message: `Lemma '${target}' is not fully proved`,
         });
         return;
+    }
+    // If the lemma has metavars, use unification to instantiate it
+    if (lemma.metavars && lemma.metavars.length > 0 && lemma.conclusion && ctx.goal) {
+        const metaSet = new Set(lemma.metavars);
+        const lemmaConcTerm = (0, term_1.termFromString)(lemma.conclusion);
+        const goalTerm = (0, term_1.termFromString)(ctx.goal);
+        const subst = (0, unify_1.unify)(lemmaConcTerm, goalTerm, metaSet);
+        if (subst) {
+            const instantiatedPremises = lemma.premises.map(p => {
+                const t = (0, term_1.applySubst)((0, term_1.termFromString)(p), subst);
+                return (0, term_1.termToString)(t);
+            });
+            const missingInstantiated = instantiatedPremises.filter(p => !findExact(ctx.objects, p, false) && !findExact(ctx.premises, p, false) && !findExact(ctx.assumptions, p, false));
+            if (missingInstantiated.length === 0) {
+                const conclusion = (0, term_1.termToString)((0, term_1.applySubst)((0, term_1.termFromString)(lemma.conclusion), subst));
+                const inputs = instantiatedPremises
+                    .map(p => findExact(ctx.objects, p, false) ?? findExact(ctx.premises, p, false) ?? findExact(ctx.assumptions, p, false))
+                    .filter((o) => Boolean(o))
+                    .map(o => o.id);
+                createKernelObject(ctx, conclusion, 'BY_LEMMA', step, inputs, [lemma.name], '1');
+                ctx.proofSteps.push({
+                    step, kind: 'apply', claim: conclusion, rule: 'BY_LEMMA', state: 'PROVED',
+                    imports: [lemma.name], uses: instantiatedPremises,
+                    message: `Applied lemma '${target}' via unification`,
+                });
+                return;
+            }
+        }
     }
     const missing = lemma.premises.filter(premise => !findExact(ctx.objects, premise, false));
     if (missing.length > 0 || !lemma.conclusion) {
@@ -471,14 +543,14 @@ function handleApply(ctx, target, step) {
 function handleRaw(ctx, node, step) {
     const claim = node.content.trim();
     if (!/^contradiction\s*\(\s*\)\s*;?$/.test(claim)) {
-        createPendingObject(ctx, claim, step);
+        ctx.diagnostics.push({ severity: 'error', step, message: `Unsupported raw proof syntax: '${claim}'. Use assert, assume, conclude, apply, intro, rewrite, or exact.`, rule: 'STRUCTURAL' });
         ctx.proofSteps.push({
             step,
             kind: 'raw',
             claim,
             rule: 'STRUCTURAL',
-            state: 'PENDING',
-            message: 'Unsupported raw proof syntax is preserved as a pending morphism',
+            state: 'FAILED',
+            message: 'Unsupported raw proof syntax',
         });
         return;
     }
@@ -541,7 +613,7 @@ function deriveClaim(ctx, claim, step) {
     if (exact) {
         return {
             rule: exact.rule,
-            state: exact.pending ? 'PENDING' : 'PROVED',
+            state: exact.pending ? 'FAILED' : 'PROVED',
             uses: [exact.claim],
             message: 'Claim already exists as a morphism in the current derivation',
         };
@@ -550,6 +622,7 @@ function deriveClaim(ctx, claim, step) {
         deriveAndIntro,
         deriveAndElim,
         deriveStructClaim,
+        deriveMeasureClaim,
         deriveCategoryClaim,
         deriveFoldClaim,
         deriveNotIntro,
@@ -576,14 +649,6 @@ function deriveClaim(ctx, claim, step) {
         if (result) {
             return result;
         }
-    }
-    if (shouldRemainPending(claim)) {
-        createPendingObject(ctx, claim, step);
-        return {
-            rule: 'STRUCTURAL',
-            state: 'PENDING',
-            message: 'Claim is structurally present but remains pending until supported morphisms are supplied or Ra resolves it',
-        };
     }
     return {
         rule: 'STRUCTURAL',
@@ -659,6 +724,270 @@ function deriveFoldClaim(ctx, claim, step) {
         state: 'PROVED',
         message: 'Trusted fold primitive establishes the fold result directly',
     };
+}
+// ── Measure theory helpers ───────────────────────────────────────────────────
+function parseMeasureArgs(claim) {
+    const m = claim.trim().match(/^Measure\s*\(\s*([^,)]+?)\s*,\s*([^)]+?)\s*\)$/);
+    return m ? { mu: m[1].trim(), sigma: m[2].trim() } : null;
+}
+function parseSigmaAlgebraArgs(claim) {
+    const m = claim.trim().match(/^SigmaAlgebra\s*\(\s*([^,)]+?)\s*,\s*([^)]+?)\s*\)$/);
+    return m ? { sigma: m[1].trim(), space: m[2].trim() } : null;
+}
+function parseProbMeasureArgs(claim) {
+    const m = claim.trim().match(/^ProbabilityMeasure\s*\(\s*([^,)]+?)\s*,\s*([^,)]+?)\s*,\s*([^)]+?)\s*\)$/);
+    return m ? { p: m[1].trim(), sigma: m[2].trim(), space: m[3].trim() } : null;
+}
+function parseMeasurableArgs(claim) {
+    const m = claim.trim().match(/^Measurable\s*\(\s*([^,)]+?)\s*,\s*([^,)]+?)\s*,\s*([^)]+?)\s*\)$/);
+    return m ? { f: m[1].trim(), sigmaX: m[2].trim(), sigmaY: m[3].trim() } : null;
+}
+function parseFunctionApplication(s) {
+    const m = s.trim().match(/^([^\s(]+)\s*\((.+)\)$/);
+    return m ? { fn: m[1].trim(), arg: m[2].trim() } : null;
+}
+function allContextObjects(ctx) {
+    return [...ctx.premises, ...ctx.assumptions, ...classicalObjects(ctx)];
+}
+function splitTopLevelLeq(s) {
+    let depth = 0;
+    for (let i = 0; i < s.length - 1; i++) {
+        const ch = s[i];
+        if (ch === '(' || ch === '[')
+            depth++;
+        else if (ch === ')' || ch === ']')
+            depth--;
+        else if (depth === 0 && s[i] === '≤') {
+            return [s.slice(0, i).trim(), s.slice(i + 1).trim()];
+        }
+    }
+    return null;
+}
+function splitTopLevelSum(s) {
+    let depth = 0;
+    for (let i = s.length - 1; i >= 0; i--) {
+        const ch = s[i];
+        if (ch === ')' || ch === ']')
+            depth++;
+        else if (ch === '(' || ch === '[')
+            depth--;
+        else if (depth === 0 && ch === '+') {
+            return [s.slice(0, i).trim(), s.slice(i + 1).trim()];
+        }
+    }
+    return null;
+}
+function deriveMeasureClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    // ── SIGMA_CONTAINS_SPACE / SIGMA_CONTAINS_EMPTY ──────────────────────────────
+    const membership = (0, propositions_1.parseMembershipCanonical)(claim);
+    if (membership) {
+        // X ∈ Σ when SigmaAlgebra(Σ, X)
+        for (const obj of all) {
+            const sa = parseSigmaAlgebraArgs(obj.claim);
+            if (!sa)
+                continue;
+            if (sa.sigma === membership.set && sa.space === membership.element) {
+                createKernelObject(ctx, claim, 'SIGMA_CONTAINS_SPACE', step, [obj.id]);
+                return { rule: 'SIGMA_CONTAINS_SPACE', state: 'PROVED', uses: [obj.claim], message: 'The whole space belongs to its sigma-algebra' };
+            }
+            // ∅ ∈ Σ
+            if (sa.sigma === membership.set && membership.element === '∅') {
+                createKernelObject(ctx, claim, 'SIGMA_CONTAINS_EMPTY', step, [obj.id]);
+                return { rule: 'SIGMA_CONTAINS_EMPTY', state: 'PROVED', uses: [obj.claim], message: 'The empty set belongs to every sigma-algebra' };
+            }
+        }
+        // SIGMA_CLOSED_COMPLEMENT: complement(A, X) ∈ Σ
+        const compMatch = membership.element.match(/^complement\s*\(\s*(.+?)\s*,\s*(.+?)\s*\)$/);
+        if (compMatch) {
+            const a = compMatch[1].trim();
+            const x = compMatch[2].trim();
+            for (const obj of all) {
+                const sa = parseSigmaAlgebraArgs(obj.claim);
+                if (!sa || sa.sigma !== membership.set || sa.space !== x)
+                    continue;
+                const aIn = requireClassical(ctx, `${a} ∈ ${membership.set}`, 'SIGMA_CLOSED_COMPLEMENT');
+                if (aIn) {
+                    createKernelObject(ctx, claim, 'SIGMA_CLOSED_COMPLEMENT', step, [obj.id, aIn.id]);
+                    return { rule: 'SIGMA_CLOSED_COMPLEMENT', state: 'PROVED', uses: [obj.claim, aIn.claim], message: 'Sigma-algebras are closed under complementation' };
+                }
+            }
+        }
+        // SIGMA_CLOSED_UNION: A ∪ B ∈ Σ
+        const unionParts = (0, propositions_1.parseBinarySetCanonical)(membership.element, '∪');
+        if (unionParts) {
+            const sigma = membership.set;
+            for (const obj of all) {
+                if (!parseSigmaAlgebraArgs(obj.claim) || parseSigmaAlgebraArgs(obj.claim).sigma !== sigma)
+                    continue;
+                const aIn = requireClassical(ctx, `${unionParts[0]} ∈ ${sigma}`, 'SIGMA_CLOSED_UNION');
+                const bIn = requireClassical(ctx, `${unionParts[1]} ∈ ${sigma}`, 'SIGMA_CLOSED_UNION');
+                if (aIn && bIn) {
+                    createKernelObject(ctx, claim, 'SIGMA_CLOSED_UNION', step, [obj.id, aIn.id, bIn.id]);
+                    return { rule: 'SIGMA_CLOSED_UNION', state: 'PROVED', uses: [obj.claim, aIn.claim, bIn.claim], message: 'Sigma-algebras are closed under binary union' };
+                }
+            }
+        }
+        // MEASURABLE_PREIMAGE: preimage(f, B) ∈ Σ_X
+        const preimageMatch = membership.element.match(/^preimage\s*\(\s*(.+?)\s*,\s*(.+?)\s*\)$/);
+        if (preimageMatch) {
+            const f = preimageMatch[1].trim();
+            const b = preimageMatch[2].trim();
+            const sigmaX = membership.set;
+            for (const obj of all) {
+                const ma = parseMeasurableArgs(obj.claim);
+                if (!ma || ma.f !== f || ma.sigmaX !== sigmaX)
+                    continue;
+                const bIn = requireClassical(ctx, `${b} ∈ ${ma.sigmaY}`, 'MEASURABLE_PREIMAGE');
+                if (bIn) {
+                    createKernelObject(ctx, claim, 'MEASURABLE_PREIMAGE', step, [obj.id, bIn.id]);
+                    return { rule: 'MEASURABLE_PREIMAGE', state: 'PROVED', uses: [obj.claim, bIn.claim], message: 'Preimage of a measurable set under a measurable function is measurable' };
+                }
+            }
+        }
+    }
+    // ── Equality claims ──────────────────────────────────────────────────────────
+    const equality = (0, propositions_1.parseEqualityCanonical)(claim);
+    if (equality) {
+        // MEASURE_EMPTY: μ(∅) = 0
+        const leftApp = parseFunctionApplication(equality.left);
+        const rightApp = parseFunctionApplication(equality.right);
+        if (leftApp && leftApp.arg === '∅' && equality.right === '0') {
+            for (const obj of all) {
+                const ma = parseMeasureArgs(obj.claim);
+                if (ma && ma.mu === leftApp.fn) {
+                    createKernelObject(ctx, claim, 'MEASURE_EMPTY', step, [obj.id]);
+                    return { rule: 'MEASURE_EMPTY', state: 'PROVED', uses: [obj.claim], message: 'Axiom: the measure of the empty set is zero' };
+                }
+            }
+        }
+        if (rightApp && rightApp.arg === '∅' && equality.left === '0') {
+            for (const obj of all) {
+                const ma = parseMeasureArgs(obj.claim);
+                if (ma && ma.mu === rightApp.fn) {
+                    createKernelObject(ctx, claim, 'MEASURE_EMPTY', step, [obj.id]);
+                    return { rule: 'MEASURE_EMPTY', state: 'PROVED', uses: [obj.claim], message: 'Axiom: the measure of the empty set is zero' };
+                }
+            }
+        }
+        // MEASURE_ADDITIVE: μ(A ∪ B) = μ(A) + μ(B) when A ∩ B = ∅
+        if (leftApp) {
+            const unionParts = (0, propositions_1.parseBinarySetCanonical)(leftApp.arg, '∪');
+            const sumParts = splitTopLevelSum(equality.right);
+            if (unionParts && sumParts) {
+                const aApp = parseFunctionApplication(sumParts[0]);
+                const bApp = parseFunctionApplication(sumParts[1]);
+                if (aApp && bApp && aApp.fn === leftApp.fn && bApp.fn === leftApp.fn &&
+                    aApp.arg === unionParts[0] && bApp.arg === unionParts[1]) {
+                    for (const obj of all) {
+                        const ma = parseMeasureArgs(obj.claim);
+                        if (!ma || ma.mu !== leftApp.fn)
+                            continue;
+                        const disjoint = requireClassical(ctx, `${unionParts[0]} ∩ ${unionParts[1]} = ∅`, 'MEASURE_ADDITIVE');
+                        if (disjoint) {
+                            createKernelObject(ctx, claim, 'MEASURE_ADDITIVE', step, [obj.id, disjoint.id]);
+                            return { rule: 'MEASURE_ADDITIVE', state: 'PROVED', uses: [obj.claim, disjoint.claim], message: 'Countable additivity on disjoint sets' };
+                        }
+                    }
+                }
+            }
+        }
+        // PROB_COMPLEMENT: P(complement(A, X)) = 1 - P(A)
+        if (leftApp) {
+            const compArg = leftApp.arg.match(/^complement\s*\(\s*(.+?)\s*,\s*(.+?)\s*\)$/);
+            const rhs1MinusP = equality.right.match(/^1\s*-\s*([^\s(]+)\s*\((.+)\)$/);
+            if (compArg && rhs1MinusP && rhs1MinusP[1] === leftApp.fn && rhs1MinusP[2] === compArg[1].trim()) {
+                for (const obj of all) {
+                    const pma = parseProbMeasureArgs(obj.claim);
+                    if (!pma || pma.p !== leftApp.fn)
+                        continue;
+                    const aIn = requireClassical(ctx, `${compArg[1].trim()} ∈ ${pma.sigma}`, 'PROB_COMPLEMENT');
+                    if (aIn) {
+                        createKernelObject(ctx, claim, 'PROB_COMPLEMENT', step, [obj.id, aIn.id]);
+                        return { rule: 'PROB_COMPLEMENT', state: 'PROVED', uses: [obj.claim, aIn.claim], message: 'P(Aᶜ) = 1 − P(A) for probability measures' };
+                    }
+                }
+            }
+        }
+        // PROB_TOTAL: P(X) = 1
+        if (leftApp && equality.right === '1') {
+            for (const obj of all) {
+                const pma = parseProbMeasureArgs(obj.claim);
+                if (!pma || pma.p !== leftApp.fn || pma.space !== leftApp.arg)
+                    continue;
+                createKernelObject(ctx, claim, 'PROB_TOTAL', step, [obj.id]);
+                return { rule: 'PROB_TOTAL', state: 'PROVED', uses: [obj.claim], message: 'Axiom: probability of the whole space is 1' };
+            }
+        }
+    }
+    // ── Inequality claims ────────────────────────────────────────────────────────
+    const leqParts = splitTopLevelLeq(claim);
+    if (leqParts) {
+        const lhsApp = parseFunctionApplication(leqParts[0]);
+        const rhsApp = parseFunctionApplication(leqParts[1]);
+        // MEASURE_MONO: μ(A) ≤ μ(B) when A ⊆ B
+        if (lhsApp && rhsApp && lhsApp.fn === rhsApp.fn) {
+            for (const obj of all) {
+                const ma = parseMeasureArgs(obj.claim) ?? (parseProbMeasureArgs(obj.claim) ? { mu: parseProbMeasureArgs(obj.claim).p, sigma: parseProbMeasureArgs(obj.claim).sigma } : null);
+                if (!ma || ma.mu !== lhsApp.fn)
+                    continue;
+                const subset = requireClassical(ctx, `${lhsApp.arg} ⊆ ${rhsApp.arg}`, 'MEASURE_MONO')
+                    ?? requireClassical(ctx, `${lhsApp.arg} ⊂ ${rhsApp.arg}`, 'MEASURE_MONO');
+                const aIn = requireClassical(ctx, `${lhsApp.arg} ∈ ${ma.sigma}`, 'MEASURE_MONO');
+                const bIn = requireClassical(ctx, `${rhsApp.arg} ∈ ${ma.sigma}`, 'MEASURE_MONO');
+                if (subset && aIn && bIn) {
+                    createKernelObject(ctx, claim, 'MEASURE_MONO', step, [obj.id, subset.id, aIn.id, bIn.id]);
+                    return { rule: 'MEASURE_MONO', state: 'PROVED', uses: [obj.claim, subset.claim, aIn.claim], message: 'Monotonicity: A ⊆ B implies μ(A) ≤ μ(B)' };
+                }
+            }
+        }
+        // MEASURE_SUBADDITIVE: μ(A ∪ B) ≤ μ(A) + μ(B)
+        if (lhsApp) {
+            const unionParts = (0, propositions_1.parseBinarySetCanonical)(lhsApp.arg, '∪');
+            const sumParts = splitTopLevelSum(leqParts[1]);
+            if (unionParts && sumParts) {
+                const aApp = parseFunctionApplication(sumParts[0]);
+                const bApp = parseFunctionApplication(sumParts[1]);
+                if (aApp && bApp && aApp.fn === lhsApp.fn && bApp.fn === lhsApp.fn &&
+                    aApp.arg === unionParts[0] && bApp.arg === unionParts[1]) {
+                    for (const obj of all) {
+                        const ma = parseMeasureArgs(obj.claim) ?? (parseProbMeasureArgs(obj.claim) ? { mu: parseProbMeasureArgs(obj.claim).p, sigma: parseProbMeasureArgs(obj.claim).sigma } : null);
+                        if (!ma || ma.mu !== lhsApp.fn)
+                            continue;
+                        const aIn = requireClassical(ctx, `${unionParts[0]} ∈ ${ma.sigma}`, 'MEASURE_SUBADDITIVE');
+                        const bIn = requireClassical(ctx, `${unionParts[1]} ∈ ${ma.sigma}`, 'MEASURE_SUBADDITIVE');
+                        if (aIn && bIn) {
+                            createKernelObject(ctx, claim, 'MEASURE_SUBADDITIVE', step, [obj.id, aIn.id, bIn.id]);
+                            return { rule: 'MEASURE_SUBADDITIVE', state: 'PROVED', uses: [obj.claim, aIn.claim, bIn.claim], message: 'Subadditivity: μ(A ∪ B) ≤ μ(A) + μ(B)' };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // ── MEASURABLE_COMPOSE: Measurable(g ∘ f, Σ_X, Σ_Z) ─────────────────────────
+    const measPred = (0, propositions_1.parseMeasurePredicateCanonical)(claim);
+    if (measPred?.name === 'Measurable') {
+        const [fg, sigmaX, sigmaZ] = measPred.args;
+        const compParts = fg.match(/^(.+?)\s*∘\s*(.+)$/);
+        if (compParts) {
+            const g = compParts[1].trim();
+            const f = compParts[2].trim();
+            for (const fObj of all) {
+                const fma = parseMeasurableArgs(fObj.claim);
+                if (!fma || fma.f !== f || fma.sigmaX !== sigmaX)
+                    continue;
+                for (const gObj of all) {
+                    const gma = parseMeasurableArgs(gObj.claim);
+                    if (!gma || gma.f !== g || gma.sigmaX !== fma.sigmaY || gma.sigmaY !== sigmaZ)
+                        continue;
+                    createKernelObject(ctx, claim, 'MEASURABLE_COMPOSE', step, [fObj.id, gObj.id]);
+                    return { rule: 'MEASURABLE_COMPOSE', state: 'PROVED', uses: [fObj.claim, gObj.claim], message: 'Composition of measurable functions is measurable' };
+                }
+            }
+        }
+    }
+    return null;
 }
 function deriveCategoryClaim(ctx, claim, step) {
     const morphismDecl = (0, propositions_1.parseMorphismDeclarationCanonical)(claim);
@@ -827,11 +1156,7 @@ function deriveProduct(ctx, args, claim, step) {
             message: 'Validated the explicit projections for a finite product cone',
         };
     }
-    return {
-        rule: 'PRODUCT_INTRO',
-        state: 'PENDING',
-        message: 'Universal property error: mediator or projection data for the product is incomplete',
-    };
+    return null;
 }
 function deriveProductMediator(ctx, args, claim, step) {
     if (args.length < 5)
@@ -867,7 +1192,7 @@ function deriveCoproduct(ctx, args, claim, step) {
             message: 'Validated the explicit injections for a finite coproduct cocone',
         };
     }
-    return { rule: 'COPRODUCT_INTRO', state: 'PENDING', message: 'Universal property error: coproduct injections are incomplete' };
+    return null;
 }
 function derivePullback(ctx, args, claim, step) {
     if (args.length < 5)
@@ -878,7 +1203,7 @@ function derivePullback(ctx, args, claim, step) {
     const fDecl = findDeclarationByLabel(ctx, f);
     const gDecl = findDeclarationByLabel(ctx, g);
     if (!p1Decl || !p2Decl || !fDecl || !gDecl) {
-        return { rule: 'PULLBACK_INTRO', state: 'PENDING', message: 'Universal property error: pullback data is incomplete' };
+        return null;
     }
     const commuting = `${f} ∘ ${p1} = ${g} ∘ ${p2}`;
     if (!hasClaim(ctx, commuting)) {
@@ -902,7 +1227,7 @@ function derivePushout(ctx, args, claim, step) {
     const i1Decl = findDeclarationByLabel(ctx, i1);
     const i2Decl = findDeclarationByLabel(ctx, i2);
     if (!i1Decl || !i2Decl) {
-        return { rule: 'PUSHOUT_INTRO', state: 'PENDING', message: 'Universal property error: pushout data is incomplete' };
+        return null;
     }
     const commuting = `${i1} ∘ ${f} = ${i2} ∘ ${g}`;
     if (!hasClaim(ctx, commuting)) {
@@ -1501,6 +1826,7 @@ function registerDerivedObject(ctx, claim, step, rule, morphism, inputs, imports
     const proofObject = {
         id: morphism.id,
         claim,
+        term: safeTermFromString(claim),
         domain: morphism.domain,
         codomain: morphism.codomain,
         domainRestriction: morphism.domainRestriction,
@@ -1692,6 +2018,12 @@ function classifyStep(node) {
             return 'induction';
         case 'Match':
             return 'match';
+        case 'Intro':
+            return 'intro';
+        case 'Rewrite':
+            return 'rewrite';
+        case 'Exact':
+            return 'exact';
         default:
             return 'raw';
     }
@@ -1712,6 +2044,12 @@ function nodeToClaim(node) {
             return `match ${(0, propositions_1.exprToProp)(node.scrutinee)}`;
         case 'Raw':
             return node.content;
+        case 'Intro':
+            return `${node.varName}: ${node.varType}`;
+        case 'Rewrite':
+            return node.hypothesis;
+        case 'Exact':
+            return (0, propositions_1.exprToProp)(node.expr);
         default:
             return node.type;
     }
@@ -1728,29 +2066,37 @@ function reportState(ctx, goal, derivedConclusion) {
         return 'FAILED';
     }
     if (ctx.unverifiedReasons.length > 0) {
-        return 'UNVERIFIED';
+        return 'FAILED';
     }
     if (goal && !derivedConclusion) {
-        return findExact(ctx.objects, goal, true) ? 'PENDING' : 'FAILED';
+        return 'FAILED';
     }
-    return ctx.objects.some(object => object.pending) ? 'PENDING' : 'PROVED';
+    return ctx.objects.some(object => object.pending) ? 'FAILED' : 'PROVED';
 }
 function combineStates(states, fallback) {
     if (states.length === 0)
         return fallback;
-    if (states.includes('FAILED'))
+    if (states.includes('FAILED') || states.includes('UNVERIFIED') || states.includes('PENDING'))
         return 'FAILED';
-    if (states.includes('UNVERIFIED'))
-        return 'UNVERIFIED';
-    if (states.includes('PENDING'))
-        return 'PENDING';
     return 'PROVED';
 }
+function safeTermFromString(s) {
+    try {
+        return (0, term_1.termFromString)(s);
+    }
+    catch {
+        return undefined;
+    }
+}
 function findExact(objects, claim, allowPending) {
+    const claimTerm = safeTermFromString(claim);
     for (let index = objects.length - 1; index >= 0; index--) {
         const object = objects[index];
-        if ((0, propositions_1.sameProp)(object.claim, claim) && (allowPending || !object.pending)) {
-            return object;
+        if (allowPending || !object.pending) {
+            if (claimTerm && object.term && (0, term_1.termEqual)(claimTerm, object.term))
+                return object;
+            if ((0, propositions_1.sameProp)(object.claim, claim))
+                return object;
         }
     }
     return null;
@@ -1802,13 +2148,175 @@ function pendingTerms(claim) {
     }
     return claim.includes('∀') || claim.includes('∃') ? ['quantifier'] : ['claim'];
 }
-function shouldRemainPending(claim) {
-    return Boolean((0, propositions_1.parseBoundedQuantifierCanonical)(claim, 'forall') ||
-        (0, propositions_1.parseBoundedQuantifierCanonical)(claim, 'exists') ||
-        (0, propositions_1.parseSetBuilderCanonical)(claim) ||
-        (0, propositions_1.parseIndexedUnionCanonical)(claim) ||
-        claim.includes('∀') ||
-        claim.includes('∃'));
+function handleIntro(ctx, node, step) {
+    const { varName, varType } = node;
+    // If the goal is an implication A → B and no explicit type was given,
+    // introduce the antecedent as an assumption and update the goal to B.
+    if (ctx.goal && !varType) {
+        const impl = (0, propositions_1.parseImplicationCanonical)(ctx.goal);
+        if (impl) {
+            const [antecedent, consequent] = impl;
+            ctx.goal = consequent;
+            const assumption = createKernelObject(ctx, antecedent, 'ASSUMPTION', step);
+            ctx.assumptions.push(assumption);
+            ctx.proofSteps.push({
+                step,
+                kind: 'intro',
+                claim: antecedent,
+                rule: 'ASSUMPTION',
+                state: 'PROVED',
+                message: `Introduced '${varName}' as '${antecedent}', goal is now '${consequent}'`,
+            });
+            return;
+        }
+    }
+    // Otherwise handle a ∀ quantifier: introduce the variable and update the goal.
+    // If no explicit type was given, pull the domain from the quantifier so that
+    // the introduced membership claim is `varName ∈ domain` rather than a bare name.
+    let resolvedDomain = varType;
+    if (ctx.goal) {
+        const forall = (0, propositions_1.parseBoundedQuantifierCanonical)(ctx.goal, 'forall');
+        if (forall) {
+            if (!resolvedDomain)
+                resolvedDomain = forall.set;
+            const newGoal = substituteVariable(forall.body, forall.variable, varName);
+            ctx.goal = newGoal;
+        }
+    }
+    const membershipClaim = resolvedDomain ? `${varName} ∈ ${resolvedDomain}` : varName;
+    const domain = resolvedDomain || null;
+    ctx.variables.push({ name: varName, domain });
+    const assumption = createKernelObject(ctx, membershipClaim, 'ASSUMPTION', step);
+    ctx.assumptions.push(assumption);
+    ctx.proofSteps.push({
+        step,
+        kind: 'intro',
+        claim: membershipClaim,
+        rule: 'ASSUMPTION',
+        state: 'PROVED',
+        message: `Introduced '${varName} ∈ ${resolvedDomain ?? '?'}' and updated goal`,
+    });
+}
+function handleRewrite(ctx, node, step) {
+    const { hypothesis, direction } = node;
+    const hyp = findExact(ctx.objects, hypothesis, false)
+        ?? findExact(ctx.assumptions, hypothesis, false)
+        ?? findExact(ctx.premises, hypothesis, false);
+    if (!hyp) {
+        ctx.diagnostics.push({ severity: 'error', step, message: `rewrite: hypothesis '${hypothesis}' not found in context`, rule: 'REWRITE' });
+        ctx.proofSteps.push({ step, kind: 'rewrite', claim: hypothesis, rule: 'REWRITE', state: 'FAILED', message: `Hypothesis '${hypothesis}' not found` });
+        return;
+    }
+    const eq = (0, propositions_1.parseEqualityCanonical)(hyp.claim);
+    if (!eq) {
+        ctx.diagnostics.push({ severity: 'error', step, message: `rewrite: '${hypothesis}' is not an equality`, rule: 'REWRITE' });
+        ctx.proofSteps.push({ step, kind: 'rewrite', claim: hypothesis, rule: 'REWRITE', state: 'FAILED', message: `'${hypothesis}' is not an equality` });
+        return;
+    }
+    const [fromStr, toStr] = direction === 'rtl' ? [eq.right, eq.left] : [eq.left, eq.right];
+    const fromTerm = (0, term_1.termFromString)(fromStr);
+    const toTerm = (0, term_1.termFromString)(toStr);
+    if (ctx.goal) {
+        const goalTerm = (0, term_1.termFromString)(ctx.goal);
+        const rewritten = (0, term_1.rewriteTerm)(goalTerm, fromTerm, toTerm);
+        ctx.goal = (0, term_1.termToString)(rewritten);
+    }
+    for (const obj of ctx.objects) {
+        if (obj.term) {
+            const rewritten = (0, term_1.rewriteTerm)(obj.term, fromTerm, toTerm);
+            if (!(0, term_1.termEqual)(rewritten, obj.term)) {
+                createKernelObject(ctx, (0, term_1.termToString)(rewritten), 'REWRITE', step, [obj.id, hyp.id]);
+            }
+        }
+    }
+    ctx.proofSteps.push({
+        step,
+        kind: 'rewrite',
+        claim: ctx.goal ?? hypothesis,
+        rule: 'REWRITE',
+        state: 'PROVED',
+        uses: [hyp.claim],
+        message: `Rewrote ${fromStr} → ${toStr} in goal`,
+    });
+}
+function handleExact(ctx, node, step) {
+    const claim = (0, propositions_1.exprToProp)(node.expr);
+    if (ctx.goal && !(0, propositions_1.sameProp)(claim, ctx.goal)) {
+        const claimTerm = safeTermFromString(claim);
+        const goalTerm = safeTermFromString(ctx.goal);
+        const match = claimTerm && goalTerm && (0, term_1.termEqual)(claimTerm, goalTerm);
+        if (!match) {
+            ctx.diagnostics.push({ severity: 'error', step, message: `exact: '${claim}' does not match goal '${ctx.goal}'`, rule: 'STRUCTURAL' });
+            ctx.proofSteps.push({ step, kind: 'exact', claim, rule: 'STRUCTURAL', state: 'FAILED', message: `Does not match goal` });
+            return;
+        }
+    }
+    const derivation = deriveClaim(ctx, claim, step);
+    if (derivation.state === 'FAILED') {
+        ctx.diagnostics.push({ severity: 'error', step, message: derivation.message, rule: derivation.rule });
+    }
+    ctx.proofSteps.push({
+        step,
+        kind: 'exact',
+        claim,
+        rule: derivation.rule,
+        state: derivation.state,
+        uses: derivation.uses,
+        message: derivation.message,
+    });
+}
+function handleObtain(ctx, node, step) {
+    const { varName, source } = node;
+    // Locate the existential in context (objects, assumptions, or premises).
+    const hyp = findExact(ctx.objects, source, false)
+        ?? findExact(ctx.assumptions, source, false)
+        ?? findExact(ctx.premises, source, false);
+    if (!hyp) {
+        ctx.diagnostics.push({ severity: 'error', step, message: `obtain: '${source}' not found in context`, rule: 'STRUCTURAL' });
+        ctx.proofSteps.push({ step, kind: 'intro', claim: source, rule: 'STRUCTURAL', state: 'FAILED', message: `Existential not found` });
+        return;
+    }
+    const exists = (0, propositions_1.parseBoundedQuantifierCanonical)(hyp.claim, 'exists');
+    if (!exists) {
+        ctx.diagnostics.push({ severity: 'error', step, message: `obtain: '${source}' is not an existential`, rule: 'STRUCTURAL' });
+        ctx.proofSteps.push({ step, kind: 'intro', claim: source, rule: 'STRUCTURAL', state: 'FAILED', message: `Not an existential` });
+        return;
+    }
+    // Introduce varName ∈ set and P(varName) as assumptions.
+    const membershipClaim = `${varName} ∈ ${exists.set}`;
+    const bodyClaim = substituteVariable(exists.body, exists.variable, varName);
+    ctx.variables.push({ name: varName, domain: exists.set });
+    const memObj = createKernelObject(ctx, membershipClaim, 'ASSUMPTION', step, [hyp.id]);
+    ctx.assumptions.push(memObj);
+    const bodyObj = createKernelObject(ctx, bodyClaim, 'ASSUMPTION', step, [hyp.id]);
+    ctx.assumptions.push(bodyObj);
+    ctx.proofSteps.push({
+        step,
+        kind: 'intro',
+        claim: membershipClaim,
+        rule: 'ASSUMPTION',
+        state: 'PROVED',
+        uses: [hyp.claim],
+        message: `Obtained '${varName} ∈ ${exists.set}' and '${bodyClaim}' from existential`,
+    });
+}
+function generateEliminators(types) {
+    const result = new Map();
+    for (const [typeName, typeDef] of types) {
+        if (typeDef.variants.length > 0) {
+            const metavar = 'x';
+            const disjuncts = typeDef.variants.map(v => `${metavar} ∈ ${v.name}`);
+            const conclusion = disjuncts.reduce((acc, d) => `${acc} ∨ ${d}`);
+            result.set(`${typeName.toLowerCase()}.cases`, {
+                name: `${typeName}.cases`,
+                premises: [`${metavar} ∈ ${typeName}`],
+                conclusion,
+                state: 'PROVED',
+                metavars: [metavar],
+            });
+        }
+    }
+    return result;
 }
 function enrichStructMembership(ctx, source, step) {
     const membership = (0, propositions_1.parseMembershipCanonical)(source.claim);

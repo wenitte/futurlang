@@ -170,6 +170,36 @@ function lexFL(text) {
             parsed.push({ type: 'apply', content: cleaned, name: target, connective: conn });
             continue;
         }
+        if (/^intro\s*\(/.test(line)) {
+            const [cleaned, conn] = extractConnective(line);
+            parsed.push({ type: 'intro', content: cleaned, connective: conn });
+            continue;
+        }
+        if (/^rewrite\s*\(/.test(line)) {
+            const [cleaned, conn] = extractConnective(line);
+            parsed.push({ type: 'rewrite', content: cleaned, connective: conn });
+            continue;
+        }
+        if (/^exact\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'exact', content: cleaned, connective: conn });
+            continue;
+        }
+        if (/^obtain\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'obtain', content: cleaned, connective: conn });
+            continue;
+        }
         // ── setVar(...) ───────────────────────────────────────────────────────────
         if (/^setVar\s*\(/.test(line)) {
             let combined = line;

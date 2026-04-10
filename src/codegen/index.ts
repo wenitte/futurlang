@@ -109,6 +109,16 @@ function nodeToExpr(node: ASTNode, symbolicMode: boolean, ctx: CodegenContext): 
       return symbolicMode
         ? `atom(true, ${JSON.stringify(node.content)})`
         : `execExpr(() => { ${generateRawNode(node)} }, ${JSON.stringify(node.content)})`;
+    case 'Intro':
+      return `assumeExpr(${JSON.stringify(`${node.varName} ∈ ${node.varType}`)})`;
+    case 'Rewrite':
+      return `atom(true, ${JSON.stringify(`rewrite(${node.hypothesis})`)})`;
+    case 'Exact':
+      return symbolicMode
+        ? `concludeExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
+        : `concludeExpr(atom(() => !!(${generateRuntimeExpr(node.expr)}), ${JSON.stringify(renderExprSource(node.expr))}))`;
+    case 'Obtain':
+      return `atom(true, ${JSON.stringify(`obtain(${node.varName})`)})`;
     default: {
       const _: never = node;
       throw new Error('Unhandled node type');
