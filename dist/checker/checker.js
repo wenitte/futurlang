@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkFile = checkFile;
+exports.createMutableContext = createMutableContext;
+exports.evaluateIncrementalStep = evaluateIncrementalStep;
 const term_1 = require("../kernel/term");
 const unify_1 = require("../kernel/unify");
 const propositions_1 = require("./propositions");
@@ -150,6 +152,34 @@ function seedPremises(ctx, premises) {
         const morphism = createKernelObject(ctx, premise, 'PREMISE', -1, [], [], '1');
         ctx.premises.push(morphism);
     }
+}
+function createMutableContext(premises, goal) {
+    const ctx = createContext(goal, new Map(), premises, new Map(), new Map());
+    seedPremises(ctx, premises);
+    return ctx;
+}
+function evaluateIncrementalStep(ctx, node) {
+    const startStepCount = ctx.proofSteps.length;
+    const stepNumber = startStepCount + 1;
+    try {
+        handleNode(ctx, node, stepNumber);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown checker failure';
+        ctx.diagnostics.push({ severity: 'error', step: stepNumber, message });
+        ctx.proofSteps.push({
+            step: stepNumber,
+            kind: classifyStep(node),
+            claim: nodeToClaim(node),
+            rule: 'STRUCTURAL',
+            state: 'FAILED',
+            message,
+        });
+    }
+    if (ctx.proofSteps.length > startStepCount) {
+        return ctx.proofSteps[ctx.proofSteps.length - 1];
+    }
+    return null;
 }
 function handleNode(ctx, node, step) {
     switch (node.type) {
@@ -482,8 +512,9 @@ function handleApply(ctx, target, step) {
         const metaSet = new Set(lemma.metavars);
         const lemmaConcTerm = (0, term_1.termFromString)(lemma.conclusion);
         const goalTerm = (0, term_1.termFromString)(ctx.goal);
-        const subst = (0, unify_1.unify)(lemmaConcTerm, goalTerm, metaSet);
-        if (subst) {
+        const unifyResult = (0, unify_1.unify)(lemmaConcTerm, goalTerm, metaSet);
+        if (!unifyResult.error) {
+            const subst = unifyResult.subst;
             const instantiatedPremises = lemma.premises.map(p => {
                 const t = (0, term_1.applySubst)((0, term_1.termFromString)(p), subst);
                 return (0, term_1.termToString)(t);
@@ -504,6 +535,20 @@ function handleApply(ctx, target, step) {
                 return;
             }
         }
+        ctx.diagnostics.push({ severity: 'error', step, message: `Lemma '${target}' unification failed`, rule: 'BY_LEMMA' });
+        ctx.proofSteps.push({
+            step,
+            kind: 'apply',
+            claim: target,
+            rule: 'BY_LEMMA',
+            state: 'FAILED',
+            message: `Consequent does not unify with goal`,
+            causalError: {
+                ruleAttempted: 'BY_LEMMA',
+                unificationMismatch: unifyResult.error,
+            }
+        });
+        return;
     }
     const missing = lemma.premises.filter(premise => !findExact(ctx.objects, premise, false));
     if (missing.length > 0 || !lemma.conclusion) {
@@ -521,6 +566,10 @@ function handleApply(ctx, target, step) {
             state: 'FAILED',
             imports: [lemma.name],
             message: `Lemma '${target}' does not compose with the current context`,
+            causalError: {
+                ruleAttempted: 'BY_LEMMA',
+                missingPremises: missing,
+            }
         });
         return;
     }

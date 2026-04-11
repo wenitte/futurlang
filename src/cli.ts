@@ -2,11 +2,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as readline from 'readline';
 import { spawn } from 'child_process';
 import { parseFL, parseFLFile } from './parser/formal';
 import { lexFL } from './parser/lexer';
 import { parseLinesToAST } from './parser/parser';
-import { checkFile } from './checker/checker';
+import { checkFile, createMutableContext, evaluateIncrementalStep } from './checker/checker';
 import { createReactApp } from './react/transpiler';
 
 const rawArgs = process.argv.slice(2);
@@ -57,6 +58,10 @@ async function main() {
     const file = args[1];
     if (!file) { console.error('Usage: fl server <file.fl>'); process.exit(1); }
     runServer(file); return;
+  }
+
+  if (command === 'repl') {
+    runRepl(rawArgs.includes('--json')); return;
   }
 
   // Default: evaluate
@@ -111,6 +116,69 @@ function runCheck(file: string) {
   const source = fs.readFileSync(file, 'utf8');
   const report = checkFile(parseLinesToAST(lexFL(source), { desugarFns: true }), { strict });
   printCheckReport(file, report);
+}
+
+function runRepl(jsonMode: boolean) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: !jsonMode,
+  });
+
+  if (!jsonMode) {
+    console.log('FuturLang Interactive Agent REPL');
+    console.log('Type a valid proof step (e.g. "assert(A ⊆ B)") or "exit".\\n');
+  }
+
+  // Interactive session without initial premises
+  let ctx = createMutableContext([], null);
+
+  if (!jsonMode) {
+    rl.setPrompt('fl> ');
+    rl.prompt();
+  }
+
+  rl.on('line', (line) => {
+    line = line.trim();
+    if (line === 'exit' || line === 'quit') {
+      process.exit(0);
+    }
+    if (!line) {
+      if (!jsonMode) rl.prompt();
+      return;
+    }
+
+    try {
+      const astNodes = parseLinesToAST(lexFL(line), { desugarFns: true });
+      if (astNodes.length === 0) {
+        if (!jsonMode) rl.prompt();
+        return;
+      }
+      for (const node of astNodes) {
+        const result = evaluateIncrementalStep(ctx, node);
+        if (jsonMode) {
+          console.log(JSON.stringify({ status: 'ok', trace: result }));
+        } else {
+          if (result) {
+            const icon = result.state === 'PROVED' ? '✓' : result.state === 'PENDING' ? '~' : result.state === 'UNVERIFIED' ? '?' : '✗';
+            console.log(` ${icon} ${result.rule} => ${result.state}`);
+            if (result.message) console.log(`    ${result.message}`);
+            if (result.causalError) console.dir(result.causalError, { depth: null, colors: true });
+          }
+        }
+      }
+    } catch (e: any) {
+      if (jsonMode) {
+        console.log(JSON.stringify({ status: 'error', error: e.message }));
+      } else {
+        console.error(` ✗ Parser/eval error: ${e.message}`);
+      }
+    }
+
+    if (!jsonMode) rl.prompt();
+  }).on('close', () => {
+    process.exit(0);
+  });
 }
 
 function printCheckReport(file: string, report: ReturnType<typeof checkFile>, exitOnFailure = true) {
@@ -360,6 +428,7 @@ App workflow (recommended):
 Legacy / single-file:
   fl start <file.fl> [out-dir]      Generate and launch a React app from a single FL file
   fl web <file.fl> [out-dir]        Generate a React app without launching it
+  fl repl [--json]                  Run the interactive agent REPL (for programmatic IO)
 
 Notes:
   --strict                          Reserved for future kernel tightening

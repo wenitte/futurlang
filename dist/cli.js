@@ -36,6 +36,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const readline = __importStar(require("readline"));
 const child_process_1 = require("child_process");
 const formal_1 = require("./parser/formal");
 const lexer_1 = require("./parser/lexer");
@@ -103,6 +104,10 @@ async function main() {
             process.exit(1);
         }
         runServer(file);
+        return;
+    }
+    if (command === 'repl') {
+        runRepl(rawArgs.includes('--json'));
         return;
     }
     // Default: evaluate
@@ -174,6 +179,70 @@ function runCheck(file) {
     const source = fs.readFileSync(file, 'utf8');
     const report = (0, checker_1.checkFile)((0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: true }), { strict });
     printCheckReport(file, report);
+}
+function runRepl(jsonMode) {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: !jsonMode,
+    });
+    if (!jsonMode) {
+        console.log('FuturLang Interactive Agent REPL');
+        console.log('Type a valid proof step (e.g. "assert(A ⊆ B)") or "exit".\\n');
+    }
+    // Interactive session without initial premises
+    let ctx = (0, checker_1.createMutableContext)([], null);
+    if (!jsonMode) {
+        rl.setPrompt('fl> ');
+        rl.prompt();
+    }
+    rl.on('line', (line) => {
+        line = line.trim();
+        if (line === 'exit' || line === 'quit') {
+            process.exit(0);
+        }
+        if (!line) {
+            if (!jsonMode)
+                rl.prompt();
+            return;
+        }
+        try {
+            const astNodes = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(line), { desugarFns: true });
+            if (astNodes.length === 0) {
+                if (!jsonMode)
+                    rl.prompt();
+                return;
+            }
+            for (const node of astNodes) {
+                const result = (0, checker_1.evaluateIncrementalStep)(ctx, node);
+                if (jsonMode) {
+                    console.log(JSON.stringify({ status: 'ok', trace: result }));
+                }
+                else {
+                    if (result) {
+                        const icon = result.state === 'PROVED' ? '✓' : result.state === 'PENDING' ? '~' : result.state === 'UNVERIFIED' ? '?' : '✗';
+                        console.log(` ${icon} ${result.rule} => ${result.state}`);
+                        if (result.message)
+                            console.log(`    ${result.message}`);
+                        if (result.causalError)
+                            console.dir(result.causalError, { depth: null, colors: true });
+                    }
+                }
+            }
+        }
+        catch (e) {
+            if (jsonMode) {
+                console.log(JSON.stringify({ status: 'error', error: e.message }));
+            }
+            else {
+                console.error(` ✗ Parser/eval error: ${e.message}`);
+            }
+        }
+        if (!jsonMode)
+            rl.prompt();
+    }).on('close', () => {
+        process.exit(0);
+    });
 }
 function printCheckReport(file, report, exitOnFailure = true) {
     console.log(`\nChecking ${path.basename(file)}\n`);
@@ -408,6 +477,7 @@ App workflow (recommended):
 Legacy / single-file:
   fl start <file.fl> [out-dir]      Generate and launch a React app from a single FL file
   fl web <file.fl> [out-dir]        Generate a React app without launching it
+  fl repl [--json]                  Run the interactive agent REPL (for programmatic IO)
 
 Notes:
   --strict                          Reserved for future kernel tightening

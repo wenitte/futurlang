@@ -94,6 +94,13 @@ export interface DerivationNode {
   step: number;
 }
 
+export interface CausalTraceError {
+  missingPremises?: string[];
+  unificationMismatch?: { expected: string; actual: string };
+  ruleAttempted: string;
+  suggestion?: string;
+}
+
 export interface ProofStepTrace {
   step: number;
   kind: 'assume' | 'assert' | 'conclude' | 'apply' | 'setVar' | 'induction' | 'match' | 'raw' | 'intro' | 'rewrite' | 'exact';
@@ -103,6 +110,7 @@ export interface ProofStepTrace {
   message: string;
   uses?: string[];
   imports?: string[];
+  causalError?: CausalTraceError;
 }
 
 export interface ProofReport {
