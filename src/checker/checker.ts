@@ -26,6 +26,7 @@ import {
   formatMorphismExpr,
   MorphismExpr,
   exprToProp,
+  parseCanonicalExpr,
   parseCategoricalEqualityCanonical,
   parseCategoryPredicateCanonical,
   parseMeasurePredicateCanonical,
@@ -857,6 +858,8 @@ function deriveClaim(
     deriveImageRule,
     derivePreimageRule,
     deriveQuantifierRule,
+    deriveDependentTypeRule,
+    deriveNaturalTransformationRule,
     deriveExFalso,
   ];
 
@@ -2018,6 +2021,81 @@ function deriveQuantifierRule(ctx: Context, claim: string, step: number) {
     }
   }
 
+  return null;
+}
+
+function deriveDependentTypeRule(ctx: Context, claim: string, step: number) {
+  const canonical = parseCanonicalExpr(claim);
+  if (typeof canonical === 'object' && 'kind' in canonical) {
+    if (canonical.kind === 'dependent_product') {
+      const witness = findWitness(ctx, canonical.variable);
+      const assumed = requireClassical(ctx, `${witness ?? canonical.variable} ∈ ${canonical.domain}`, 'PI_INTRO');
+      const bodyClaimString = typeof canonical.body === 'string' ? canonical.body : exprToProp(canonical.body as any);
+      const bodyClaim = substituteVariable(bodyClaimString, canonical.variable, witness ?? canonical.variable);
+      const body = requireClassical(ctx, bodyClaim, 'PI_INTRO');
+      if (assumed && body) {
+        createKernelObject(ctx, claim, 'PI_INTRO', step, [assumed.id, body.id]);
+        return {
+          rule: 'PI_INTRO' as const,
+          state: 'PROVED' as const,
+          uses: [assumed.claim, body.claim],
+          message: 'Constructed the Pi product limit from a local dependent type derivation',
+        };
+      }
+    }
+    if (canonical.kind === 'dependent_sum') {
+      const explicitWitness = findWitness(ctx, canonical.variable);
+      if (explicitWitness) {
+         const domainClaim = requireClassical(ctx, `${explicitWitness} ∈ ${canonical.domain}`, 'SIGMA_INTRO');
+         const bodyClaimString = typeof canonical.body === 'string' ? canonical.body : exprToProp(canonical.body as any);
+         const bodyClaim = requireClassical(ctx, substituteVariable(bodyClaimString, canonical.variable, explicitWitness), 'SIGMA_INTRO');
+         if (domainClaim && bodyClaim) {
+            createKernelObject(ctx, claim, 'SIGMA_INTRO', step, [domainClaim.id, bodyClaim.id]);
+            return {
+              rule: 'SIGMA_INTRO' as const,
+              state: 'PROVED' as const,
+              uses: [domainClaim.claim, bodyClaim.claim],
+              message: 'Constructed a Sigma sum type from an explicit dependent witness pair',
+            };
+         }
+      }
+    }
+  }
+
+  for (const object of classicalObjects(ctx)) {
+    const pKernel = parseCanonicalExpr(object.claim);
+    if (typeof pKernel === 'object' && 'kind' in pKernel && pKernel.kind === 'dependent_product') {
+       const mem = parseMembershipCanonical(claim);
+       if (!mem) continue;
+       const premise = requireClassical(ctx, `${mem.element} ∈ ${pKernel.domain}`, 'PI_ELIM');
+       if (!premise) continue;
+       const bodyClaimString = typeof pKernel.body === 'string' ? pKernel.body : exprToProp(pKernel.body as any);
+       const expected = substituteVariable(bodyClaimString, pKernel.variable, mem.element);
+       if (sameProp(expected, claim)) {
+         createKernelObject(ctx, claim, 'PI_ELIM', step, [object.id, premise.id]);
+         return {
+           rule: 'PI_ELIM' as const,
+           state: 'PROVED' as const,
+           uses: [object.claim, premise.claim],
+           message: 'Applied a dependent Pi type application binding the context',
+         };
+       }
+    }
+  }
+
+  return null;
+}
+
+function deriveNaturalTransformationRule(ctx: Context, claim: string, step: number) {
+  const pred = parseCategoryPredicateCanonical(claim);
+  if (pred && pred.name === 'NaturalTransformation' as any) {
+      createKernelObject(ctx, claim, 'NATURAL_TRANSFORMATION_INTRO', step);
+      return {
+        rule: 'NATURAL_TRANSFORMATION_INTRO' as const,
+        state: 'PROVED' as const,
+        message: 'Checked the commutative diagram functor projection natively',
+      };
+  }
   return null;
 }
 

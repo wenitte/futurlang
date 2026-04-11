@@ -53,6 +53,8 @@ function parseLinesToAST(lines, options = {}) {
                     name: signature.name,
                     params: signature.params,
                     returnType: signature.returnType,
+                    requires: [],
+                    ensures: [],
                     body: [],
                     connective: null,
                 };
@@ -88,6 +90,26 @@ function parseLinesToAST(lines, options = {}) {
                 const expr = parseCallExpr(line.content, 'assert');
                 const node = { type: 'Assert', expr, connective: line.connective };
                 pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'requires': {
+                const expr = parseCallExpr(line.content, 'requires');
+                if (stack.length > 0 && stack[stack.length - 1].type === 'FnDecl') {
+                    stack[stack.length - 1].requires.push(expr);
+                }
+                else {
+                    throw new Error('requires() may only appear inside fn blocks');
+                }
+                break;
+            }
+            case 'ensures': {
+                const expr = parseCallExpr(line.content, 'ensures');
+                if (stack.length > 0 && stack[stack.length - 1].type === 'FnDecl') {
+                    stack[stack.length - 1].ensures.push(expr);
+                }
+                else {
+                    throw new Error('ensures() may only appear inside fn blocks');
+                }
                 break;
             }
             case 'given': {
@@ -385,11 +407,29 @@ function desugarFnDecl(node) {
         expr: (0, expr_1.parseExpr)(`${param.name} ∈ ${param.type}`),
         connective: '→',
     }));
-    theoremBody.push({
-        type: 'Assert',
-        expr: goalExpr,
-        connective: null,
-    });
+    for (const req of node.requires) {
+        theoremBody.push({
+            type: 'Given',
+            expr: req,
+            connective: '→',
+        });
+    }
+    if (node.ensures.length > 0) {
+        for (let i = 0; i < node.ensures.length; i++) {
+            theoremBody.push({
+                type: 'Assert',
+                expr: node.ensures[i],
+                connective: i === node.ensures.length - 1 ? null : '∧',
+            });
+        }
+    }
+    else {
+        theoremBody.push({
+            type: 'Assert',
+            expr: goalExpr,
+            connective: null,
+        });
+    }
     const theorem = {
         type: 'Theorem',
         name: node.name,

@@ -1,0 +1,7 @@
+theorem DependentSumTest {
+  given(x ∈ Σ(y ∈ Nat, y = 0))
+  assert(x ∈ Σ(y ∈ Nat, y = 0))
+} ↔
+proof DependentSumTest {
+  exact(x ∈ Σ(y ∈ Nat, y = 0))
+}

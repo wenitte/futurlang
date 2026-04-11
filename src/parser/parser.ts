@@ -61,6 +61,8 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
           name: signature.name,
           params: signature.params,
           returnType: signature.returnType,
+          requires: [],
+          ensures: [],
           body: [],
           connective: null,
         };
@@ -98,6 +100,24 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
         const expr = parseCallExpr(line.content, 'assert');
         const node: AssertNode = { type: 'Assert', expr, connective: line.connective };
         pushOrTop(stack, ast, node); break;
+      }
+      case 'requires': {
+        const expr = parseCallExpr(line.content, 'requires');
+        if (stack.length > 0 && stack[stack.length - 1].type === 'FnDecl') {
+          (stack[stack.length - 1] as FnDeclNode).requires.push(expr);
+        } else {
+          throw new Error('requires() may only appear inside fn blocks');
+        }
+        break;
+      }
+      case 'ensures': {
+        const expr = parseCallExpr(line.content, 'ensures');
+        if (stack.length > 0 && stack[stack.length - 1].type === 'FnDecl') {
+          (stack[stack.length - 1] as FnDeclNode).ensures.push(expr);
+        } else {
+          throw new Error('ensures() may only appear inside fn blocks');
+        }
+        break;
       }
       case 'given': {
         const expr = parseCallExpr(line.content, 'given');
@@ -400,11 +420,30 @@ function desugarFnDecl(node: FnDeclNode): [TheoremNode, ProofNode] {
     expr: parseExpr(`${param.name} ∈ ${param.type}`),
     connective: '→' as const,
   }));
-  theoremBody.push({
-    type: 'Assert' as const,
-    expr: goalExpr,
-    connective: null,
-  });
+
+  for (const req of node.requires) {
+    theoremBody.push({
+      type: 'Given' as const,
+      expr: req,
+      connective: '→' as const,
+    });
+  }
+
+  if (node.ensures.length > 0) {
+    for (let i = 0; i < node.ensures.length; i++) {
+      theoremBody.push({
+        type: 'Assert' as const,
+        expr: node.ensures[i],
+        connective: i === node.ensures.length - 1 ? null : '∧',
+      });
+    }
+  } else {
+    theoremBody.push({
+      type: 'Assert' as const,
+      expr: goalExpr,
+      connective: null,
+    });
+  }
 
   const theorem: TheoremNode = {
     type: 'Theorem',

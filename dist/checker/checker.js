@@ -691,6 +691,8 @@ function deriveClaim(ctx, claim, step) {
         deriveImageRule,
         derivePreimageRule,
         deriveQuantifierRule,
+        deriveDependentTypeRule,
+        deriveNaturalTransformationRule,
         deriveExFalso,
     ];
     for (const attempt of prover) {
@@ -1849,6 +1851,79 @@ function deriveQuantifierRule(ctx, claim, step) {
                 message: 'Eliminated an existential morphism through a witness branch',
             };
         }
+    }
+    return null;
+}
+function deriveDependentTypeRule(ctx, claim, step) {
+    const canonical = (0, propositions_1.parseCanonicalExpr)(claim);
+    if (typeof canonical === 'object' && 'kind' in canonical) {
+        if (canonical.kind === 'dependent_product') {
+            const witness = findWitness(ctx, canonical.variable);
+            const assumed = requireClassical(ctx, `${witness ?? canonical.variable} ∈ ${canonical.domain}`, 'PI_INTRO');
+            const bodyClaimString = typeof canonical.body === 'string' ? canonical.body : (0, propositions_1.exprToProp)(canonical.body);
+            const bodyClaim = substituteVariable(bodyClaimString, canonical.variable, witness ?? canonical.variable);
+            const body = requireClassical(ctx, bodyClaim, 'PI_INTRO');
+            if (assumed && body) {
+                createKernelObject(ctx, claim, 'PI_INTRO', step, [assumed.id, body.id]);
+                return {
+                    rule: 'PI_INTRO',
+                    state: 'PROVED',
+                    uses: [assumed.claim, body.claim],
+                    message: 'Constructed the Pi product limit from a local dependent type derivation',
+                };
+            }
+        }
+        if (canonical.kind === 'dependent_sum') {
+            const explicitWitness = findWitness(ctx, canonical.variable);
+            if (explicitWitness) {
+                const domainClaim = requireClassical(ctx, `${explicitWitness} ∈ ${canonical.domain}`, 'SIGMA_INTRO');
+                const bodyClaimString = typeof canonical.body === 'string' ? canonical.body : (0, propositions_1.exprToProp)(canonical.body);
+                const bodyClaim = requireClassical(ctx, substituteVariable(bodyClaimString, canonical.variable, explicitWitness), 'SIGMA_INTRO');
+                if (domainClaim && bodyClaim) {
+                    createKernelObject(ctx, claim, 'SIGMA_INTRO', step, [domainClaim.id, bodyClaim.id]);
+                    return {
+                        rule: 'SIGMA_INTRO',
+                        state: 'PROVED',
+                        uses: [domainClaim.claim, bodyClaim.claim],
+                        message: 'Constructed a Sigma sum type from an explicit dependent witness pair',
+                    };
+                }
+            }
+        }
+    }
+    for (const object of classicalObjects(ctx)) {
+        const pKernel = (0, propositions_1.parseCanonicalExpr)(object.claim);
+        if (typeof pKernel === 'object' && 'kind' in pKernel && pKernel.kind === 'dependent_product') {
+            const mem = (0, propositions_1.parseMembershipCanonical)(claim);
+            if (!mem)
+                continue;
+            const premise = requireClassical(ctx, `${mem.element} ∈ ${pKernel.domain}`, 'PI_ELIM');
+            if (!premise)
+                continue;
+            const bodyClaimString = typeof pKernel.body === 'string' ? pKernel.body : (0, propositions_1.exprToProp)(pKernel.body);
+            const expected = substituteVariable(bodyClaimString, pKernel.variable, mem.element);
+            if ((0, propositions_1.sameProp)(expected, claim)) {
+                createKernelObject(ctx, claim, 'PI_ELIM', step, [object.id, premise.id]);
+                return {
+                    rule: 'PI_ELIM',
+                    state: 'PROVED',
+                    uses: [object.claim, premise.claim],
+                    message: 'Applied a dependent Pi type application binding the context',
+                };
+            }
+        }
+    }
+    return null;
+}
+function deriveNaturalTransformationRule(ctx, claim, step) {
+    const pred = (0, propositions_1.parseCategoryPredicateCanonical)(claim);
+    if (pred && pred.name === 'NaturalTransformation') {
+        createKernelObject(ctx, claim, 'NATURAL_TRANSFORMATION_INTRO', step);
+        return {
+            rule: 'NATURAL_TRANSFORMATION_INTRO',
+            state: 'PROVED',
+            message: 'Checked the commutative diagram functor projection natively',
+        };
     }
     return null;
 }

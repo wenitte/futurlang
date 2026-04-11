@@ -196,6 +196,8 @@ export interface FnDeclNode {
   name: string;
   params: FnParam[];
   returnType: string;
+  requires: ExprNode[];
+  ensures: ExprNode[];
   body: ASTNode[];
   connective: BlockConnective;
 }

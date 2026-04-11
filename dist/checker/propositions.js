@@ -124,6 +124,27 @@ function canonicalizeAtom(value) {
     }
     const membership = splitTopLevelAtom(normalized, '∈');
     if (membership) {
+        const setExpr = membership[1];
+        const piMatch = setExpr.match(/^Π\s*\(\s*(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+?)\s*,\s*(.+)\s*\)$/);
+        if (piMatch) {
+            return {
+                kind: 'dependent_product',
+                element: normalizeTerm(membership[0]),
+                variable: normalizeTerm(piMatch[1]),
+                domain: normalizeTerm(piMatch[2]),
+                body: normalizeTerm(piMatch[3]),
+            };
+        }
+        const sigMatch = setExpr.match(/^Σ\s*\(\s*(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+?)\s*,\s*(.+)\s*\)$/);
+        if (sigMatch) {
+            return {
+                kind: 'dependent_sum',
+                element: normalizeTerm(membership[0]),
+                variable: normalizeTerm(sigMatch[1]),
+                domain: normalizeTerm(sigMatch[2]),
+                body: normalizeTerm(sigMatch[3]),
+            };
+        }
         return {
             kind: 'membership',
             element: normalizeTerm(membership[0]),
@@ -410,6 +431,10 @@ function canonicalAtomDisplay(atom) {
             return `${atom.element} ∈ ${atom.set}`;
         case 'nonmembership':
             return `${atom.element} ∉ ${atom.set}`;
+        case 'dependent_product':
+            return `${atom.element} ∈ Π(${atom.variable} ∈ ${atom.domain}, ${atom.body})`;
+        case 'dependent_sum':
+            return `${atom.element} ∈ Σ(${atom.variable} ∈ ${atom.domain}, ${atom.body})`;
         case 'subset':
             return `${atom.left} ${atom.strict ? '⊆' : '⊂'} ${atom.right}`;
         case 'equality':
@@ -427,6 +452,10 @@ function canonicalAtomKey(atom) {
             return `membership(${normalizeTerm(atom.element)},${normalizeTerm(atom.set)})`;
         case 'nonmembership':
             return `nonmembership(${normalizeTerm(atom.element)},${normalizeTerm(atom.set)})`;
+        case 'dependent_product':
+            return `pi(${normalizeTerm(atom.element)},${normalizeTerm(atom.variable)},${normalizeTerm(atom.domain)},${normalizeTerm(atom.body)})`;
+        case 'dependent_sum':
+            return `sigma(${normalizeTerm(atom.element)},${normalizeTerm(atom.variable)},${normalizeTerm(atom.domain)},${normalizeTerm(atom.body)})`;
         case 'subset':
             return `subset(${atom.strict ? 'strict' : 'weak'},${normalizeTerm(atom.left)},${normalizeTerm(atom.right)})`;
         case 'equality':

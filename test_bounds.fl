@@ -1,0 +1,5 @@
+fn main(x ∈ Nat) -> Nat {
+  requires(x = 0)
+  ensures(x = 0)
+  conclude(x = 0)
+}

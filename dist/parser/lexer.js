@@ -130,6 +130,27 @@ function lexFL(text) {
             parsed.push({ type: 'assert', content: cleaned, connective: conn });
             continue;
         }
+        // ── requires(...) / ensures(...) ─────────────────────────────────────────
+        if (/^requires\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'requires', content: cleaned, connective: conn });
+            continue;
+        }
+        if (/^ensures\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'ensures', content: cleaned, connective: conn });
+            continue;
+        }
         // ── given(...) — theorem/lemma premises, possibly multi-line ────────────
         if (/^given\s*\(/.test(line)) {
             let combined = line;

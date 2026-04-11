@@ -6,6 +6,7 @@ export interface ParsedLine {
   type:
     | 'theorem' | 'definition' | 'struct' | 'typeDecl' | 'proof' | 'lemma' | 'fn'
     | 'assert'  | 'given'      | 'assume'   | 'conclude' | 'apply'
+    | 'requires' | 'ensures'
     | 'setVar'  | 'blockEnd'   | 'level'    | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw'
     | 'intro' | 'rewrite' | 'exact' | 'obtain';
   content: string;
@@ -135,6 +136,27 @@ export function lexFL(text: string): ParsedLine[] {
       }
       const [cleaned, conn] = extractConnective(combined);
       parsed.push({ type: 'assert', content: cleaned, connective: conn });
+      continue;
+    }
+
+    // ── requires(...) / ensures(...) ─────────────────────────────────────────
+    if (/^requires\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'requires', content: cleaned, connective: conn });
+      continue;
+    }
+
+    if (/^ensures\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'ensures', content: cleaned, connective: conn });
       continue;
     }
 
