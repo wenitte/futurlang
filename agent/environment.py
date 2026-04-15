@@ -80,3 +80,26 @@ class FuturLangEnv:
             done = True
             
         return response, reward, done, info
+
+import queue
+
+class FuturLangEnvPool:
+    """
+    Thread-safe resource pool for managing isolated FuturLang background evaluators.
+    """
+    def __init__(self, size=4, node_bin='node', script_path='dist/cli.js'):
+        self.pool = queue.Queue(maxsize=size)
+        self.size = size
+        for _ in range(size):
+            self.pool.put(FuturLangEnv(node_bin=node_bin, script_path=script_path))
+
+    def get(self):
+        return self.pool.get()
+
+    def put(self, env):
+        self.pool.put(env)
+
+    def close(self):
+        while not self.pool.empty():
+            env = self.pool.get()
+            env.close()

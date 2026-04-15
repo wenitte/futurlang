@@ -78,6 +78,17 @@ export function termFromString(s: string): Term {
     return { kind: 'app', fn: appMatch[1], args };
   }
 
+  // Arithmetic operators — split rightmost top-level occurrence for left-associativity.
+  // Precedence (lowest first): +/- then *//
+  const addMatch = splitTopRightArith(normalized, ['+', '-']);
+  if (addMatch) {
+    return { kind: 'app', fn: addMatch[1], args: [termAtom(addMatch[0]), termAtom(addMatch[2])] };
+  }
+  const mulMatch = splitTopRightArith(normalized, ['*', '/']);
+  if (mulMatch) {
+    return { kind: 'app', fn: mulMatch[1], args: [termAtom(mulMatch[0]), termAtom(mulMatch[2])] };
+  }
+
   // simple variable/name
   if (/^[A-Za-z_][\w₀-₉ₐ-ₙ]*$/.test(normalized)) {
     return { kind: 'var', name: normalized };
@@ -190,7 +201,21 @@ export function termToString(term: Term): string {
   switch (term.kind) {
     case 'var':     return term.name;
     case 'atom':    return term.value;
-    case 'app':     return `${term.fn}(${term.args.map(termToString).join(', ')})`;
+    case 'app': {
+    const INFIX_OPS = new Set(['+', '-', '*', '/', '%']);
+    if (INFIX_OPS.has(term.fn) && term.args.length === 2) {
+      const l = termToString(term.args[0]);
+      const r = termToString(term.args[1]);
+      // Wrap right operand in parens when it is itself an infix op with lower precedence
+      const needsParens = (s: string, op: string) => {
+        if (op === '*' || op === '/') return /[+\-]/.test(s.replace(/\([^)]*\)/g, ''));
+        return false;
+      };
+      const rStr = needsParens(r, term.fn) ? `(${r})` : r;
+      return `${l} ${term.fn} ${rStr}`;
+    }
+    return `${term.fn}(${term.args.map(termToString).join(', ')})`;
+  }
     case 'and':     return `${termToString(term.left)} ∧ ${termToString(term.right)}`;
     case 'or':      return `${termToString(term.left)} ∨ ${termToString(term.right)}`;
     case 'implies': return `${termToString(term.left)} → ${termToString(term.right)}`;
@@ -236,6 +261,39 @@ export function rewriteTerm(term: Term, from: Term, to: Term): Term {
     default:
       return term;
   }
+}
+
+// ── Arithmetic helpers ────────────────────────────────────────────────────────
+
+/**
+ * Split `s` at the RIGHTMOST top-level occurrence of any operator in `ops`.
+ * Returns [left, op, right] or null.  Rightmost gives left-associativity when
+ * the caller recurses on the left side.
+ */
+function splitTopRightArith(s: string, ops: string[]): [string, string, string] | null {
+  let depth = 0;
+  let bestIdx = -1;
+  let bestOp = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '(' || ch === '[' || ch === '{') { depth++; continue; }
+    if (ch === ')' || ch === ']' || ch === '}') { depth--; continue; }
+    if (depth !== 0) continue;
+    for (const op of ops) {
+      if (s.startsWith(op, i)) {
+        // Avoid confusing unary minus at the start
+        if (op === '-' && i === 0) continue;
+        bestIdx = i;
+        bestOp = op;
+        break;
+      }
+    }
+  }
+  if (bestIdx < 0) return null;
+  const left = s.slice(0, bestIdx).trim();
+  const right = s.slice(bestIdx + bestOp.length).trim();
+  if (!left || !right) return null;
+  return [left, bestOp, right];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

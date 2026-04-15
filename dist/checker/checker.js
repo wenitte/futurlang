@@ -4,6 +4,7 @@ exports.checkFile = checkFile;
 exports.createMutableContext = createMutableContext;
 exports.evaluateIncrementalStep = evaluateIncrementalStep;
 const term_1 = require("../kernel/term");
+const arithmetic_1 = require("../kernel/arithmetic");
 const unify_1 = require("../kernel/unify");
 const propositions_1 = require("./propositions");
 const category_1 = require("../kernel/category");
@@ -694,6 +695,7 @@ function deriveClaim(ctx, claim, step) {
         deriveDependentTypeRule,
         deriveNaturalTransformationRule,
         deriveExFalso,
+        deriveArithClaim,
     ];
     for (const attempt of prover) {
         const result = attempt(ctx, claim, step);
@@ -1938,6 +1940,337 @@ function deriveExFalso(ctx, claim, step) {
         uses: [BOTTOM],
         message: 'Derived the target claim by factoring through falsehood',
     };
+}
+// ── Arithmetic / number theory rules ─────────────────────────────────────────
+function deriveArithClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    // ── Concrete arithmetic equality: `a = b` where both sides are pure integers ──
+    const eq = (0, propositions_1.parseEqualityCanonical)(claim);
+    if (eq) {
+        if ((0, arithmetic_1.arithEqual)(eq.left, eq.right)) {
+            createKernelObject(ctx, claim, 'ARITH_EVAL', step);
+            return {
+                rule: 'ARITH_EVAL',
+                state: 'PROVED',
+                message: 'Verified by concrete integer evaluation',
+            };
+        }
+        // ── Symbolic arithmetic equality: spot-test with random values ──────────────
+        // Collect simple variable equalities from context (x = expr) as substitutions.
+        const exprSubsts = new Map();
+        for (const obj of all) {
+            const objEq = (0, propositions_1.parseEqualityCanonical)(obj.claim);
+            if (!objEq)
+                continue;
+            // Only use simple single-identifier LHS like `p = 2 * k`
+            if (/^[A-Za-z_]\w*$/.test(objEq.left.trim())) {
+                exprSubsts.set(objEq.left.trim(), objEq.right);
+            }
+        }
+        if ((0, arithmetic_1.arithSymEqual)(eq.left, eq.right) ||
+            (0, arithmetic_1.arithSymEqualWithSubst)(eq.left, eq.right, exprSubsts)) {
+            createKernelObject(ctx, claim, 'ARITH_SYMCHECK', step);
+            return {
+                rule: 'ARITH_SYMCHECK',
+                state: 'PROVED',
+                message: 'Verified by polynomial identity check (Schwartz-Zippel)',
+            };
+        }
+        // ── Equality transitivity: A = B via A = C and C = B in context ─────────────
+        const allForTrans = [...all, ...ctx.objects];
+        const normalize = (s) => (0, arithmetic_1.normArith)(s).replace(/\s/g, '');
+        const normL = normalize(eq.left);
+        const normR = normalize(eq.right);
+        for (const obj1 of allForTrans) {
+            const e1 = (0, propositions_1.parseEqualityCanonical)(obj1.claim);
+            if (!e1)
+                continue;
+            const e1Sides = [[e1.left, e1.right], [e1.right, e1.left]];
+            for (const [e1l, e1r] of e1Sides) {
+                if (normalize(e1l) !== normL)
+                    continue;
+                // e1: A = C, now look for C = B
+                const midNorm = normalize(e1r);
+                for (const obj2 of allForTrans) {
+                    if (obj2 === obj1)
+                        continue;
+                    const e2 = (0, propositions_1.parseEqualityCanonical)(obj2.claim);
+                    if (!e2)
+                        continue;
+                    const e2Sides = [[e2.left, e2.right], [e2.right, e2.left]];
+                    for (const [e2l, e2r] of e2Sides) {
+                        if (normalize(e2l) === midNorm && normalize(e2r) === normR) {
+                            createKernelObject(ctx, claim, 'ARITH_SYMCHECK', step, [obj1.id, obj2.id]);
+                            return {
+                                rule: 'ARITH_SYMCHECK',
+                                state: 'PROVED',
+                                uses: [obj1.claim, obj2.claim],
+                                message: 'Equality by transitivity',
+                            };
+                        }
+                    }
+                }
+            }
+        }
+        // ── Scaling: k*A = k*B in context implies A = B ──────────────────────────────
+        // For claim A = B, multiply both sides by small constants and look in context.
+        for (const factor of [2, 3, 4, 6]) {
+            const scaledL = `${factor} * (${(0, arithmetic_1.normArith)(eq.left)})`;
+            const scaledR = `${factor} * (${(0, arithmetic_1.normArith)(eq.right)})`;
+            for (const obj of allForTrans) {
+                const oe = (0, propositions_1.parseEqualityCanonical)(obj.claim);
+                if (!oe)
+                    continue;
+                const matchFwd = (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(oe.left), scaledL) && (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(oe.right), scaledR);
+                const matchRev = (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(oe.right), scaledL) && (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(oe.left), scaledR);
+                if (matchFwd || matchRev) {
+                    createKernelObject(ctx, claim, 'ARITH_SYMCHECK', step, [obj.id]);
+                    return {
+                        rule: 'ARITH_SYMCHECK',
+                        state: 'PROVED',
+                        uses: [obj.claim],
+                        message: `Derived by cancelling factor ${factor} from both sides`,
+                    };
+                }
+            }
+        }
+        // ── Division-by-constant: if k*A = k*B proved, derive A = B ────────────────
+        // Check if lhs and rhs are both multiples of the same concrete constant
+        for (const factor of [2, 3, 4, 6]) {
+            const fStr = String(factor);
+            const stripFactor = (s, f) => {
+                const re1 = new RegExp(`^${f}\\s*\\*\\s*\\((.+)\\)$`);
+                const re2 = new RegExp(`^${f}\\s*\\*\\s*(.+)$`);
+                const m1 = s.match(re1);
+                if (m1)
+                    return m1[1].trim();
+                const m2 = s.match(re2);
+                if (m2)
+                    return m2[1].trim();
+                return null;
+            };
+            const innerL = stripFactor((0, arithmetic_1.normArith)(eq.left), fStr);
+            const innerR = stripFactor((0, arithmetic_1.normArith)(eq.right), fStr);
+            if (innerL && innerR) {
+                // Claim `innerL = innerR` — look for `factor*innerL = factor*innerR` in context
+                const scaledClaim = `${fStr} * (${innerL}) = ${fStr} * (${innerR})`;
+                const scaledObj = allForTrans.find(o => {
+                    const oe = (0, propositions_1.parseEqualityCanonical)(o.claim);
+                    if (!oe)
+                        return false;
+                    return (normalize(oe.left) === normalize(`${fStr} * (${innerL})`) && normalize(oe.right) === normalize(`${fStr} * (${innerR})`))
+                        || (normalize(oe.right) === normalize(`${fStr} * (${innerL})`) && normalize(oe.left) === normalize(`${fStr} * (${innerR})`));
+                });
+                if (scaledObj) {
+                    createKernelObject(ctx, claim, 'ARITH_SYMCHECK', step, [scaledObj.id]);
+                    return {
+                        rule: 'ARITH_SYMCHECK',
+                        state: 'PROVED',
+                        uses: [scaledObj.claim],
+                        message: `Derived by cancelling factor ${fStr}`,
+                    };
+                }
+                // Also check symbolically
+                if ((0, arithmetic_1.arithSymEqualWithSubst)(innerL, innerR, exprSubsts)) {
+                    createKernelObject(ctx, claim, 'ARITH_SYMCHECK', step);
+                    return {
+                        rule: 'ARITH_SYMCHECK',
+                        state: 'PROVED',
+                        message: `Derived by symbolic check after cancelling factor ${fStr}`,
+                    };
+                }
+            }
+        }
+    }
+    // ── even(N) ───────────────────────────────────────────────────────────────────
+    const evenArg = (0, arithmetic_1.parseEvenClaim)(claim);
+    if (evenArg !== null) {
+        // Rule 1: N is a concrete even integer
+        if ((0, arithmetic_1.isConcreteEven)(evenArg)) {
+            createKernelObject(ctx, claim, 'ARITH_EVAL', step);
+            return { rule: 'ARITH_EVAL', state: 'PROVED', message: 'Concrete even integer' };
+        }
+        // Rule 2: There is `N = 2 * K` or `N = K * 2` in context
+        for (const obj of all) {
+            const objEq = (0, propositions_1.parseEqualityCanonical)(obj.claim);
+            if (!objEq)
+                continue;
+            const sides = [[objEq.left, objEq.right], [objEq.right, objEq.left]];
+            for (const [lhs, rhs] of sides) {
+                if ((0, arithmetic_1.normArith)(lhs) === (0, arithmetic_1.normArith)(evenArg) && (0, arithmetic_1.extractDoubleOperand)(rhs) !== null) {
+                    createKernelObject(ctx, claim, 'ARITH_EVEN_OF_DOUBLE', step, [obj.id]);
+                    return {
+                        rule: 'ARITH_EVEN_OF_DOUBLE',
+                        state: 'PROVED',
+                        uses: [obj.claim],
+                        message: `${evenArg} = 2·k establishes even(${evenArg})`,
+                    };
+                }
+            }
+        }
+        // Rule 3: Kernel axiom — even(N·N) in context → even(N)
+        const squareClaim = `even(${evenArg} * ${evenArg})`;
+        const squareObj = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(squareClaim));
+        if (squareObj) {
+            createKernelObject(ctx, claim, 'ARITH_EVEN_SQUARE', step, [squareObj.id]);
+            return {
+                rule: 'ARITH_EVEN_SQUARE',
+                state: 'PROVED',
+                uses: [squareObj.claim],
+                message: `Kernel axiom: n² even implies n even`,
+            };
+        }
+        // Rule 4: N = A * B and even(A) or even(B) is in context
+        const mul = (0, arithmetic_1.splitTopMul)(evenArg);
+        if (mul) {
+            const [a, b] = mul;
+            const evenA = `even(${a})`;
+            const evenB = `even(${b})`;
+            const witA = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(evenA));
+            const witB = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(evenB));
+            const wit = witA ?? witB;
+            if (wit) {
+                createKernelObject(ctx, claim, 'ARITH_EVEN_PRODUCT', step, [wit.id]);
+                return {
+                    rule: 'ARITH_EVEN_PRODUCT',
+                    state: 'PROVED',
+                    uses: [wit.claim],
+                    message: `Even factor in product establishes even(${evenArg})`,
+                };
+            }
+        }
+        // Rule 5: There is `N = M` in context and even(M) is available
+        for (const obj of all) {
+            const objEq = (0, propositions_1.parseEqualityCanonical)(obj.claim);
+            if (!objEq)
+                continue;
+            const sides = [[objEq.left, objEq.right], [objEq.right, objEq.left]];
+            for (const [lhs, rhs] of sides) {
+                if ((0, arithmetic_1.normArith)(lhs) === (0, arithmetic_1.normArith)(evenArg)) {
+                    const evenRhs = `even(${rhs})`;
+                    const evenRhsObj = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(evenRhs));
+                    if (evenRhsObj) {
+                        createKernelObject(ctx, claim, 'ARITH_EVEN_OF_DOUBLE', step, [obj.id, evenRhsObj.id]);
+                        return {
+                            rule: 'ARITH_EVEN_OF_DOUBLE',
+                            state: 'PROVED',
+                            uses: [obj.claim, evenRhsObj.claim],
+                            message: `Even transferred via equality`,
+                        };
+                    }
+                }
+            }
+        }
+    }
+    // ── odd(N) ────────────────────────────────────────────────────────────────────
+    const oddArg = (0, arithmetic_1.parseOddClaim)(claim);
+    if (oddArg !== null) {
+        // Rule 1: N is a concrete odd integer
+        if ((0, arithmetic_1.isConcreteOdd)(oddArg)) {
+            createKernelObject(ctx, claim, 'ARITH_EVAL', step);
+            return { rule: 'ARITH_EVAL', state: 'PROVED', message: 'Concrete odd integer' };
+        }
+        // Rule 2: N = 2*K + 1 or N = 1 + 2*K in context
+        for (const obj of all) {
+            const objEq = (0, propositions_1.parseEqualityCanonical)(obj.claim);
+            if (!objEq)
+                continue;
+            const sides = [[objEq.left, objEq.right], [objEq.right, objEq.left]];
+            for (const [lhs, rhs] of sides) {
+                if ((0, arithmetic_1.normArith)(lhs) === (0, arithmetic_1.normArith)(oddArg) && (0, arithmetic_1.extractSuccDoubleOperand)(rhs) !== null) {
+                    createKernelObject(ctx, claim, 'ARITH_ODD_OF_SUCC_DOUBLE', step, [obj.id]);
+                    return {
+                        rule: 'ARITH_ODD_OF_SUCC_DOUBLE',
+                        state: 'PROVED',
+                        uses: [obj.claim],
+                        message: `${oddArg} = 2·k+1 establishes odd(${oddArg})`,
+                    };
+                }
+            }
+        }
+    }
+    // ── divides(A, B) ─────────────────────────────────────────────────────────────
+    const div = (0, arithmetic_1.parseDividesClaim)(claim);
+    if (div) {
+        // Concrete: evalArith(b) % evalArith(a) === 0
+        const av = div.a === '0' ? null : (() => { try {
+            return parseInt(div.a, 10);
+        }
+        catch {
+            return null;
+        } })();
+        const bv = (() => { try {
+            return parseInt(div.b, 10);
+        }
+        catch {
+            return null;
+        } })();
+        if (av !== null && bv !== null && !isNaN(av) && !isNaN(bv) && bv % av === 0) {
+            createKernelObject(ctx, claim, 'ARITH_EVAL', step);
+            return { rule: 'ARITH_EVAL', state: 'PROVED', message: 'Concrete divisibility check' };
+        }
+        // B = A * K in context
+        for (const obj of all) {
+            const objEq = (0, propositions_1.parseEqualityCanonical)(obj.claim);
+            if (!objEq)
+                continue;
+            const sides = [[objEq.left, objEq.right], [objEq.right, objEq.left]];
+            for (const [lhs, rhs] of sides) {
+                if ((0, arithmetic_1.normArith)(lhs) === (0, arithmetic_1.normArith)(div.b)) {
+                    const mul = (0, arithmetic_1.splitTopMul)(rhs);
+                    if (mul && ((0, arithmetic_1.normArith)(mul[0]) === (0, arithmetic_1.normArith)(div.a) || (0, arithmetic_1.normArith)(mul[1]) === (0, arithmetic_1.normArith)(div.a))) {
+                        createKernelObject(ctx, claim, 'ARITH_DIVIDES', step, [obj.id]);
+                        return {
+                            rule: 'ARITH_DIVIDES',
+                            state: 'PROVED',
+                            uses: [obj.claim],
+                            message: `${div.b} = ${div.a}·k establishes divides(${div.a}, ${div.b})`,
+                        };
+                    }
+                }
+            }
+        }
+    }
+    // ── coprime(A, B): trivially true when A and B are concrete coprimes ──────────
+    const coprimeMatch = claim.trim().match(/^coprime\s*\(\s*([\s\S]+?)\s*,\s*([\s\S]+?)\s*\)$/i);
+    if (coprimeMatch) {
+        const [, a, b] = coprimeMatch;
+        const av = (0, arithmetic_1.evalArith)(a);
+        const bv = (0, arithmetic_1.evalArith)(b);
+        if (av !== null && bv !== null) {
+            const gcd = (x, y) => y === 0 ? x : gcd(y, x % y);
+            if (gcd(Math.abs(av), Math.abs(bv)) === 1) {
+                createKernelObject(ctx, claim, 'ARITH_EVAL', step);
+                return { rule: 'ARITH_EVAL', state: 'PROVED', message: 'Concrete coprimality check' };
+            }
+        }
+    }
+    // ── ⊥ from coprime(A, B) ∧ even(A) ∧ even(B) ──────────────────────────────
+    // If coprime(A, B) is in context and both even(A) and even(B) are in context → contradiction
+    if (claim === BOTTOM || claim === '⊥' || claim === 'False') {
+        for (const obj of all) {
+            const cpMatch = obj.claim.trim().match(/^coprime\s*\(\s*([\s\S]+?)\s*,\s*([\s\S]+?)\s*\)$/i);
+            if (!cpMatch)
+                continue;
+            const [, a, b] = cpMatch;
+            const evenA = `even(${a})`;
+            const evenB = `even(${b})`;
+            const witA = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(evenA));
+            const witB = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(evenB));
+            if (witA && witB) {
+                createKernelObject(ctx, BOTTOM, 'ARITH_COPRIME_CONTRA', step, [obj.id, witA.id, witB.id]);
+                if (ctx.goal)
+                    createKernelObject(ctx, ctx.goal, 'ARITH_COPRIME_CONTRA', step);
+                return {
+                    rule: 'ARITH_COPRIME_CONTRA',
+                    state: 'PROVED',
+                    uses: [obj.claim, witA.claim, witB.claim],
+                    message: `Contradiction: coprime(${a}, ${b}) but both are even`,
+                };
+            }
+        }
+    }
+    return null;
 }
 function createPendingObject(ctx, claim, step) {
     createKernelObject(ctx, claim, 'STRUCTURAL', step, [], [], 'ω', pendingTerms(claim));
