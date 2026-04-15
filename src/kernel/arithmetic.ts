@@ -313,3 +313,131 @@ export function isConcreteOdd(expr: string): boolean {
   const v = evalArith(expr);
   return v !== null && v % 2 !== 0;
 }
+
+// ── Modular arithmetic ────────────────────────────────────────────────────────
+
+/**
+ * Parse `a ≡ b (mod n)` → {a, b, n}, or null.
+ * Also accepts `a = b (mod n)` as sugar.
+ */
+export function parseCongruence(s: string): { a: string; b: string; n: string } | null {
+  const m = s.trim().match(/^(.+?)\s*[≡=]\s*(.+?)\s*\(\s*mod\s+(.+?)\s*\)$/i);
+  return m ? { a: normArith(m[1]), b: normArith(m[2]), n: normArith(m[3]) } : null;
+}
+
+/**
+ * Parse `a mod n` → {a, n}, or null.
+ */
+export function parseModOp(s: string): { a: string; n: string } | null {
+  // Split on top-level 'mod' keyword
+  const norm = s.trim();
+  const m = norm.match(/^(.+?)\s+mod\s+(.+)$/i);
+  return m ? { a: normArith(m[1]), n: normArith(m[2]) } : null;
+}
+
+/** Evaluate `a mod n` for concrete integers. */
+export function evalMod(a: string, n: string): number | null {
+  const av = evalArith(a);
+  const nv = evalArith(n);
+  if (av === null || nv === null || nv === 0) return null;
+  return ((av % nv) + nv) % nv;
+}
+
+/** Check if two concrete expressions are congruent mod n. */
+export function areCongruent(a: string, b: string, n: string): boolean {
+  const av = evalArith(a);
+  const bv = evalArith(b);
+  const nv = evalArith(n);
+  if (av === null || bv === null || nv === null || nv === 0) return false;
+  return ((av - bv) % nv + nv) % nv === 0;
+}
+
+// ── Primality ─────────────────────────────────────────────────────────────────
+
+/** Miller-Rabin deterministic check for n < 3,215,031,751. */
+export function isPrime(n: number): boolean {
+  if (n < 2) return false;
+  if (n === 2 || n === 3) return true;
+  if (n % 2 === 0 || n % 3 === 0) return false;
+  for (let i = 5; i * i <= n; i += 6) {
+    if (n % i === 0 || n % (i + 2) === 0) return false;
+  }
+  return true;
+}
+
+/**
+ * Parse `p ∈ Prime` or `Prime(p)` → p, or null.
+ */
+export function parsePrimePred(s: string): string | null {
+  const m1 = s.trim().match(/^(.+?)\s*∈\s*Prime$/i);
+  if (m1) return normArith(m1[1]);
+  const m2 = s.trim().match(/^Prime\s*\(\s*(.+?)\s*\)$/i);
+  if (m2) return normArith(m2[1]);
+  return null;
+}
+
+// ── Euler's totient ───────────────────────────────────────────────────────────
+
+/**
+ * Parse `φ(n)` or `totient(n)` → n, or null.
+ */
+export function parseTotientExpr(s: string): string | null {
+  const m1 = s.trim().match(/^[φΦ]\s*\(\s*(.+?)\s*\)$/);
+  if (m1) return normArith(m1[1]);
+  const m2 = s.trim().match(/^totient\s*\(\s*(.+?)\s*\)$/i);
+  if (m2) return normArith(m2[1]);
+  return null;
+}
+
+/**
+ * Parse `φ(n) = k` or `totient(n) = k` equality claim.
+ * Returns {arg, value} or null.
+ */
+export function parseTotientEquality(s: string): { arg: string; value: string } | null {
+  // φ(n) = k  or  k = φ(n)
+  const m1 = s.trim().match(/^[φΦ]\s*\(\s*(.+?)\s*\)\s*=\s*(.+)$/);
+  if (m1) return { arg: normArith(m1[1]), value: normArith(m1[2]) };
+  const m2 = s.trim().match(/^(.+?)\s*=\s*[φΦ]\s*\(\s*(.+?)\s*\)$/);
+  if (m2) return { arg: normArith(m2[2]), value: normArith(m2[1]) };
+  const m3 = s.trim().match(/^totient\s*\(\s*(.+?)\s*\)\s*=\s*(.+)$/i);
+  if (m3) return { arg: normArith(m3[1]), value: normArith(m3[2]) };
+  return null;
+}
+
+/** Compute Euler's totient for a concrete integer. */
+export function computeTotient(n: number): number {
+  if (n <= 0) return 0;
+  let result = n;
+  let temp = n;
+  for (let p = 2; p * p <= temp; p++) {
+    if (temp % p === 0) {
+      while (temp % p === 0) temp = Math.floor(temp / p);
+      result -= Math.floor(result / p);
+    }
+  }
+  if (temp > 1) result -= Math.floor(result / temp);
+  return result;
+}
+
+// ── Power expressions ─────────────────────────────────────────────────────────
+
+/**
+ * Parse `a^b` or `a ** b` (top-level) → {base, exp}, or null.
+ */
+export function parsePower(s: string): { base: string; exp: string } | null {
+  const norm = s.trim();
+  let depth = 0;
+  for (let i = norm.length - 1; i >= 0; i--) {
+    const ch = norm[i];
+    if (ch === ')' || ch === ']') depth++;
+    else if (ch === '(' || ch === '[') depth--;
+    else if (depth === 0 && (ch === '^' || (ch === '*' && norm[i - 1] === '*'))) {
+      const op = ch === '^' ? '^' : '**';
+      const pivot = ch === '*' ? i - 1 : i;
+      const base = norm.slice(0, pivot).trim();
+      const exp = norm.slice(i + 1).trim();
+      if (base && exp) return { base, exp };
+    }
+  }
+  return null;
+}

@@ -35,6 +35,15 @@ import {
   isConcreteEven,
   isConcreteOdd,
   normArith,
+  parseCongruence,
+  areCongruent,
+  evalMod,
+  isPrime,
+  parsePrimePred,
+  parseTotientExpr,
+  parseTotientEquality,
+  computeTotient,
+  parsePower,
 } from '../kernel/arithmetic';
 import { unify } from '../kernel/unify';
 import {
@@ -877,6 +886,7 @@ function deriveClaim(
     deriveNaturalTransformationRule,
     deriveExFalso,
     deriveArithClaim,
+    deriveModArithClaim,
   ];
 
   for (const attempt of prover) {
