@@ -1,5 +1,15 @@
-// math.fl — FuturLang standard mathematics library
+// math.fl — FuturLang standard mathematics library bundle
+// Importing this file pulls in all math-related libraries.
 // Proved lemmas that can be imported with apply(LemmaName)
+
+import sets-basic
+import sets-algebra
+import number-theory
+import algebra
+import linear-algebra
+import combinatorics
+import order
+import probability
 
 // ── Arithmetic identities ─────────────────────────────────────────────────────
 

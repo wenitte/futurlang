@@ -1,0 +1,267 @@
+// combinatorics.fl — Counting, permutations, combinations, pigeonhole
+
+// ── Factorials ────────────────────────────────────────────────────────────────
+
+lemma Factorial0() {
+  assert(factorial(0) = 1)
+} ↔
+
+proof Factorial0() {
+  conclude(factorial(0) = 1)
+} →
+
+lemma Factorial1() {
+  assert(factorial(1) = 1)
+} ↔
+
+proof Factorial1() {
+  conclude(factorial(1) = 1)
+} →
+
+lemma Factorial2() {
+  assert(factorial(2) = 2)
+} ↔
+
+proof Factorial2() {
+  conclude(factorial(2) = 2)
+} →
+
+lemma Factorial3() {
+  assert(factorial(3) = 6)
+} ↔
+
+proof Factorial3() {
+  conclude(factorial(3) = 6)
+} →
+
+lemma Factorial4() {
+  assert(factorial(4) = 24)
+} ↔
+
+proof Factorial4() {
+  conclude(factorial(4) = 24)
+} →
+
+lemma Factorial5() {
+  assert(factorial(5) = 120)
+} ↔
+
+proof Factorial5() {
+  conclude(factorial(5) = 120)
+} →
+
+// ── Factorial recurrence ──────────────────────────────────────────────────────
+
+lemma FactorialRecurrence() {
+  given(n ∈ Nat) →
+  given(n > 0) →
+  assert(factorial(n) = n * factorial(n - 1))
+} ↔
+
+proof FactorialRecurrence() {
+  given(n ∈ Nat) →
+  given(n > 0) →
+  assert(factorial(n) = n * factorial(n - 1))
+} →
+
+// ── Binomial coefficients ─────────────────────────────────────────────────────
+
+lemma Binom0() {
+  given(n ∈ Nat) →
+  assert(binom(n, 0) = 1)
+} ↔
+
+proof Binom0() {
+  given(n ∈ Nat) →
+  assert(binom(n, 0) = factorial(n) / (factorial(0) * factorial(n))) →
+  assert(factorial(0) = 1) →
+  conclude(binom(n, 0) = 1)
+} →
+
+lemma BinomN() {
+  given(n ∈ Nat) →
+  assert(binom(n, n) = 1)
+} ↔
+
+proof BinomN() {
+  given(n ∈ Nat) →
+  assert(binom(n, n) = factorial(n) / (factorial(n) * factorial(0))) →
+  assert(factorial(0) = 1) →
+  conclude(binom(n, n) = 1)
+} →
+
+lemma Binom52() {
+  assert(binom(5, 2) = 10)
+} ↔
+
+proof Binom52() {
+  conclude(binom(5, 2) = 10)
+} →
+
+lemma Binom63() {
+  assert(binom(6, 3) = 20)
+} ↔
+
+proof Binom63() {
+  conclude(binom(6, 3) = 20)
+} →
+
+// ── Pascal's identity ─────────────────────────────────────────────────────────
+
+lemma PascalIdentity() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(k ≤ n) →
+  assert(binom(n + 1, k + 1) = binom(n, k) + binom(n, k + 1))
+} ↔
+
+proof PascalIdentity() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(k ≤ n) →
+  assert(binom(n + 1, k + 1) = binom(n, k) + binom(n, k + 1))
+} →
+
+// ── Symmetry of binomial coefficients ────────────────────────────────────────
+
+lemma BinomSymmetry() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(k ≤ n) →
+  assert(binom(n, k) = binom(n, n - k))
+} ↔
+
+proof BinomSymmetry() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(k ≤ n) →
+  assert(binom(n, k) = factorial(n) / (factorial(k) * factorial(n - k))) →
+  assert(binom(n, n - k) = factorial(n) / (factorial(n - k) * factorial(k))) →
+  conclude(binom(n, k) = binom(n, n - k))
+} →
+
+// ── Vandermonde's identity ────────────────────────────────────────────────────
+
+lemma Vandermonde() {
+  given(m ∈ Nat) →
+  given(n ∈ Nat) →
+  given(r ∈ Nat) →
+  assert(binom(m + n, r) = ∑ k ∈ {0, ..., r}, binom(m, k) * binom(n, r - k))
+} ↔
+
+proof Vandermonde() {
+  given(m ∈ Nat) →
+  given(n ∈ Nat) →
+  given(r ∈ Nat) →
+  assert(binom(m + n, r) = ∑ k ∈ {0, ..., r}, binom(m, k) * binom(n, r - k))
+} →
+
+// ── Pigeonhole principle ──────────────────────────────────────────────────────
+
+lemma Pigeonhole() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(n > k) →
+  assert(pigeonhole(n, k))
+} ↔
+
+proof Pigeonhole() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(n > k) →
+  conclude(pigeonhole(n, k))
+} →
+
+lemma PigeonholeConcreteExample() {
+  assert(pigeonhole(13, 12))
+} ↔
+
+proof PigeonholeConcreteExample() {
+  conclude(pigeonhole(13, 12))
+} →
+
+// ── Generalized pigeonhole ────────────────────────────────────────────────────
+
+lemma GeneralizedPigeonhole() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(n > k * m) →
+  assert(∃ box ∈ Boxes, items_in(box) > m)
+} ↔
+
+proof GeneralizedPigeonhole() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(n > k * m) →
+  assert(∃ box ∈ Boxes, items_in(box) > m)
+} →
+
+// ── Inclusion-exclusion ───────────────────────────────────────────────────────
+
+lemma InclusionExclusion2() {
+  given(finite(A)) →
+  given(finite(B)) →
+  assert(|A ∪ B| = |A| + |B| - |A ∩ B|)
+} ↔
+
+proof InclusionExclusion2() {
+  given(finite(A)) →
+  given(finite(B)) →
+  conclude(|A ∪ B| = |A| + |B| - |A ∩ B|)
+} →
+
+lemma InclusionExclusion3() {
+  given(finite(A)) →
+  given(finite(B)) →
+  given(finite(C)) →
+  assert(|A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|)
+} ↔
+
+proof InclusionExclusion3() {
+  given(finite(A)) →
+  given(finite(B)) →
+  given(finite(C)) →
+  assert(|A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|)
+} →
+
+// ── Counting permutations ─────────────────────────────────────────────────────
+
+lemma PermCount() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(k ≤ n) →
+  assert(perm(n, k) = factorial(n) / factorial(n - k))
+} ↔
+
+proof PermCount() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  given(k ≤ n) →
+  assert(perm(n, k) = factorial(n) / factorial(n - k))
+} →
+
+// ── Stars and bars ────────────────────────────────────────────────────────────
+
+lemma StarsAndBars() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  assert(multiset_count(n, k) = binom(n + k - 1, k - 1))
+} ↔
+
+proof StarsAndBars() {
+  given(n ∈ Nat) →
+  given(k ∈ Nat) →
+  assert(multiset_count(n, k) = binom(n + k - 1, k - 1))
+} →
+
+// ── Sum of binomials ─────────────────────────────────────────────────────────
+
+lemma BinomSumRow() {
+  given(n ∈ Nat) →
+  assert(∑ k ∈ {0, ..., n}, binom(n, k) = 2^n)
+} ↔
+
+proof BinomSumRow() {
+  given(n ∈ Nat) →
+  assert(∑ k ∈ {0, ..., n}, binom(n, k) = 2^n)
+}

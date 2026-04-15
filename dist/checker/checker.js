@@ -702,6 +702,9 @@ function deriveClaim(ctx, claim, step) {
         deriveIntClaim,
         deriveRealAnalysisClaim,
         deriveCryptoClaim,
+        deriveOrderClaim,
+        deriveGraphClaim,
+        deriveCombClaim,
     ];
     for (const attempt of prover) {
         const result = attempt(ctx, claim, step);
@@ -2775,6 +2778,38 @@ function deriveModArithClaim(ctx, claim, step) {
             createKernelObject(ctx, claim, 'ARITH_MOD_EVAL', step);
             return { rule: 'ARITH_MOD_EVAL', state: 'PROVED', message: 'Verified by concrete modular evaluation' };
         }
+        // Reflexivity: a ≡ a (mod n) — both sides symbolically equal
+        if ((0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(cong.a), (0, arithmetic_1.normArith)(cong.b))) {
+            createKernelObject(ctx, claim, 'ARITH_CONGRUENCE', step);
+            return { rule: 'ARITH_CONGRUENCE', state: 'PROVED', message: 'Congruence reflexivity: a ≡ a (mod n)' };
+        }
+        // Symmetry: b ≡ a (mod n) from a ≡ b (mod n) in context
+        const symHyp = all.find(o => {
+            const c2 = (0, arithmetic_1.parseCongruence)(o.claim);
+            return c2 && (0, arithmetic_1.normArith)(c2.n) === (0, arithmetic_1.normArith)(cong.n) &&
+                (0, arithmetic_1.normArith)(c2.a) === (0, arithmetic_1.normArith)(cong.b) && (0, arithmetic_1.normArith)(c2.b) === (0, arithmetic_1.normArith)(cong.a);
+        });
+        if (symHyp) {
+            createKernelObject(ctx, claim, 'ARITH_CONGRUENCE', step, [symHyp.id]);
+            return { rule: 'ARITH_CONGRUENCE', state: 'PROVED', uses: [symHyp.claim], message: 'Congruence symmetry' };
+        }
+        // Transitivity: a ≡ c (mod n) from a ≡ b and b ≡ c in context
+        for (const obj1 of all) {
+            const c1 = (0, arithmetic_1.parseCongruence)(obj1.claim);
+            if (!c1 || (0, arithmetic_1.normArith)(c1.n) !== (0, arithmetic_1.normArith)(cong.n) || (0, arithmetic_1.normArith)(c1.a) !== (0, arithmetic_1.normArith)(cong.a))
+                continue;
+            const mid = c1.b;
+            for (const obj2 of all) {
+                if (obj2 === obj1)
+                    continue;
+                const c2 = (0, arithmetic_1.parseCongruence)(obj2.claim);
+                if (c2 && (0, arithmetic_1.normArith)(c2.n) === (0, arithmetic_1.normArith)(cong.n) &&
+                    (0, arithmetic_1.normArith)(c2.a) === (0, arithmetic_1.normArith)(mid) && (0, arithmetic_1.normArith)(c2.b) === (0, arithmetic_1.normArith)(cong.b)) {
+                    createKernelObject(ctx, claim, 'ARITH_CONGRUENCE', step, [obj1.id, obj2.id]);
+                    return { rule: 'ARITH_CONGRUENCE', state: 'PROVED', uses: [obj1.claim, obj2.claim], message: `Congruence transitivity via ${mid}` };
+                }
+            }
+        }
         // e * d ≡ 1 (mod φ(n)): look for this in context directly
         const hyp = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(claim));
         if (hyp) {
@@ -4005,6 +4040,247 @@ function deriveRealAnalysisClaim(ctx, claim, step) {
         if (constVal !== null && (0, arithmetic_1.normArith)(derExpr) === '0') {
             createKernelObject(ctx, claim, 'REAL_DIFF', step);
             return { rule: 'REAL_DIFF', state: 'PROVED', message: 'Constant rule: derivative of constant = 0' };
+        }
+    }
+    return null;
+}
+// ── Order theory kernel ───────────────────────────────────────────────────────
+function deriveOrderClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    const norm = claim.trim();
+    // ── leq(a, a): reflexivity ────────────────────────────────────────────────
+    const reflMatch = norm.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+    if (reflMatch) {
+        const [, a, b] = reflMatch;
+        if ((0, arithmetic_1.normArith)(a) === (0, arithmetic_1.normArith)(b)) {
+            createKernelObject(ctx, claim, 'ORDER_REFL', step);
+            return { rule: 'ORDER_REFL', state: 'PROVED', message: `Order reflexivity: ${a} ≤ ${a}` };
+        }
+        // Transitivity: leq(a, b) from leq(a, c) and leq(c, b)
+        for (const obj1 of all) {
+            const m1 = obj1.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+            if (!m1 || (0, arithmetic_1.normArith)(m1[1]) !== (0, arithmetic_1.normArith)(a))
+                continue;
+            const mid = m1[2];
+            for (const obj2 of all) {
+                if (obj2 === obj1)
+                    continue;
+                const m2 = obj2.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+                if (m2 && (0, arithmetic_1.normArith)(m2[1]) === (0, arithmetic_1.normArith)(mid) && (0, arithmetic_1.normArith)(m2[2]) === (0, arithmetic_1.normArith)(b)) {
+                    createKernelObject(ctx, claim, 'ORDER_TRANS', step, [obj1.id, obj2.id]);
+                    return { rule: 'ORDER_TRANS', state: 'PROVED', uses: [obj1.claim, obj2.claim], message: `Order transitivity: ${a} ≤ ${mid} ≤ ${b}` };
+                }
+            }
+        }
+    }
+    // ── antisymmetry: a = b from leq(a, b) and leq(b, a) ────────────────────
+    const eqMatch = (0, propositions_1.parseEqualityCanonical)(norm);
+    if (eqMatch) {
+        const leqAB = all.find(o => o.claim.trim() === `leq(${eqMatch.left}, ${eqMatch.right})` ||
+            (o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/) &&
+                (0, arithmetic_1.normArith)(o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/)[1]) === (0, arithmetic_1.normArith)(eqMatch.left) &&
+                (0, arithmetic_1.normArith)(o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/)[2]) === (0, arithmetic_1.normArith)(eqMatch.right)));
+        const leqBA = all.find(o => {
+            const m = o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+            return m && (0, arithmetic_1.normArith)(m[1]) === (0, arithmetic_1.normArith)(eqMatch.right) && (0, arithmetic_1.normArith)(m[2]) === (0, arithmetic_1.normArith)(eqMatch.left);
+        });
+        if (leqAB && leqBA) {
+            createKernelObject(ctx, claim, 'ORDER_ANTISYM', step, [leqAB.id, leqBA.id]);
+            return { rule: 'ORDER_ANTISYM', state: 'PROVED', uses: [leqAB.claim, leqBA.claim], message: `Order antisymmetry: ${eqMatch.left} = ${eqMatch.right}` };
+        }
+    }
+    // ── join(a, b) = c: least upper bound ────────────────────────────────────
+    const joinMatch = norm.match(/^leq\((.+?)\s*,\s*join\((.+?)\s*,\s*(.+?)\)\)$/);
+    if (joinMatch) {
+        const [, x, a, b] = joinMatch;
+        const xInA = all.find(o => {
+            const m = o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+            return m && (0, arithmetic_1.normArith)(m[1]) === (0, arithmetic_1.normArith)(x) && (0, arithmetic_1.normArith)(m[2]) === (0, arithmetic_1.normArith)(a);
+        });
+        if (xInA) {
+            createKernelObject(ctx, claim, 'LATTICE_JOIN', step, [xInA.id]);
+            return { rule: 'LATTICE_JOIN', state: 'PROVED', uses: [xInA.claim], message: `Lattice join: ${x} ≤ join(${a}, ${b})` };
+        }
+        const xInB = all.find(o => {
+            const m = o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+            return m && (0, arithmetic_1.normArith)(m[1]) === (0, arithmetic_1.normArith)(x) && (0, arithmetic_1.normArith)(m[2]) === (0, arithmetic_1.normArith)(b);
+        });
+        if (xInB) {
+            createKernelObject(ctx, claim, 'LATTICE_JOIN', step, [xInB.id]);
+            return { rule: 'LATTICE_JOIN', state: 'PROVED', uses: [xInB.claim], message: `Lattice join: ${x} ≤ join(${a}, ${b})` };
+        }
+    }
+    // ── meet(a, b) ≤ x: greatest lower bound ─────────────────────────────────
+    const meetMatch = norm.match(/^leq\(meet\((.+?)\s*,\s*(.+?)\)\s*,\s*(.+?)\)$/);
+    if (meetMatch) {
+        const [, a, b, x] = meetMatch;
+        const aLeX = all.find(o => {
+            const m = o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+            return m && (0, arithmetic_1.normArith)(m[1]) === (0, arithmetic_1.normArith)(a) && (0, arithmetic_1.normArith)(m[2]) === (0, arithmetic_1.normArith)(x);
+        });
+        if (aLeX) {
+            createKernelObject(ctx, claim, 'LATTICE_MEET', step, [aLeX.id]);
+            return { rule: 'LATTICE_MEET', state: 'PROVED', uses: [aLeX.claim], message: `Lattice meet: meet(${a}, ${b}) ≤ ${x}` };
+        }
+        const bLeX = all.find(o => {
+            const m = o.claim.match(/^leq\((.+?)\s*,\s*(.+?)\)$/);
+            return m && (0, arithmetic_1.normArith)(m[1]) === (0, arithmetic_1.normArith)(b) && (0, arithmetic_1.normArith)(m[2]) === (0, arithmetic_1.normArith)(x);
+        });
+        if (bLeX) {
+            createKernelObject(ctx, claim, 'LATTICE_MEET', step, [bLeX.id]);
+            return { rule: 'LATTICE_MEET', state: 'PROVED', uses: [bLeX.claim], message: `Lattice meet: meet(${a}, ${b}) ≤ ${x}` };
+        }
+    }
+    return null;
+}
+// ── Graph theory kernel ───────────────────────────────────────────────────────
+function deriveGraphClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    const norm = claim.trim();
+    // ── path(G, u, v): path existence by transitivity ────────────────────────
+    const pathMatch = norm.match(/^path\((.+?)\s*,\s*(.+?)\s*,\s*(.+?)\)$/);
+    if (pathMatch) {
+        const [, G, u, v] = pathMatch;
+        // Reflexive: path(G, u, u) always
+        if ((0, arithmetic_1.normArith)(u) === (0, arithmetic_1.normArith)(v)) {
+            createKernelObject(ctx, claim, 'GRAPH_PATH', step);
+            return { rule: 'GRAPH_PATH', state: 'PROVED', message: `Trivial path: ${u} = ${v}` };
+        }
+        // Direct edge: edge(G, u, v) or edge(G, v, u) in context
+        const edgeUV = all.find(o => {
+            const m = o.claim.match(/^edge\((.+?)\s*,\s*(.+?)\s*,\s*(.+?)\)$/);
+            return m && (0, arithmetic_1.normArith)(m[1]) === (0, arithmetic_1.normArith)(G) &&
+                (((0, arithmetic_1.normArith)(m[2]) === (0, arithmetic_1.normArith)(u) && (0, arithmetic_1.normArith)(m[3]) === (0, arithmetic_1.normArith)(v)) ||
+                    ((0, arithmetic_1.normArith)(m[2]) === (0, arithmetic_1.normArith)(v) && (0, arithmetic_1.normArith)(m[3]) === (0, arithmetic_1.normArith)(u)));
+        });
+        if (edgeUV) {
+            createKernelObject(ctx, claim, 'GRAPH_PATH', step, [edgeUV.id]);
+            return { rule: 'GRAPH_PATH', state: 'PROVED', uses: [edgeUV.claim], message: `Path via direct edge ${u}—${v}` };
+        }
+        // Transitivity: path(G, u, w) and path(G, w, v) → path(G, u, v)
+        for (const obj1 of all) {
+            const m1 = obj1.claim.match(/^path\((.+?)\s*,\s*(.+?)\s*,\s*(.+?)\)$/);
+            if (!m1 || (0, arithmetic_1.normArith)(m1[1]) !== (0, arithmetic_1.normArith)(G) || (0, arithmetic_1.normArith)(m1[2]) !== (0, arithmetic_1.normArith)(u))
+                continue;
+            const w = m1[3];
+            for (const obj2 of all) {
+                if (obj2 === obj1)
+                    continue;
+                const m2 = obj2.claim.match(/^path\((.+?)\s*,\s*(.+?)\s*,\s*(.+?)\)$/);
+                if (m2 && (0, arithmetic_1.normArith)(m2[1]) === (0, arithmetic_1.normArith)(G) && (0, arithmetic_1.normArith)(m2[2]) === (0, arithmetic_1.normArith)(w) && (0, arithmetic_1.normArith)(m2[3]) === (0, arithmetic_1.normArith)(v)) {
+                    createKernelObject(ctx, claim, 'GRAPH_PATH', step, [obj1.id, obj2.id]);
+                    return { rule: 'GRAPH_PATH', state: 'PROVED', uses: [obj1.claim, obj2.claim], message: `Path by concatenation via ${w}` };
+                }
+            }
+        }
+    }
+    // ── connected(G): from ∀ u v, path(G, u, v) ─────────────────────────────
+    const connMatch = norm.match(/^connected\((.+?)\)$/);
+    if (connMatch) {
+        const [, G] = connMatch;
+        const pathAll = all.find(o => o.claim.match(new RegExp(`^∀.+path\\(${G.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)));
+        if (pathAll) {
+            createKernelObject(ctx, claim, 'GRAPH_CONNECTED', step, [pathAll.id]);
+            return { rule: 'GRAPH_CONNECTED', state: 'PROVED', uses: [pathAll.claim], message: `${G} is connected` };
+        }
+    }
+    // ── tree(G): connected + acyclic ─────────────────────────────────────────
+    const treeMatch = norm.match(/^tree\((.+?)\)$/);
+    if (treeMatch) {
+        const [, G] = treeMatch;
+        const conn = all.find(o => o.claim.trim() === `connected(${G})`);
+        const acyc = all.find(o => o.claim.trim() === `acyclic(${G})`);
+        if (conn && acyc) {
+            createKernelObject(ctx, claim, 'GRAPH_TREE', step, [conn.id, acyc.id]);
+            return { rule: 'GRAPH_TREE', state: 'PROVED', uses: [conn.claim, acyc.claim], message: `${G} is a tree (connected + acyclic)` };
+        }
+    }
+    // ── degree_sum(G) = 2 * |E| (handshake lemma) ───────────────────────────
+    const degSumMatch = norm.match(/^degree_sum\((.+?)\)\s*=\s*2\s*\*\s*edge_count\((.+?)\)$/);
+    if (degSumMatch) {
+        const [, G1, G2] = degSumMatch;
+        if ((0, arithmetic_1.normArith)(G1) === (0, arithmetic_1.normArith)(G2)) {
+            const graphObj = all.find(o => o.claim.match(new RegExp(`^graph\\(${G1.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`)));
+            if (graphObj) {
+                createKernelObject(ctx, claim, 'GRAPH_DEGREE', step, [graphObj.id]);
+                return { rule: 'GRAPH_DEGREE', state: 'PROVED', uses: [graphObj.claim], message: 'Handshake lemma: sum of degrees = 2|E|' };
+            }
+            // Accept without explicit graph predicate as axiom
+            createKernelObject(ctx, claim, 'GRAPH_DEGREE', step);
+            return { rule: 'GRAPH_DEGREE', state: 'PROVED', message: 'Handshake lemma: sum of degrees = 2|E|' };
+        }
+    }
+    return null;
+}
+// ── Combinatorics kernel ──────────────────────────────────────────────────────
+function deriveCombClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    const norm = claim.trim();
+    // ── Concrete factorial: factorial(n) = k ────────────────────────────────
+    const factMatch = norm.match(/^factorial\((.+?)\)\s*=\s*(.+)$/);
+    if (factMatch) {
+        const [, nStr, kStr] = factMatch;
+        const n = (0, arithmetic_1.evalArith)(nStr);
+        const k = (0, arithmetic_1.evalArith)(kStr);
+        if (n !== null && k !== null && n >= 0) {
+            let fact = 1;
+            for (let i = 2; i <= n; i++)
+                fact *= i;
+            if (fact === k) {
+                createKernelObject(ctx, claim, 'COMB_FACTORIAL', step);
+                return { rule: 'COMB_FACTORIAL', state: 'PROVED', message: `${n}! = ${k}` };
+            }
+        }
+    }
+    // ── Concrete binomial: binom(n, k) = c ──────────────────────────────────
+    const binomMatch = norm.match(/^binom\((.+?)\s*,\s*(.+?)\)\s*=\s*(.+)$/);
+    if (binomMatch) {
+        const [, nStr, kStr, cStr] = binomMatch;
+        const n = (0, arithmetic_1.evalArith)(nStr);
+        const k = (0, arithmetic_1.evalArith)(kStr);
+        const c = (0, arithmetic_1.evalArith)(cStr);
+        if (n !== null && k !== null && c !== null && n >= 0 && k >= 0 && k <= n) {
+            // Compute C(n, k)
+            let num = 1;
+            for (let i = 0; i < k; i++)
+                num = num * (n - i) / (i + 1);
+            if (Math.round(num) === c) {
+                createKernelObject(ctx, claim, 'COMB_BINOM', step);
+                return { rule: 'COMB_BINOM', state: 'PROVED', message: `C(${n}, ${k}) = ${c}` };
+            }
+        }
+    }
+    // ── Pigeonhole: ¬ injective(f) or pigeonhole(n, k) ──────────────────────
+    // Pattern: pigeonhole(objects, boxes) — objects > boxes implies collision
+    const pigeonMatch = norm.match(/^pigeonhole\((.+?)\s*,\s*(.+?)\)$/);
+    if (pigeonMatch) {
+        const [, objStr, boxStr] = pigeonMatch;
+        const objs = (0, arithmetic_1.evalArith)(objStr);
+        const boxes = (0, arithmetic_1.evalArith)(boxStr);
+        if (objs !== null && boxes !== null && objs > boxes) {
+            createKernelObject(ctx, claim, 'COMB_PIGEONHOLE', step);
+            return { rule: 'COMB_PIGEONHOLE', state: 'PROVED', message: `Pigeonhole: ${objs} objects in ${boxes} boxes implies collision` };
+        }
+        // Symbolic: if we have |A| > |B| in context, conclude pigeonhole(A, B)
+        const sizeGt = all.find(o => {
+            const ord = (0, arithmetic_1.parseOrder)(o.claim);
+            return ord && (ord.op === '>' || ord.op === '<') &&
+                (((0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(objStr) && (0, arithmetic_1.normArith)(ord.right) === (0, arithmetic_1.normArith)(boxStr)) ||
+                    ((0, arithmetic_1.normArith)(ord.right) === (0, arithmetic_1.normArith)(objStr) && (0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(boxStr)));
+        });
+        if (sizeGt) {
+            createKernelObject(ctx, claim, 'COMB_PIGEONHOLE', step, [sizeGt.id]);
+            return { rule: 'COMB_PIGEONHOLE', state: 'PROVED', uses: [sizeGt.claim], message: 'Pigeonhole principle' };
+        }
+    }
+    // ── Inclusion-exclusion: |A ∪ B| = |A| + |B| - |A ∩ B| ─────────────────
+    const inclExclMatch = norm.match(/^\|(.+?)\s*∪\s*(.+?)\|\s*=\s*\|(.+?)\|\s*\+\s*\|(.+?)\|\s*-\s*\|(.+?)\s*∩\s*(.+?)\|$/);
+    if (inclExclMatch) {
+        const [, A1, B1, A2, B2, A3, B3] = inclExclMatch;
+        if ((0, arithmetic_1.normArith)(A1) === (0, arithmetic_1.normArith)(A2) && (0, arithmetic_1.normArith)(A1) === (0, arithmetic_1.normArith)(A3) &&
+            (0, arithmetic_1.normArith)(B1) === (0, arithmetic_1.normArith)(B2) && (0, arithmetic_1.normArith)(B1) === (0, arithmetic_1.normArith)(B3)) {
+            createKernelObject(ctx, claim, 'COMB_INCLUSION_EXCL', step);
+            return { rule: 'COMB_INCLUSION_EXCL', state: 'PROVED', message: 'Inclusion-exclusion principle' };
         }
     }
     return null;

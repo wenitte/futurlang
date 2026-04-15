@@ -119,7 +119,7 @@ async function main() {
     runEval(file);
 }
 function runEval(file) {
-    const source = fs.readFileSync(file, 'utf8');
+    const source = (0, formal_1.expandFLFile)(file);
     const ast = (0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: false });
     if (isProofStyleProgram(ast)) {
         console.log(`\n${path.basename(file)}: proof + runtime mode\n`);
@@ -176,7 +176,7 @@ function runCheck(file) {
         console.error(`File not found: ${file}`);
         process.exit(1);
     }
-    const source = fs.readFileSync(file, 'utf8');
+    const source = (0, formal_1.expandFLFile)(file);
     const report = (0, checker_1.checkFile)((0, parser_1.parseLinesToAST)((0, lexer_1.lexFL)(source), { desugarFns: true }), { strict });
     printCheckReport(file, report);
 }

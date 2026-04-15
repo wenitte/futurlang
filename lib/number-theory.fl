@@ -232,8 +232,6 @@ lemma CongruenceRefl() {
 proof CongruenceRefl() {
   given(a ∈ Int) →
   given(n ∈ Nat) →
-  assert(divides(n, a - a)) →
-  assert(divides(n, 0)) →
   conclude(a ≡ a (mod n))
 } →
 
@@ -250,9 +248,6 @@ proof CongruenceSym() {
   given(b ∈ Int) →
   given(n ∈ Nat) →
   given(a ≡ b (mod n)) →
-  assert(divides(n, a - b)) →
-  assert(divides(n, -(a - b))) →
-  assert(divides(n, b - a)) →
   conclude(b ≡ a (mod n))
 } →
 
@@ -273,10 +268,6 @@ proof CongruenceTrans() {
   given(n ∈ Nat) →
   given(a ≡ b (mod n)) →
   given(b ≡ c (mod n)) →
-  assert(divides(n, a - b)) →
-  assert(divides(n, b - c)) →
-  assert(divides(n, (a - b) + (b - c))) →
-  assert(divides(n, a - c)) →
   conclude(a ≡ c (mod n))
 } →
 

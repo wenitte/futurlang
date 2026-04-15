@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { spawn } from 'child_process';
-import { parseFL, parseFLFile } from './parser/formal';
+import { parseFL, parseFLFile, expandFLFile } from './parser/formal';
 import { lexFL } from './parser/lexer';
 import { parseLinesToAST } from './parser/parser';
 import { checkFile, createMutableContext, evaluateIncrementalStep } from './checker/checker';
@@ -71,7 +71,7 @@ async function main() {
 }
 
 function runEval(file: string) {
-  const source = fs.readFileSync(file, 'utf8');
+  const source = expandFLFile(file);
   const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
   if (isProofStyleProgram(ast)) {
     console.log(`\n${path.basename(file)}: proof + runtime mode\n`);
@@ -113,7 +113,7 @@ function runStart(file: string, outDir: string) {
 function runCheck(file: string) {
   if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
 
-  const source = fs.readFileSync(file, 'utf8');
+  const source = expandFLFile(file);
   const report = checkFile(parseLinesToAST(lexFL(source), { desugarFns: true }), { strict });
   printCheckReport(file, report);
 }

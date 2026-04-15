@@ -95,7 +95,21 @@ export type KernelRule =
   | 'CRYPTO_DH'
   | 'CRYPTO_EC'
   | 'CRYPTO_HASH'
-  | 'CRYPTO_COMMIT';
+  | 'CRYPTO_COMMIT'
+  | 'ORDER_REFL'
+  | 'ORDER_TRANS'
+  | 'ORDER_ANTISYM'
+  | 'ORDER_TOTAL'
+  | 'LATTICE_JOIN'
+  | 'LATTICE_MEET'
+  | 'GRAPH_PATH'
+  | 'GRAPH_CONNECTED'
+  | 'GRAPH_TREE'
+  | 'GRAPH_DEGREE'
+  | 'COMB_FACTORIAL'
+  | 'COMB_BINOM'
+  | 'COMB_PIGEONHOLE'
+  | 'COMB_INCLUSION_EXCL';
 
 export type ProofState = 'PROVED' | 'PENDING' | 'FAILED' | 'UNVERIFIED';
 

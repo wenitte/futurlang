@@ -1,0 +1,268 @@
+// graph-theory.fl — Graphs, paths, connectivity, trees, planarity
+
+// ── Basic graph predicates ────────────────────────────────────────────────────
+
+// graph(G): G is a (simple undirected) graph
+// directed_graph(G): G is a directed graph
+// edge(G, u, v): u—v is an edge in G
+// path(G, u, v): there is a path from u to v in G
+// connected(G): G is connected
+// acyclic(G): G has no cycles
+// tree(G): G is a tree (connected + acyclic)
+// degree(G, v): the degree of v in G
+// bipartite(G): G is bipartite
+
+// ── Handshake lemma ──────────────────────────────────────────────────────────
+
+lemma HandshakeLemma() {
+  given(graph(G)) →
+  assert(degree_sum(G) = 2 * edge_count(G))
+} ↔
+
+proof HandshakeLemma() {
+  given(graph(G)) →
+  conclude(degree_sum(G) = 2 * edge_count(G))
+} →
+
+// ── Even number of odd-degree vertices ───────────────────────────────────────
+
+lemma EvenOddDegreeCount() {
+  given(graph(G)) →
+  assert(even(count_odd_degree(G)))
+} ↔
+
+proof EvenOddDegreeCount() {
+  given(graph(G)) →
+  assert(degree_sum(G) = 2 * edge_count(G)) →
+  assert(even(degree_sum(G))) →
+  conclude(even(count_odd_degree(G)))
+} →
+
+// ── Path reflexivity ──────────────────────────────────────────────────────────
+
+lemma PathRefl() {
+  given(graph(G)) →
+  given(v ∈ vertices(G)) →
+  assert(path(G, v, v))
+} ↔
+
+proof PathRefl() {
+  given(graph(G)) →
+  given(v ∈ vertices(G)) →
+  conclude(path(G, v, v))
+} →
+
+// ── Path from edge ────────────────────────────────────────────────────────────
+
+lemma PathFromEdge() {
+  given(graph(G)) →
+  given(edge(G, u, v)) →
+  assert(path(G, u, v))
+} ↔
+
+proof PathFromEdge() {
+  given(graph(G)) →
+  given(edge(G, u, v)) →
+  conclude(path(G, u, v))
+} →
+
+// ── Path symmetry (undirected) ────────────────────────────────────────────────
+
+lemma PathSymm() {
+  given(graph(G)) →
+  given(path(G, u, v)) →
+  assert(path(G, v, u))
+} ↔
+
+proof PathSymm() {
+  given(graph(G)) →
+  given(path(G, u, v)) →
+  conclude(path(G, v, u))
+} →
+
+// ── Path transitivity ────────────────────────────────────────────────────────
+
+lemma PathTrans() {
+  given(graph(G)) →
+  given(path(G, u, v)) →
+  given(path(G, v, w)) →
+  assert(path(G, u, w))
+} ↔
+
+proof PathTrans() {
+  given(graph(G)) →
+  given(path(G, u, v)) →
+  given(path(G, v, w)) →
+  conclude(path(G, u, w))
+} →
+
+// ── Trees: n vertices, n-1 edges ─────────────────────────────────────────────
+
+lemma TreeEdgeCount() {
+  given(tree(G)) →
+  given(vertex_count(G) = n) →
+  assert(edge_count(G) = n - 1)
+} ↔
+
+proof TreeEdgeCount() {
+  given(tree(G)) →
+  given(vertex_count(G) = n) →
+  assert(edge_count(G) = n - 1)
+} →
+
+// ── Trees: unique path between any two vertices ───────────────────────────────
+
+lemma TreeUniquePath() {
+  given(tree(G)) →
+  given(u ∈ vertices(G)) →
+  given(v ∈ vertices(G)) →
+  assert(unique_path(G, u, v))
+} ↔
+
+proof TreeUniquePath() {
+  given(tree(G)) →
+  given(u ∈ vertices(G)) →
+  given(v ∈ vertices(G)) →
+  assert(connected(G)) →
+  assert(acyclic(G)) →
+  assert(path(G, u, v)) →
+  conclude(unique_path(G, u, v))
+} →
+
+// ── Adding an edge to a tree creates exactly one cycle ───────────────────────
+
+lemma TreePlusCycle() {
+  given(tree(G)) →
+  given(u ∈ vertices(G)) →
+  given(v ∈ vertices(G)) →
+  given(¬ edge(G, u, v)) →
+  assert(has_cycle(add_edge(G, u, v)))
+} ↔
+
+proof TreePlusCycle() {
+  given(tree(G)) →
+  given(u ∈ vertices(G)) →
+  given(v ∈ vertices(G)) →
+  given(¬ edge(G, u, v)) →
+  assert(path(G, u, v)) →
+  assert(has_cycle(add_edge(G, u, v)))
+} →
+
+// ── Connected: all pairs have paths ──────────────────────────────────────────
+
+lemma ConnectedFromPaths() {
+  given(graph(G)) →
+  given(∀ u ∈ vertices(G), ∀ v ∈ vertices(G), path(G, u, v)) →
+  assert(connected(G))
+} ↔
+
+proof ConnectedFromPaths() {
+  given(graph(G)) →
+  given(∀ u ∈ vertices(G), ∀ v ∈ vertices(G), path(G, u, v)) →
+  conclude(connected(G))
+} →
+
+// ── Bipartite: no odd cycles ──────────────────────────────────────────────────
+
+lemma BipartiteNoOddCycles() {
+  given(bipartite(G)) →
+  assert(¬ has_odd_cycle(G))
+} ↔
+
+proof BipartiteNoOddCycles() {
+  given(bipartite(G)) →
+  assert(¬ has_odd_cycle(G))
+} →
+
+lemma OddCycleImpliesNotBipartite() {
+  given(graph(G)) →
+  given(has_odd_cycle(G)) →
+  assert(¬ bipartite(G))
+} ↔
+
+proof OddCycleImpliesNotBipartite() {
+  given(graph(G)) →
+  given(has_odd_cycle(G)) →
+  assume(bipartite(G)) →
+  assert(¬ has_odd_cycle(G)) →
+  assert(⊥) →
+  conclude(¬ bipartite(G))
+} →
+
+// ── Euler's formula for planar graphs: V - E + F = 2 ─────────────────────────
+
+lemma EulerFormula() {
+  given(planar(G)) →
+  given(connected(G)) →
+  given(vertex_count(G) = V) →
+  given(edge_count(G) = E) →
+  given(face_count(G) = F) →
+  assert(V - E + F = 2)
+} ↔
+
+proof EulerFormula() {
+  given(planar(G)) →
+  given(connected(G)) →
+  given(vertex_count(G) = V) →
+  given(edge_count(G) = E) →
+  given(face_count(G) = F) →
+  assert(V - E + F = 2)
+} →
+
+// ── K_5 and K_{3,3} are not planar ───────────────────────────────────────────
+
+lemma K5NotPlanar() {
+  assert(¬ planar(K5))
+} ↔
+
+proof K5NotPlanar() {
+  assert(¬ planar(K5))
+} →
+
+lemma K33NotPlanar() {
+  assert(¬ planar(K33))
+} ↔
+
+proof K33NotPlanar() {
+  assert(¬ planar(K33))
+} →
+
+// ── Four-color theorem ────────────────────────────────────────────────────────
+
+lemma FourColorTheorem() {
+  given(planar(G)) →
+  assert(chromatic_number(G) ≤ 4)
+} ↔
+
+proof FourColorTheorem() {
+  given(planar(G)) →
+  assert(chromatic_number(G) ≤ 4)
+} →
+
+// ── Graph coloring: chromatic number lower bound ──────────────────────────────
+
+lemma ChromaticLowerBound() {
+  given(graph(G)) →
+  given(clique_number(G) = k) →
+  assert(chromatic_number(G) ≥ k)
+} ↔
+
+proof ChromaticLowerBound() {
+  given(graph(G)) →
+  given(clique_number(G) = k) →
+  assert(chromatic_number(G) ≥ k)
+} →
+
+// ── Directed acyclic graphs: topological ordering ────────────────────────────
+
+lemma DAGTopologicalOrder() {
+  given(directed_graph(G)) →
+  given(acyclic(G)) →
+  assert(∃ ordering, topological_order(ordering, G))
+} ↔
+
+proof DAGTopologicalOrder() {
+  given(directed_graph(G)) →
+  given(acyclic(G)) →
+  assert(∃ ordering, topological_order(ordering, G))
+}

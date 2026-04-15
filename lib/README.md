@@ -65,6 +65,56 @@ Vector spaces and linear maps.
 - InjectiveIffTrivialKernel
 - IsomorphismPreservesDim
 
+### `logic.fl`
+Propositional and predicate logic using kernel rules (AND_INTRO, OR_ELIM, IMPLIES_INTRO, etc.).
+- ModusPonens, ModusTollens, HypotheticalSyllogism
+- AndIntro, AndElimLeft, AndElimRight
+- OrIntroLeft, OrIntroRight, OrElim
+- DoubleNegIntro, DoubleNegElim
+- DeMorganAndToOr, DeMorganOrToAnd
+- IffIntro, IffElimLeft, IffElimRight
+- Contrapositive, ProofByContradiction, ExcludedMiddle
+- AbsorbAndOr, AbsorbOrAnd
+
+### `order.fl`
+Partial orders, total orders, lattices, well-orders.
+- PORefl, POAntisym, POTrans
+- TotalComparable, MinLeAll, MaxGeAll
+- JoinUpperBoundLeft/Right, JoinLeastUpper
+- MeetLowerBoundLeft/Right, MeetGreatestLower
+- JoinComm, MeetComm, JoinIdempotent, MeetIdempotent
+- JoinAbsorption, MeetAbsorption
+- WellOrderMinimum, NatIsWellOrdered
+- CoverImpliesLt
+
+### `combinatorics.fl`
+Counting, permutations, combinations, pigeonhole.
+- Factorial0–5, FactorialRecurrence
+- Binom0, BinomN, Binom52, Binom63 (kernel-verified)
+- PascalIdentity, BinomSymmetry, Vandermonde
+- Pigeonhole (kernel-verified for concrete n, k), GeneralizedPigeonhole
+- InclusionExclusion2, InclusionExclusion3
+- PermCount, StarsAndBars, BinomSumRow
+
+### `graph-theory.fl`
+Graphs, paths, connectivity, trees, planarity.
+- HandshakeLemma (kernel-verified), EvenOddDegreeCount
+- PathRefl (kernel-verified), PathFromEdge (kernel-verified)
+- PathSymm, PathTrans (kernel-verified via concatenation)
+- TreeEdgeCount, TreeUniquePath, TreePlusCycle
+- ConnectedFromPaths, BipartiteNoOddCycles
+- EulerFormula (V - E + F = 2), K5NotPlanar, K33NotPlanar
+- FourColorTheorem, ChromaticLowerBound
+- DAGTopologicalOrder
+
+### `probability.fl`
+Probability spaces using PROB_* and MEASURE_* kernel rules.
+- ProbTotal (kernel), ProbEmpty (kernel), ProbComplement (kernel)
+- ProbMono (kernel), ProbAdditive (kernel), UnionBound (kernel)
+- ProbInclusionExclusion, ProbBound, ProbAtMostOne
+- ConditionalProbDef, BayesTheorem, IndependenceCharacterization
+- TotalProbability, MarkovInequality
+
 ### `topology.fl`
 Topological spaces, continuity, compactness, connectedness.
 - EmptyIsOpen, WholeSpaceIsOpen
