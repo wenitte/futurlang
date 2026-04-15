@@ -345,6 +345,23 @@ The generated app:
 - list proof demos: `examples/demo/list-length.fl`, `examples/demo/list-sum.fl`, `examples/demo/list-theorem.fl`
 - server example: `examples/server/hello-http.fl`
 
+## Standard Library
+
+Reusable math lemmas live in `lib/`. Use `apply(LemmaName)` to import them into proofs.
+
+| File | Domain |
+|------|--------|
+| `lib/sets-basic.fl` | Set membership, subsets, preimage, image |
+| `lib/sets-algebra.fl` | Union/intersection algebra |
+| `lib/math.fl` | Arithmetic, even/odd, divisibility, modular arithmetic |
+| `lib/number-theory.fl` | GCD, Bezout, Euclid's lemma, CRT, congruences |
+| `lib/algebra.fl` | Groups, rings, fields, homomorphisms |
+| `lib/linear-algebra.fl` | Vector spaces, linear maps, rank-nullity |
+| `lib/topology.fl` | Open/closed sets, continuity, compactness, connectedness |
+| `lib/real-analysis.fl` | Limits, IVT, EVT, derivatives |
+| `lib/type-system.fl` | Σ-types, Π-types, subtype coercions |
+| `lib/crypto.fl` | DH, hash security, commitments, elliptic curves |
+
 To start the server example:
 
 ```bash
