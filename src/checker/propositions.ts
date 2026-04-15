@@ -153,9 +153,33 @@ function canonicalizeAtom(value: string): CanonicalProp {
     };
   }
 
+  // ── Top-level Σ/Π type expressions (not wrapped in membership) ────────────
+  // Handles "Σ n ∈ A, P(n)" and "Π n ∈ A, P(n)" used as standalone type exprs
+  const topSigmaMatch = normalized.match(/^Σ\s+(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+?)\s*,\s*(.+)$/);
+  if (topSigmaMatch) {
+    return {
+      kind: 'dependent_sum',
+      element: '',
+      variable: normalizeTerm(topSigmaMatch[1]),
+      domain: normalizeTerm(topSigmaMatch[2]),
+      body: normalizeTerm(topSigmaMatch[3]),
+    };
+  }
+  const topPiMatch = normalized.match(/^Π\s+(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+?)\s*,\s*(.+)$/);
+  if (topPiMatch) {
+    return {
+      kind: 'dependent_product',
+      element: '',
+      variable: normalizeTerm(topPiMatch[1]),
+      domain: normalizeTerm(topPiMatch[2]),
+      body: normalizeTerm(topPiMatch[3]),
+    };
+  }
+
   const membership = splitTopLevelAtom(normalized, '∈');
   if (membership) {
     const setExpr = membership[1];
+    // Parenthesized forms: Π(x ∈ A, body) and Σ(x ∈ A, body)
     const piMatch = setExpr.match(/^Π\s*\(\s*(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+?)\s*,\s*(.+)\s*\)$/);
     if (piMatch) {
       return {
@@ -174,6 +198,27 @@ function canonicalizeAtom(value: string): CanonicalProp {
         variable: normalizeTerm(sigMatch[1]),
         domain: normalizeTerm(sigMatch[2]),
         body: normalizeTerm(sigMatch[3]),
+      };
+    }
+    // Unparenthesized forms: x ∈ Σ n ∈ A, body and x ∈ Π n ∈ A, body
+    const setEqSigma = setExpr.match(/^Σ\s+(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+?)\s*,\s*(.+)$/);
+    if (setEqSigma) {
+      return {
+        kind: 'dependent_sum',
+        element: normalizeTerm(membership[0]),
+        variable: normalizeTerm(setEqSigma[1]),
+        domain: normalizeTerm(setEqSigma[2]),
+        body: normalizeTerm(setEqSigma[3]),
+      };
+    }
+    const setEqPi = setExpr.match(/^Π\s+(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+?)\s*,\s*(.+)$/);
+    if (setEqPi) {
+      return {
+        kind: 'dependent_product',
+        element: normalizeTerm(membership[0]),
+        variable: normalizeTerm(setEqPi[1]),
+        domain: normalizeTerm(setEqPi[2]),
+        body: normalizeTerm(setEqPi[3]),
       };
     }
 

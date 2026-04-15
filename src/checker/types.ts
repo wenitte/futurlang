@@ -79,7 +79,23 @@ export type KernelRule =
   | 'ARITH_TOTIENT'
   | 'ARITH_FERMAT'
   | 'ARITH_EULER'
-  | 'ARITH_RSA';
+  | 'ARITH_RSA'
+  | 'ARITH_ABS'
+  | 'ARITH_SIGN'
+  | 'ARITH_ORDER'
+  | 'FORALL_ELIM'
+  | 'EXISTS_INTRO'
+  | 'REAL_LIMIT'
+  | 'REAL_CONTINUOUS'
+  | 'REAL_IVT'
+  | 'REAL_DIFF'
+  | 'REAL_BOUND'
+  | 'REAL_SQUEEZE'
+  | 'CRYPTO_DL'
+  | 'CRYPTO_DH'
+  | 'CRYPTO_EC'
+  | 'CRYPTO_HASH'
+  | 'CRYPTO_COMMIT';
 
 export type ProofState = 'PROVED' | 'PENDING' | 'FAILED' | 'UNVERIFIED';
 

@@ -1,0 +1,76 @@
+// crypto.fl — Phase 6: Extended cryptography
+// Discrete log, Diffie-Hellman, hash functions, commitments.
+
+// ── Discrete logarithm hardness ───────────────────────────────────────────────
+
+lemma DLogHard() {
+  given(p ∈ Prime) →
+  given(g ∈ Nat) →
+  assert(dlog_hard(g, p))
+} ↔
+
+proof DLogHard() {
+  given(p ∈ Prime) →
+  given(g ∈ Nat) →
+  assert(dlog_hard(g, p))
+} →
+
+// ── Diffie-Hellman shared secret ──────────────────────────────────────────────
+
+lemma DHSecret() {
+  given(p ∈ Prime) →
+  given(g ∈ Nat) →
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(dlog_hard(g, p)) →
+  assert(dh_secret(g, a, b, p) = g^(a * b) mod p)
+} ↔
+
+proof DHSecret() {
+  given(p ∈ Prime) →
+  given(g ∈ Nat) →
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(dlog_hard(g, p)) →
+  assert(dh_secret(g, a, b, p) = g^(a * b) mod p)
+} →
+
+// ── Hash security ─────────────────────────────────────────────────────────────
+
+lemma HashSecurity() {
+  given(collision_resistant(H)) →
+  given(one_way(H)) →
+  assert(hash_secure(H))
+} ↔
+
+proof HashSecurity() {
+  given(collision_resistant(H)) →
+  given(one_way(H)) →
+  assert(hash_secure(H))
+} →
+
+// ── Commitment scheme binding ─────────────────────────────────────────────────
+
+lemma CommitBinding() {
+  given(collision_resistant(H)) →
+  given(one_way(H)) →
+  assert(hash_secure(H)) →
+  assert(commit_binding(H))
+} ↔
+
+proof CommitBinding() {
+  given(collision_resistant(H)) →
+  given(one_way(H)) →
+  assert(hash_secure(H)) →
+  assert(commit_binding(H))
+} →
+
+// ── EC group commutativity ────────────────────────────────────────────────────
+
+lemma ECAddComm() {
+  assert(ec_add(P, Q, E) = ec_add(Q, P, E))
+} ↔
+
+proof ECAddComm() {
+  assert(ec_add(P, Q, E) = ec_add(Q, P, E))
+}

@@ -1,0 +1,259 @@
+// math.fl — FuturLang standard mathematics library
+// Proved lemmas that can be imported with apply(LemmaName)
+
+// ── Arithmetic identities ─────────────────────────────────────────────────────
+
+lemma AddZero() {
+  given(n ∈ Nat) →
+  assert(n + 0 = n)
+} ↔
+
+proof AddZero() {
+  given(n ∈ Nat) →
+  assert(n + 0 = n)
+} →
+
+lemma MulOne() {
+  given(n ∈ Nat) →
+  assert(n * 1 = n)
+} ↔
+
+proof MulOne() {
+  given(n ∈ Nat) →
+  assert(n * 1 = n)
+} →
+
+lemma MulZero() {
+  given(n ∈ Nat) →
+  assert(n * 0 = 0)
+} ↔
+
+proof MulZero() {
+  given(n ∈ Nat) →
+  assert(n * 0 = 0)
+} →
+
+lemma MulComm() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  assert(a * b = b * a)
+} ↔
+
+proof MulComm() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  assert(a * b = b * a)
+} →
+
+lemma AddComm() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  assert(a + b = b + a)
+} ↔
+
+proof AddComm() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  assert(a + b = b + a)
+} →
+
+lemma MulAssoc() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(c ∈ Nat) →
+  assert(a * (b * c) = a * b * c)
+} ↔
+
+proof MulAssoc() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(c ∈ Nat) →
+  assert(a * (b * c) = a * b * c)
+} →
+
+// ── Even / odd ────────────────────────────────────────────────────────────────
+
+lemma EvenDouble() {
+  given(n ∈ Nat) →
+  assert(even(2 * n))
+} ↔
+
+proof EvenDouble() {
+  given(n ∈ Nat) →
+  assert(even(2 * n))
+} →
+
+lemma EvenPlusEven() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(even(a)) →
+  given(even(b)) →
+  assert(even(a + b))
+} ↔
+
+proof EvenPlusEven() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(even(a)) →
+  given(even(b)) →
+  assert(even(a + b))
+} →
+
+lemma EvenTimesAny() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(even(a)) →
+  assert(even(a * b))
+} ↔
+
+proof EvenTimesAny() {
+  given(a ∈ Nat) →
+  given(b ∈ Nat) →
+  given(even(a)) →
+  assert(even(a * b))
+} →
+
+lemma EvenSquareImpliesEven() {
+  given(n ∈ Nat) →
+  given(even(n * n)) →
+  assert(even(n))
+} ↔
+
+proof EvenSquareImpliesEven() {
+  given(n ∈ Nat) →
+  given(even(n * n)) →
+  assert(even(n))
+} →
+
+// ── Divisibility ──────────────────────────────────────────────────────────────
+
+lemma DividesRefl() {
+  given(n ∈ Nat) →
+  assert(divides(1, n))
+} ↔
+
+proof DividesRefl() {
+  given(n ∈ Nat) →
+  assert(divides(1, n))
+} →
+
+lemma EvenIffDivides2() {
+  given(n ∈ Nat) →
+  given(even(n)) →
+  assert(divides(2, n))
+} ↔
+
+proof EvenIffDivides2() {
+  given(n ∈ Nat) →
+  given(even(n)) →
+  assert(divides(2, n))
+} →
+
+// ── Ordering ──────────────────────────────────────────────────────────────────
+
+lemma NatNonNeg() {
+  given(n ∈ Nat) →
+  assert(n ≥ 0)
+} ↔
+
+proof NatNonNeg() {
+  given(n ∈ Nat) →
+  assert(n ≥ 0)
+} →
+
+lemma SquareNonNeg() {
+  given(n ∈ Int) →
+  assert(n * n ≥ 0)
+} ↔
+
+proof SquareNonNeg() {
+  given(n ∈ Int) →
+  assert(n * n ≥ 0)
+} →
+
+lemma AbsNonNeg() {
+  given(n ∈ Int) →
+  assert(abs(n) ≥ 0)
+} ↔
+
+proof AbsNonNeg() {
+  given(n ∈ Int) →
+  assert(abs(n) ≥ 0)
+} →
+
+// ── Number theory ─────────────────────────────────────────────────────────────
+
+lemma Sqrt2Irrational() {
+  given(p ∈ Nat) →
+  given(q ∈ Nat) →
+  given(k ∈ Nat) →
+  given(p * p = 2 * (q * q)) →
+  given(p = 2 * k) →
+  given(coprime(p, q)) →
+  assert(⊥)
+} ↔
+
+proof Sqrt2Irrational() {
+  given(p ∈ Nat) →
+  given(q ∈ Nat) →
+  given(k ∈ Nat) →
+  given(p * p = 2 * (q * q)) →
+  given(p = 2 * k) →
+  given(coprime(p, q)) →
+  assert(even(p * p)) →
+  assert(even(p)) →
+  assert(p * p = 4 * (k * k)) →
+  assert(2 * (q * q) = 4 * (k * k)) →
+  assert(q * q = 2 * (k * k)) →
+  assert(even(q * q)) →
+  assert(even(q)) →
+  assert(⊥)
+} →
+
+// ── Modular arithmetic ────────────────────────────────────────────────────────
+
+lemma FermatLittle() {
+  given(p ∈ Prime) →
+  given(a ∈ Nat) →
+  given(coprime(a, p)) →
+  assert(a^(p - 1) ≡ 1 (mod p))
+} ↔
+
+proof FermatLittle() {
+  given(p ∈ Prime) →
+  given(a ∈ Nat) →
+  given(coprime(a, p)) →
+  assert(a^(p - 1) ≡ 1 (mod p))
+} →
+
+lemma EulerTheorem() {
+  given(n ∈ Nat) →
+  given(a ∈ Nat) →
+  given(coprime(a, n)) →
+  assert(a^φ(n) ≡ 1 (mod n))
+} ↔
+
+proof EulerTheorem() {
+  given(n ∈ Nat) →
+  given(a ∈ Nat) →
+  given(coprime(a, n)) →
+  assert(a^φ(n) ≡ 1 (mod n))
+} →
+
+lemma RSACorrectness() {
+  given(n ∈ Nat) →
+  given(e ∈ Nat) →
+  given(d ∈ Nat) →
+  given(m ∈ Nat) →
+  given(e * d ≡ 1 (mod φ(n))) →
+  assert((m^e)^d ≡ m (mod n))
+} ↔
+
+proof RSACorrectness() {
+  given(n ∈ Nat) →
+  given(e ∈ Nat) →
+  given(d ∈ Nat) →
+  given(m ∈ Nat) →
+  given(e * d ≡ 1 (mod φ(n))) →
+  assert((m^e)^d ≡ m (mod n))
+}

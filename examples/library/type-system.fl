@@ -1,0 +1,76 @@
+// type-system.fl — Phase 4: richer dependent types
+// Tests Σ-elimination, subtype coercions, and Π-types.
+
+// ── Σ-type projections ────────────────────────────────────────────────────────
+
+// Given a pair p : Σ n ∈ Nat, even(n), we can extract fst(p) ∈ Nat
+theorem SigmaFstProj() {
+  given(p ∈ Σ n ∈ Nat, even(n)) →
+  assert(fst(p) ∈ Nat)
+} ↔
+
+proof SigmaFstProj() {
+  given(p ∈ Σ n ∈ Nat, even(n)) →
+  assert(fst(p) ∈ Nat)
+} →
+
+// The second component gives us the property at fst(p)
+theorem SigmaSndProj() {
+  given(p ∈ Σ n ∈ Nat, even(n)) →
+  assert(even(fst(p)))
+} ↔
+
+proof SigmaSndProj() {
+  given(p ∈ Σ n ∈ Nat, even(n)) →
+  assert(even(fst(p)))
+} →
+
+// ── Subtype coercions ─────────────────────────────────────────────────────────
+
+// Every natural number is an integer
+theorem NatIsInt() {
+  given(n ∈ Nat) →
+  assert(n ∈ Int)
+} ↔
+
+proof NatIsInt() {
+  given(n ∈ Nat) →
+  assert(n ∈ Int)
+} →
+
+// Every natural number is a real
+theorem NatIsReal() {
+  given(n ∈ Nat) →
+  assert(n ∈ Real)
+} ↔
+
+proof NatIsReal() {
+  given(n ∈ Nat) →
+  assert(n ∈ Real)
+} →
+
+// Every integer is a real
+theorem IntIsReal() {
+  given(n ∈ Int) →
+  assert(n ∈ Real)
+} ↔
+
+proof IntIsReal() {
+  given(n ∈ Int) →
+  assert(n ∈ Real)
+} →
+
+// ── Π-type application ────────────────────────────────────────────────────────
+
+// If we know ∀ x ∈ Nat, x + 0 = x, applying it gives us n + 0 = n
+theorem PiElimArith() {
+  given(n ∈ Nat) →
+  given(∀ x ∈ Nat, x + 0 = x) →
+  assert(n + 0 = n)
+} ↔
+
+proof PiElimArith() {
+  given(n ∈ Nat) →
+  given(∀ x ∈ Nat, x + 0 = x) →
+  assert(n + 0 = n)
+}

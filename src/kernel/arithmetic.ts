@@ -215,7 +215,7 @@ export function normArith(s: string): string {
 }
 
 /** Strip one layer of outer parentheses if present. */
-function stripOuter(s: string): string {
+export function stripOuter(s: string): string {
   s = s.trim();
   if (s.startsWith('(') && s.endsWith(')')) {
     // Verify the parens match
@@ -312,6 +312,75 @@ export function isConcreteEven(expr: string): boolean {
 export function isConcreteOdd(expr: string): boolean {
   const v = evalArith(expr);
   return v !== null && v % 2 !== 0;
+}
+
+// ── Integer operations ────────────────────────────────────────────────────────
+
+/** Parse `abs(X)` → X, or null. */
+export function parseAbsExpr(s: string): string | null {
+  const m = s.trim().match(/^abs\s*\(\s*([\s\S]+?)\s*\)$/i);
+  return m ? normArith(m[1]) : null;
+}
+
+/** Parse `sign(X)` → X, or null. */
+export function parseSignExpr(s: string): string | null {
+  const m = s.trim().match(/^sign\s*\(\s*([\s\S]+?)\s*\)$/i);
+  return m ? normArith(m[1]) : null;
+}
+
+/** Parse `abs(X) = K` or `K = abs(X)` → {arg, value}, or null. */
+export function parseAbsEquality(s: string): { arg: string; value: string } | null {
+  const m1 = s.trim().match(/^abs\s*\(\s*([\s\S]+?)\s*\)\s*=\s*([\s\S]+)$/i);
+  if (m1) return { arg: normArith(m1[1]), value: normArith(m1[2]) };
+  const m2 = s.trim().match(/^([\s\S]+?)\s*=\s*abs\s*\(\s*([\s\S]+?)\s*\)$/i);
+  if (m2) return { arg: normArith(m2[2]), value: normArith(m2[1]) };
+  return null;
+}
+
+/** Parse `sign(X) = K` or `K = sign(X)` → {arg, value}, or null. */
+export function parseSignEquality(s: string): { arg: string; value: string } | null {
+  const m1 = s.trim().match(/^sign\s*\(\s*([\s\S]+?)\s*\)\s*=\s*([\s\S]+)$/i);
+  if (m1) return { arg: normArith(m1[1]), value: normArith(m1[2]) };
+  const m2 = s.trim().match(/^([\s\S]+?)\s*=\s*sign\s*\(\s*([\s\S]+?)\s*\)$/i);
+  if (m2) return { arg: normArith(m2[2]), value: normArith(m2[1]) };
+  return null;
+}
+
+type OrderOp = '<' | '>' | '≤' | '≥' | '<=' | '>=';
+
+/** Parse `A OP B` for ordering operators → {left, op, right}, or null. */
+export function parseOrder(s: string): { left: string; op: OrderOp; right: string } | null {
+  const ops: OrderOp[] = ['≤', '≥', '<=', '>=', '<', '>'];
+  for (const op of ops) {
+    const idx = s.indexOf(op);
+    if (idx < 0) continue;
+    // Make sure we're not inside parens (simple check)
+    let depth = 0;
+    let found = -1;
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === '(' || s[i] === '[') depth++;
+      else if (s[i] === ')' || s[i] === ']') depth--;
+      else if (depth === 0 && s.startsWith(op, i)) { found = i; break; }
+    }
+    if (found < 0) continue;
+    const left = normArith(s.slice(0, found));
+    const right = normArith(s.slice(found + op.length));
+    if (left && right) return { left, op, right };
+  }
+  return null;
+}
+
+/** Evaluate an ordering claim concretely. Returns true/false/null. */
+export function evalOrder(left: string, op: OrderOp, right: string): boolean | null {
+  const l = evalArith(left);
+  const r = evalArith(right);
+  if (l === null || r === null) return null;
+  switch (op) {
+    case '<':  return l < r;
+    case '>':  return l > r;
+    case '≤': case '<=': return l <= r;
+    case '≥': case '>=': return l >= r;
+  }
 }
 
 // ── Modular arithmetic ────────────────────────────────────────────────────────
@@ -423,20 +492,25 @@ export function computeTotient(n: number): number {
 
 /**
  * Parse `a^b` or `a ** b` (top-level) → {base, exp}, or null.
+ * Strips one layer of outer parentheses before scanning.
  */
 export function parsePower(s: string): { base: string; exp: string } | null {
-  const norm = s.trim();
-  let depth = 0;
-  for (let i = norm.length - 1; i >= 0; i--) {
-    const ch = norm[i];
-    if (ch === ')' || ch === ']') depth++;
-    else if (ch === '(' || ch === '[') depth--;
-    else if (depth === 0 && (ch === '^' || (ch === '*' && norm[i - 1] === '*'))) {
-      const op = ch === '^' ? '^' : '**';
-      const pivot = ch === '*' ? i - 1 : i;
-      const base = norm.slice(0, pivot).trim();
-      const exp = norm.slice(i + 1).trim();
-      if (base && exp) return { base, exp };
+  // Try both raw and outer-paren-stripped forms
+  for (const norm of [s.trim(), stripOuter(s.trim())]) {
+    let depth = 0;
+    for (let i = norm.length - 1; i >= 0; i--) {
+      const ch = norm[i];
+      if (ch === ')' || ch === ']') depth++;
+      else if (ch === '(' || ch === '[') depth--;
+      else if (depth === 0 && ch === '^') {
+        const base = norm.slice(0, i).trim();
+        const exp = norm.slice(i + 1).trim();
+        if (base && exp) return { base, exp };
+      } else if (depth === 0 && ch === '*' && i > 0 && norm[i - 1] === '*') {
+        const base = norm.slice(0, i - 1).trim();
+        const exp = norm.slice(i + 1).trim();
+        if (base && exp) return { base, exp };
+      }
     }
   }
   return null;

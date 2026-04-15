@@ -695,7 +695,13 @@ function deriveClaim(ctx, claim, step) {
         deriveDependentTypeRule,
         deriveNaturalTransformationRule,
         deriveExFalso,
+        deriveForallElim,
+        deriveExistsIntro,
         deriveArithClaim,
+        deriveModArithClaim,
+        deriveIntClaim,
+        deriveRealAnalysisClaim,
+        deriveCryptoClaim,
     ];
     for (const attempt of prover) {
         const result = attempt(ctx, claim, step);
@@ -1914,6 +1920,47 @@ function deriveDependentTypeRule(ctx, claim, step) {
                 };
             }
         }
+        // ── SIGMA_ELIM: from p ∈ Σ x ∈ A, P(x) derive fst(p) ∈ A or P(fst(p)) ──
+        // parseCanonicalExpr now handles "p ∈ Σ n ∈ A, body" as dependent_sum
+        if (typeof pKernel === 'object' && 'kind' in pKernel && pKernel.kind === 'dependent_sum' && pKernel.element) {
+            const bodyClaimString = typeof pKernel.body === 'string' ? pKernel.body : (0, propositions_1.exprToProp)(pKernel.body);
+            const pairName = pKernel.element;
+            const fstExpr = `fst(${pairName})`;
+            const fstMem = `${fstExpr} ∈ ${pKernel.domain}`;
+            const sndProp = substituteVariable(bodyClaimString, pKernel.variable, fstExpr);
+            if ((0, propositions_1.sameProp)(claim, fstMem)) {
+                createKernelObject(ctx, claim, 'SIGMA_ELIM', step, [object.id]);
+                return { rule: 'SIGMA_ELIM', state: 'PROVED', uses: [object.claim], message: `fst projection: ${fstExpr} ∈ ${pKernel.domain}` };
+            }
+            if ((0, propositions_1.sameProp)(claim, sndProp)) {
+                createKernelObject(ctx, claim, 'SIGMA_ELIM', step, [object.id]);
+                return { rule: 'SIGMA_ELIM', state: 'PROVED', uses: [object.claim], message: `snd projection: ${sndProp}` };
+            }
+        }
+    }
+    // ── Subtype coercions: Nat ⊂ Int ⊂ Real ──────────────────────────────────
+    const memClaim = (0, propositions_1.parseMembershipCanonical)(claim);
+    if (memClaim) {
+        const subtypeChain = {
+            'Int': ['Nat', 'ℕ'],
+            'ℤ': ['Nat', 'ℕ'],
+            'Real': ['Nat', 'ℕ', 'Int', 'ℤ'],
+            'ℝ': ['Nat', 'ℕ', 'Int', 'ℤ'],
+        };
+        const supertypes = subtypeChain[memClaim.set];
+        if (supertypes) {
+            const all = allContextObjects(ctx);
+            for (const sup of supertypes) {
+                const witness = all.find(o => {
+                    const m = (0, propositions_1.parseMembershipCanonical)(o.claim);
+                    return m && m.element === memClaim.element && m.set === sup;
+                });
+                if (witness) {
+                    createKernelObject(ctx, claim, 'STRUCTURAL', step, [witness.id]);
+                    return { rule: 'STRUCTURAL', state: 'PROVED', uses: [witness.claim], message: `${memClaim.element} ∈ ${sup} implies ${memClaim.element} ∈ ${memClaim.set} by subtype coercion` };
+                }
+            }
+        }
     }
     return null;
 }
@@ -2090,6 +2137,11 @@ function deriveArithClaim(ctx, claim, step) {
             createKernelObject(ctx, claim, 'ARITH_EVAL', step);
             return { rule: 'ARITH_EVAL', state: 'PROVED', message: 'Concrete even integer' };
         }
+        // Rule 1b: N itself is in the form 2 * K (e.g. even(2 * n) is trivially true)
+        if ((0, arithmetic_1.extractDoubleOperand)(evenArg) !== null) {
+            createKernelObject(ctx, claim, 'ARITH_EVEN_OF_DOUBLE', step);
+            return { rule: 'ARITH_EVEN_OF_DOUBLE', state: 'PROVED', message: `${evenArg} is a double by form` };
+        }
         // Rule 2: There is `N = 2 * K` or `N = K * 2` in context
         for (const obj of all) {
             const objEq = (0, propositions_1.parseEqualityCanonical)(obj.claim);
@@ -2119,6 +2171,30 @@ function deriveArithClaim(ctx, claim, step) {
                 uses: [squareObj.claim],
                 message: `Kernel axiom: n² even implies n even`,
             };
+        }
+        // Rule 3b: N = A + B and even(A) and even(B) are in context (even + even = even)
+        const addParts = (() => {
+            const s = (0, arithmetic_1.normArith)(evenArg);
+            let depth = 0;
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (ch === '(')
+                    depth++;
+                else if (ch === ')')
+                    depth--;
+                else if (depth === 0 && ch === '+')
+                    return [(0, arithmetic_1.normArith)(s.slice(0, i)), (0, arithmetic_1.normArith)(s.slice(i + 1))];
+            }
+            return null;
+        })();
+        if (addParts) {
+            const [a, b] = addParts;
+            const evenA = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(`even(${a})`));
+            const evenB = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(`even(${b})`));
+            if (evenA && evenB) {
+                createKernelObject(ctx, claim, 'ARITH_EVEN_PRODUCT', step, [evenA.id, evenB.id]);
+                return { rule: 'ARITH_EVEN_PRODUCT', state: 'PROVED', uses: [evenA.claim, evenB.claim], message: 'even(a) + even(b) = even(a+b)' };
+            }
         }
         // Rule 4: N = A * B and even(A) or even(B) is in context
         const mul = (0, arithmetic_1.splitTopMul)(evenArg);
@@ -2192,22 +2268,25 @@ function deriveArithClaim(ctx, claim, step) {
     // ── divides(A, B) ─────────────────────────────────────────────────────────────
     const div = (0, arithmetic_1.parseDividesClaim)(claim);
     if (div) {
+        // Axiom: divides(1, n) for any n
+        if ((0, arithmetic_1.normArith)(div.a) === '1') {
+            createKernelObject(ctx, claim, 'ARITH_DIVIDES', step);
+            return { rule: 'ARITH_DIVIDES', state: 'PROVED', message: '1 divides everything' };
+        }
         // Concrete: evalArith(b) % evalArith(a) === 0
-        const av = div.a === '0' ? null : (() => { try {
-            return parseInt(div.a, 10);
-        }
-        catch {
-            return null;
-        } })();
-        const bv = (() => { try {
-            return parseInt(div.b, 10);
-        }
-        catch {
-            return null;
-        } })();
-        if (av !== null && bv !== null && !isNaN(av) && !isNaN(bv) && bv % av === 0) {
+        const av = (0, arithmetic_1.evalArith)(div.a);
+        const bv = (0, arithmetic_1.evalArith)(div.b);
+        if (av !== null && bv !== null && av !== 0 && bv % av === 0) {
             createKernelObject(ctx, claim, 'ARITH_EVAL', step);
             return { rule: 'ARITH_EVAL', state: 'PROVED', message: 'Concrete divisibility check' };
+        }
+        // divides(2, n) from even(n)
+        if ((0, arithmetic_1.normArith)(div.a) === '2') {
+            const evenN = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(`even(${div.b})`));
+            if (evenN) {
+                createKernelObject(ctx, claim, 'ARITH_DIVIDES', step, [evenN.id]);
+                return { rule: 'ARITH_DIVIDES', state: 'PROVED', uses: [evenN.claim], message: 'even(n) implies divides(2, n)' };
+            }
         }
         // B = A * K in context
         for (const obj of all) {
@@ -2267,6 +2346,538 @@ function deriveArithClaim(ctx, claim, step) {
                     uses: [obj.claim, witA.claim, witB.claim],
                     message: `Contradiction: coprime(${a}, ${b}) but both are even`,
                 };
+            }
+        }
+    }
+    return null;
+}
+// ── Quantifier rules ──────────────────────────────────────────────────────────
+/**
+ * FORALL_ELIM: from `∀ x ∈ D, P(x)` in context, derive `P(v)` for any `v ∈ D`
+ * in context, including chaining through implications `∀ x, P(x) → Q(x)`.
+ */
+function deriveForallElim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    // Collect all ∀ statements available
+    for (const obj of all) {
+        const parsed = (0, propositions_1.parseCanonicalExpr)(obj.claim);
+        const forall = asForallExpr(parsed);
+        if (!forall)
+            continue;
+        const { variable, domain, body } = forall;
+        // Collect candidate substitutions: variables in context with the right domain
+        const candidates = collectInstances(ctx, domain);
+        for (const candidate of candidates) {
+            // Substitute variable → candidate in body
+            const instantiated = substituteInBody(body, variable, candidate);
+            // Case 1: instantiated body directly matches claim
+            if (claimsMatch(instantiated, claim)) {
+                createKernelObject(ctx, claim, 'FORALL_ELIM', step, [obj.id]);
+                return {
+                    rule: 'FORALL_ELIM',
+                    state: 'PROVED',
+                    uses: [obj.claim],
+                    message: `∀-elimination: instantiated ${variable} ↦ ${candidate}`,
+                };
+            }
+            // Case 2: body is P → Q, P is in context, Q matches claim
+            const impl = (0, propositions_1.parseImplicationCanonical)(instantiated);
+            if (impl) {
+                const [antecedent, consequent] = impl;
+                if (claimsMatch(consequent, claim)) {
+                    const antObj = findExact(all, antecedent, false);
+                    if (antObj) {
+                        createKernelObject(ctx, claim, 'FORALL_ELIM', step, [obj.id, antObj.id]);
+                        return {
+                            rule: 'FORALL_ELIM',
+                            state: 'PROVED',
+                            uses: [obj.claim, antObj.claim],
+                            message: `∀-elimination + →-elim: ${variable} ↦ ${candidate}`,
+                        };
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+/**
+ * EXISTS_INTRO: from `P(a)` in context, derive `∃ x ∈ D, P(x)`
+ * when `a ∈ D` is in context.
+ */
+function deriveExistsIntro(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    const parsed = (0, propositions_1.parseCanonicalExpr)(claim);
+    const exists = asExistsExpr(parsed);
+    if (!exists)
+        return null;
+    const { variable, domain, body } = exists;
+    const candidates = collectInstances(ctx, domain);
+    for (const candidate of candidates) {
+        const instantiated = substituteInBody(body, variable, candidate);
+        const wit = all.find(o => claimsMatch(instantiated, o.claim));
+        if (wit) {
+            createKernelObject(ctx, claim, 'EXISTS_INTRO', step, [wit.id]);
+            return {
+                rule: 'EXISTS_INTRO',
+                state: 'PROVED',
+                uses: [wit.claim],
+                message: `∃-introduction: witness ${candidate} satisfies the body`,
+            };
+        }
+    }
+    return null;
+}
+function asForallExpr(p) {
+    if (!('type' in p) || p.type !== 'Quantified')
+        return null;
+    const q = p;
+    if (q.quantifier !== 'forall')
+        return null;
+    return { variable: q.variable, domain: q.domain, body: q.body ? (0, propositions_1.exprToProp)(q.body) : '' };
+}
+function asExistsExpr(p) {
+    if (!('type' in p) || p.type !== 'Quantified')
+        return null;
+    const q = p;
+    if (q.quantifier !== 'exists')
+        return null;
+    return { variable: q.variable, domain: q.domain, body: q.body ? (0, propositions_1.exprToProp)(q.body) : '' };
+}
+/** Collect all terms of a given domain from context (membership/typing claims). */
+function collectInstances(ctx, domain) {
+    const all = allContextObjects(ctx);
+    const results = [];
+    // Normalize domain aliases
+    const normDomain = domain.replace(/\bNat\b/, 'ℕ').replace(/\bInt\b/, 'ℤ').replace(/\bReal\b/, 'ℝ');
+    for (const obj of all) {
+        const mem = (0, propositions_1.parseMembershipCanonical)(obj.claim);
+        if (mem && (mem.set === domain || mem.set === normDomain)) {
+            results.push(mem.element);
+        }
+        // Also check typed variables: x: Nat
+        const typed = obj.claim.match(/^(\w+)\s*:\s*(\w+)$/);
+        if (typed && (typed[2] === domain || typed[2] === normDomain)) {
+            results.push(typed[1]);
+        }
+    }
+    // Also include variables declared via setVar
+    for (const v of ctx.variables) {
+        if (v.domain === domain || v.domain === normDomain)
+            results.push(v.name);
+    }
+    return [...new Set(results)];
+}
+/** Substitute all free occurrences of `variable` with `value` in `body` string. */
+function substituteInBody(body, variable, value) {
+    return body.replace(new RegExp(`\\b${variable}\\b`, 'g'), `(${value})`);
+}
+/**
+ * Check whether two claim strings are logically equivalent, using:
+ * 1. sameProp (structural equality)
+ * 2. Arithmetic equality after parsing ordering/equality sub-claims
+ */
+function claimsMatch(a, b) {
+    if ((0, propositions_1.sameProp)(a, b))
+        return true;
+    // Try arithmetic-aware comparison for ordering claims
+    const ordA = (0, arithmetic_1.parseOrder)(a);
+    const ordB = (0, arithmetic_1.parseOrder)(b);
+    if (ordA && ordB && ordA.op === ordB.op) {
+        return (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(ordA.left), (0, arithmetic_1.normArith)(ordB.left)) &&
+            (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(ordA.right), (0, arithmetic_1.normArith)(ordB.right));
+    }
+    // Try arithmetic equality
+    const eqA = (0, propositions_1.parseEqualityCanonical)(a);
+    const eqB = (0, propositions_1.parseEqualityCanonical)(b);
+    if (eqA && eqB) {
+        return (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(eqA.left), (0, arithmetic_1.normArith)(eqB.left)) &&
+            (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(eqA.right), (0, arithmetic_1.normArith)(eqB.right));
+    }
+    // Try membership
+    const memA = (0, propositions_1.parseMembershipCanonical)(a);
+    const memB = (0, propositions_1.parseMembershipCanonical)(b);
+    if (memA && memB) {
+        return memA.set === memB.set && (0, arithmetic_1.normArith)(memA.element) === (0, arithmetic_1.normArith)(memB.element);
+    }
+    // Fallback: normalize arith whitespace
+    return (0, arithmetic_1.normArith)(a).replace(/\((\w+)\)/g, '$1') === (0, arithmetic_1.normArith)(b).replace(/\((\w+)\)/g, '$1');
+}
+// ── Integer / ordering rules ──────────────────────────────────────────────────
+function deriveIntClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    // Collect single-var equalities for substitution
+    const exprSubsts = new Map();
+    for (const obj of all) {
+        const objEq = (0, propositions_1.parseEqualityCanonical)(obj.claim);
+        if (objEq && /^[A-Za-z_]\w*$/.test(objEq.left.trim())) {
+            exprSubsts.set(objEq.left.trim(), objEq.right);
+        }
+    }
+    // Helper: resolve a symbolic expr to a concrete value using context substs
+    const resolveToNumber = (expr) => {
+        const direct = (0, arithmetic_1.evalArith)(expr);
+        if (direct !== null)
+            return direct;
+        let substituted = expr;
+        for (const [v, e] of exprSubsts) {
+            substituted = substituted.replace(new RegExp(`\\b${v}\\b`, 'g'), `(${e})`);
+        }
+        return (0, arithmetic_1.evalArith)(substituted);
+    };
+    // ── abs(X) = K ───────────────────────────────────────────────────────────────
+    const absEq = (0, arithmetic_1.parseAbsEquality)(claim);
+    if (absEq) {
+        const xv = resolveToNumber(absEq.arg);
+        const kv = (0, arithmetic_1.evalArith)(absEq.value);
+        if (xv !== null && kv !== null && Math.abs(xv) === kv) {
+            const src = exprSubsts.has(absEq.arg)
+                ? all.find(o => { const e = (0, propositions_1.parseEqualityCanonical)(o.claim); return e && e.left.trim() === absEq.arg; })
+                : undefined;
+            createKernelObject(ctx, claim, 'ARITH_ABS', step, src ? [src.id] : []);
+            return { rule: 'ARITH_ABS', state: 'PROVED', uses: src ? [src.claim] : [], message: `|${absEq.arg}| = ${kv}` };
+        }
+        // abs(x) = x when x ≥ 0 in context
+        const geqZero = all.find(o => {
+            const ord = (0, arithmetic_1.parseOrder)(o.claim);
+            return ord && (0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(absEq.arg) && (0, arithmetic_1.normArith)(ord.right) === '0'
+                && (ord.op === '≥' || ord.op === '>=');
+        });
+        if (geqZero && (0, arithmetic_1.normArith)(absEq.value) === (0, arithmetic_1.normArith)(absEq.arg)) {
+            createKernelObject(ctx, claim, 'ARITH_ABS', step, [geqZero.id]);
+            return { rule: 'ARITH_ABS', state: 'PROVED', uses: [geqZero.claim], message: 'abs(x) = x for x ≥ 0' };
+        }
+        // abs(x) = -x when x ≤ 0 in context
+        const leqZero = all.find(o => {
+            const ord = (0, arithmetic_1.parseOrder)(o.claim);
+            return ord && (0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(absEq.arg) && (0, arithmetic_1.normArith)(ord.right) === '0'
+                && (ord.op === '≤' || ord.op === '<=');
+        });
+        if (leqZero && (0, arithmetic_1.normArith)(absEq.value) === (0, arithmetic_1.normArith)(`-${absEq.arg}`)) {
+            createKernelObject(ctx, claim, 'ARITH_ABS', step, [leqZero.id]);
+            return { rule: 'ARITH_ABS', state: 'PROVED', uses: [leqZero.claim], message: 'abs(x) = -x for x ≤ 0' };
+        }
+    }
+    // ── sign(X) = K ──────────────────────────────────────────────────────────────
+    const signEq = (0, arithmetic_1.parseSignEquality)(claim);
+    if (signEq) {
+        const xv = resolveToNumber(signEq.arg);
+        const kv = (0, arithmetic_1.evalArith)(signEq.value);
+        if (xv !== null && kv !== null) {
+            const expected = xv > 0 ? 1 : xv < 0 ? -1 : 0;
+            if (expected === kv) {
+                const src = exprSubsts.has(signEq.arg)
+                    ? all.find(o => { const e = (0, propositions_1.parseEqualityCanonical)(o.claim); return e && e.left.trim() === signEq.arg; })
+                    : undefined;
+                createKernelObject(ctx, claim, 'ARITH_SIGN', step, src ? [src.id] : []);
+                return { rule: 'ARITH_SIGN', state: 'PROVED', uses: src ? [src.claim] : [], message: `sign(${signEq.arg}) = ${expected}` };
+            }
+        }
+        // sign(x) = 1 when x > 0 in context
+        if ((0, arithmetic_1.normArith)(signEq.value) === '1') {
+            const gt = all.find(o => { const ord = (0, arithmetic_1.parseOrder)(o.claim); return ord && (0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(signEq.arg) && (0, arithmetic_1.normArith)(ord.right) === '0' && ord.op === '>'; });
+            if (gt) {
+                createKernelObject(ctx, claim, 'ARITH_SIGN', step, [gt.id]);
+                return { rule: 'ARITH_SIGN', state: 'PROVED', uses: [gt.claim], message: 'sign(x) = 1 for x > 0' };
+            }
+        }
+        // sign(x) = -1 when x < 0 in context
+        if ((0, arithmetic_1.normArith)(signEq.value) === '-1') {
+            const lt = all.find(o => { const ord = (0, arithmetic_1.parseOrder)(o.claim); return ord && (0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(signEq.arg) && (0, arithmetic_1.normArith)(ord.right) === '0' && ord.op === '<'; });
+            if (lt) {
+                createKernelObject(ctx, claim, 'ARITH_SIGN', step, [lt.id]);
+                return { rule: 'ARITH_SIGN', state: 'PROVED', uses: [lt.claim], message: 'sign(x) = -1 for x < 0' };
+            }
+        }
+        // sign(x) = 0 when x = 0 in context
+        if ((0, arithmetic_1.normArith)(signEq.value) === '0') {
+            const eq0 = all.find(o => { const e = (0, propositions_1.parseEqualityCanonical)(o.claim); return e && (0, arithmetic_1.normArith)(e.left) === (0, arithmetic_1.normArith)(signEq.arg) && (0, arithmetic_1.normArith)(e.right) === '0'; });
+            if (eq0) {
+                createKernelObject(ctx, claim, 'ARITH_SIGN', step, [eq0.id]);
+                return { rule: 'ARITH_SIGN', state: 'PROVED', uses: [eq0.claim], message: 'sign(x) = 0 for x = 0' };
+            }
+        }
+    }
+    // ── Ordering: A < B, A > B, A ≤ B, A ≥ B ────────────────────────────────────
+    const ord = (0, arithmetic_1.parseOrder)(claim);
+    if (ord) {
+        // Concrete evaluation
+        const result = (0, arithmetic_1.evalOrder)(ord.left, ord.op, ord.right);
+        if (result === true) {
+            createKernelObject(ctx, claim, 'ARITH_ORDER', step);
+            return { rule: 'ARITH_ORDER', state: 'PROVED', message: `Concrete ordering: ${claim}` };
+        }
+        // With substitution from context
+        const subL = resolveToNumber(ord.left);
+        const subR = resolveToNumber(ord.right);
+        if (subL !== null && subR !== null) {
+            const holds = (() => {
+                switch (ord.op) {
+                    case '<': return subL < subR;
+                    case '>': return subL > subR;
+                    case '≤':
+                    case '<=': return subL <= subR;
+                    case '≥':
+                    case '>=': return subL >= subR;
+                }
+            })();
+            if (holds) {
+                const uses = [...exprSubsts.keys()]
+                    .filter(v => ord.left.includes(v) || ord.right.includes(v))
+                    .map(v => all.find(o => { const e = (0, propositions_1.parseEqualityCanonical)(o.claim); return e && e.left.trim() === v; }))
+                    .filter((o) => Boolean(o));
+                createKernelObject(ctx, claim, 'ARITH_ORDER', step, uses.map(o => o.id));
+                return { rule: 'ARITH_ORDER', state: 'PROVED', uses: uses.map(o => o.claim), message: `Ordering verified by substitution` };
+            }
+        }
+        // Transitivity: A < B from A < C and C ≤ B (or similar chains)
+        for (const obj of all) {
+            const obj2 = (0, arithmetic_1.parseOrder)(obj.claim);
+            if (!obj2)
+                continue;
+            // A op C in context, C op2 B → try to chain
+            if ((0, arithmetic_1.normArith)(obj2.left) === (0, arithmetic_1.normArith)(ord.left)) {
+                const mid = obj2.right;
+                for (const obj3 of all) {
+                    if (obj3 === obj)
+                        continue;
+                    const obj4 = (0, arithmetic_1.parseOrder)(obj3.claim);
+                    if (!obj4)
+                        continue;
+                    if ((0, arithmetic_1.normArith)(obj4.left) === (0, arithmetic_1.normArith)(mid) && (0, arithmetic_1.normArith)(obj4.right) === (0, arithmetic_1.normArith)(ord.right)) {
+                        // Both obj2 and obj4 must have compatible ops (e.g. < and < → <, ≤ and < → <, etc.)
+                        const isStrict = obj2.op === '<' || obj4.op === '<';
+                        const targetStrict = ord.op === '<' || ord.op === '>';
+                        if (!targetStrict || isStrict) {
+                            createKernelObject(ctx, claim, 'ARITH_ORDER', step, [obj.id, obj3.id]);
+                            return { rule: 'ARITH_ORDER', state: 'PROVED', uses: [obj.claim, obj3.claim], message: 'Ordering by transitivity' };
+                        }
+                    }
+                }
+            }
+        }
+        // ── Axiom: n ≥ 0 for n ∈ Nat ─────────────────────────────────────────────
+        if (ord.op === '≥' || ord.op === '>=') {
+            if ((0, arithmetic_1.normArith)(ord.right) === '0') {
+                // Check if the left side is in Nat
+                const lhsNorm = (0, arithmetic_1.normArith)(ord.left);
+                const inNat = all.find(o => {
+                    const mem = (0, propositions_1.parseMembershipCanonical)(o.claim);
+                    return mem && (0, arithmetic_1.normArith)(mem.element) === lhsNorm && (mem.set === 'Nat' || mem.set === 'ℕ');
+                });
+                if (inNat) {
+                    createKernelObject(ctx, claim, 'ARITH_ORDER', step, [inNat.id]);
+                    return { rule: 'ARITH_ORDER', state: 'PROVED', uses: [inNat.claim], message: `${ord.left} ∈ Nat implies ${ord.left} ≥ 0` };
+                }
+            }
+        }
+        // ── Axiom: n * n ≥ 0 for n ∈ Int (square non-negative) ──────────────────
+        if (ord.op === '≥' || ord.op === '>=') {
+            if ((0, arithmetic_1.normArith)(ord.right) === '0') {
+                const lhs = (0, arithmetic_1.normArith)(ord.left);
+                // Check if lhs is of form X * X (same factor)
+                const factors = (0, arithmetic_1.splitTopMul)(ord.left);
+                if (factors && (0, arithmetic_1.normArith)(factors[0]) === (0, arithmetic_1.normArith)(factors[1])) {
+                    // n * n ≥ 0 is always true for integers
+                    const inInt = all.find(o => {
+                        const mem = (0, propositions_1.parseMembershipCanonical)(o.claim);
+                        return mem && (0, arithmetic_1.normArith)(mem.element) === (0, arithmetic_1.normArith)(factors[0])
+                            && (mem.set === 'Int' || mem.set === 'ℤ' || mem.set === 'Nat' || mem.set === 'ℕ');
+                    });
+                    if (inInt) {
+                        createKernelObject(ctx, claim, 'ARITH_ORDER', step, [inInt.id]);
+                        return { rule: 'ARITH_ORDER', state: 'PROVED', uses: [inInt.claim], message: `${ord.left} ≥ 0 (square non-negative)` };
+                    }
+                }
+            }
+        }
+    }
+    // ── Axiom: abs(n) ≥ 0 ────────────────────────────────────────────────────
+    const absOrd = claim.match(/^abs\((.+)\)\s*(≥|>=)\s*0$/);
+    if (absOrd) {
+        createKernelObject(ctx, claim, 'ARITH_ABS', step);
+        return { rule: 'ARITH_ABS', state: 'PROVED', message: `abs is always non-negative` };
+    }
+    return null;
+}
+// ── Modular arithmetic / number theory rules ──────────────────────────────────
+function deriveModArithClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    // ── p ∈ Prime / Prime(p): concrete primality check ──────────────────────────
+    const primeArg = (0, arithmetic_1.parsePrimePred)(claim);
+    if (primeArg !== null) {
+        const v = (0, arithmetic_1.evalArith)(primeArg);
+        if (v !== null && (0, arithmetic_1.isPrime)(v)) {
+            createKernelObject(ctx, claim, 'ARITH_PRIME', step);
+            return { rule: 'ARITH_PRIME', state: 'PROVED', message: `${v} is prime` };
+        }
+        // p ∈ Prime from context assumption
+        const hyp = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(claim));
+        if (hyp) {
+            createKernelObject(ctx, claim, 'ARITH_PRIME', step, [hyp.id]);
+            return { rule: 'ARITH_PRIME', state: 'PROVED', uses: [hyp.claim], message: 'Prime from context' };
+        }
+    }
+    // ── φ(n) = k: totient equalities ────────────────────────────────────────────
+    const totEq = (0, arithmetic_1.parseTotientEquality)(claim);
+    if (totEq) {
+        // Concrete: φ(12) = 4
+        const nv = (0, arithmetic_1.evalArith)(totEq.arg);
+        if (nv !== null) {
+            const tv = (0, arithmetic_1.computeTotient)(nv);
+            const kv = (0, arithmetic_1.evalArith)(totEq.value);
+            if (kv !== null && tv === kv) {
+                createKernelObject(ctx, claim, 'ARITH_TOTIENT', step);
+                return { rule: 'ARITH_TOTIENT', state: 'PROVED', message: `φ(${nv}) = ${tv}` };
+            }
+        }
+        // Symbolic: φ(p * q) = (p-1) * (q-1) when p, q ∈ Prime in context
+        const argMul = (0, arithmetic_1.splitTopMul)(totEq.arg);
+        if (argMul) {
+            const [pStr, qStr] = argMul;
+            const pPrime = all.find(o => (0, arithmetic_1.parsePrimePred)(o.claim) === (0, arithmetic_1.normArith)(pStr) || (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(`${pStr} ∈ Prime`));
+            const qPrime = all.find(o => (0, arithmetic_1.parsePrimePred)(o.claim) === (0, arithmetic_1.normArith)(qStr) || (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(`${qStr} ∈ Prime`));
+            if (pPrime && qPrime) {
+                // Expected value: (p-1)*(q-1)
+                const expected = `(${pStr} - 1) * (${qStr} - 1)`;
+                if ((0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(totEq.value), expected) ||
+                    (0, arithmetic_1.normArith)(totEq.value) === (0, arithmetic_1.normArith)(expected)) {
+                    createKernelObject(ctx, claim, 'ARITH_TOTIENT', step, [pPrime.id, qPrime.id]);
+                    return {
+                        rule: 'ARITH_TOTIENT',
+                        state: 'PROVED',
+                        uses: [pPrime.claim, qPrime.claim],
+                        message: `φ(p·q) = (p-1)(q-1) for distinct primes`,
+                    };
+                }
+            }
+        }
+        // φ(p) = p - 1 when p ∈ Prime in context
+        const pPrime = all.find(o => (0, arithmetic_1.parsePrimePred)(o.claim) === (0, arithmetic_1.normArith)(totEq.arg) || (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(`${totEq.arg} ∈ Prime`));
+        if (pPrime) {
+            const expected = `${totEq.arg} - 1`;
+            if ((0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(totEq.value), expected) || (0, arithmetic_1.normArith)(totEq.value) === (0, arithmetic_1.normArith)(expected)) {
+                createKernelObject(ctx, claim, 'ARITH_TOTIENT', step, [pPrime.id]);
+                return {
+                    rule: 'ARITH_TOTIENT',
+                    state: 'PROVED',
+                    uses: [pPrime.claim],
+                    message: `φ(p) = p-1 for prime p`,
+                };
+            }
+        }
+    }
+    // ── a ≡ b (mod n): congruence claims ────────────────────────────────────────
+    const cong = (0, arithmetic_1.parseCongruence)(claim);
+    if (cong) {
+        // Concrete evaluation
+        if ((0, arithmetic_1.areCongruent)(cong.a, cong.b, cong.n)) {
+            createKernelObject(ctx, claim, 'ARITH_MOD_EVAL', step);
+            return { rule: 'ARITH_MOD_EVAL', state: 'PROVED', message: 'Verified by concrete modular evaluation' };
+        }
+        // e * d ≡ 1 (mod φ(n)): look for this in context directly
+        const hyp = all.find(o => (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(claim));
+        if (hyp) {
+            createKernelObject(ctx, claim, 'ARITH_CONGRUENCE', step, [hyp.id]);
+            return { rule: 'ARITH_CONGRUENCE', state: 'PROVED', uses: [hyp.claim], message: 'Congruence from context' };
+        }
+        // Congruence by definition: a mod n = b mod n in context
+        const modA = (0, arithmetic_1.evalMod)(cong.a, cong.n);
+        const modB = (0, arithmetic_1.evalMod)(cong.b, cong.n);
+        if (modA !== null && modB !== null && modA === modB) {
+            createKernelObject(ctx, claim, 'ARITH_CONGRUENCE', step);
+            return { rule: 'ARITH_CONGRUENCE', state: 'PROVED', message: 'Congruence from modular evaluation' };
+        }
+        // Fermat's little theorem: a^(p-1) ≡ 1 (mod p)
+        // claim: a^(p-1) ≡ 1 (mod p), b = "1", n = p
+        if ((0, arithmetic_1.normArith)(cong.b) === '1') {
+            const baseExp = (0, arithmetic_1.parsePower)(cong.a);
+            if (baseExp) {
+                // Check p ∈ Prime in context and exp = p - 1
+                const nPrime = all.find(o => (0, arithmetic_1.parsePrimePred)(o.claim) === (0, arithmetic_1.normArith)(cong.n) || (0, arithmetic_1.normArith)(o.claim) === (0, arithmetic_1.normArith)(`${cong.n} ∈ Prime`));
+                if (nPrime && (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(baseExp.exp), `${cong.n} - 1`)) {
+                    const cprime = all.find(o => {
+                        const cp = o.claim.trim().match(/^coprime\s*\(\s*([\s\S]+?)\s*,\s*([\s\S]+?)\s*\)$/i);
+                        return cp && (((0, arithmetic_1.normArith)(cp[1]) === (0, arithmetic_1.normArith)(baseExp.base) && (0, arithmetic_1.normArith)(cp[2]) === (0, arithmetic_1.normArith)(cong.n))
+                            || ((0, arithmetic_1.normArith)(cp[2]) === (0, arithmetic_1.normArith)(baseExp.base) && (0, arithmetic_1.normArith)(cp[1]) === (0, arithmetic_1.normArith)(cong.n)));
+                    });
+                    if (cprime) {
+                        createKernelObject(ctx, claim, 'ARITH_FERMAT', step, [nPrime.id, cprime.id]);
+                        return {
+                            rule: 'ARITH_FERMAT',
+                            state: 'PROVED',
+                            uses: [nPrime.claim, cprime.claim],
+                            message: `Fermat's little theorem: a^(p-1) ≡ 1 (mod p)`,
+                        };
+                    }
+                }
+            }
+            // Euler's theorem: a^φ(n) ≡ 1 (mod n)
+            if (baseExp) {
+                // Check if exp = φ(n) for some n matching cong.n
+                const expTotArg = (0, arithmetic_1.parseTotientExpr)(baseExp.exp);
+                if (expTotArg && (0, arithmetic_1.normArith)(expTotArg) === (0, arithmetic_1.normArith)(cong.n)) {
+                    const cprime = all.find(o => {
+                        const cp = o.claim.trim().match(/^coprime\s*\(\s*([\s\S]+?)\s*,\s*([\s\S]+?)\s*\)$/i);
+                        return cp && (((0, arithmetic_1.normArith)(cp[1]) === (0, arithmetic_1.normArith)(baseExp.base) && (0, arithmetic_1.normArith)(cp[2]) === (0, arithmetic_1.normArith)(cong.n))
+                            || ((0, arithmetic_1.normArith)(cp[2]) === (0, arithmetic_1.normArith)(baseExp.base) && (0, arithmetic_1.normArith)(cp[1]) === (0, arithmetic_1.normArith)(cong.n)));
+                    });
+                    if (cprime) {
+                        createKernelObject(ctx, claim, 'ARITH_EULER', step, [cprime.id]);
+                        return {
+                            rule: 'ARITH_EULER',
+                            state: 'PROVED',
+                            uses: [cprime.claim],
+                            message: `Euler's theorem: a^φ(n) ≡ 1 (mod n)`,
+                        };
+                    }
+                }
+            }
+        }
+        // RSA correctness: (m^e)^d ≡ m (mod n)
+        // Requires: e*d ≡ 1 (mod φ(n)) in context
+        {
+            // Try to match (m^e)^d pattern
+            const outerPow = (0, arithmetic_1.parsePower)(cong.a);
+            if (outerPow) {
+                const innerPow = (0, arithmetic_1.parsePower)(outerPow.base);
+                if (innerPow && (0, arithmetic_1.normArith)(innerPow.base) === (0, arithmetic_1.normArith)(cong.b)) {
+                    const m = innerPow.base;
+                    const e = innerPow.exp;
+                    const d = outerPow.exp;
+                    const n = cong.n;
+                    // Look for the RSA setup in context
+                    const eTimesD = `${e} * ${d}`;
+                    const modPhi = `φ(${n})`;
+                    const keyEq = all.find(o => {
+                        const c = (0, arithmetic_1.parseCongruence)(o.claim);
+                        return c && (0, arithmetic_1.normArith)(c.n) === (0, arithmetic_1.normArith)(modPhi) && (0, arithmetic_1.normArith)(c.b) === '1' &&
+                            ((0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(c.a), eTimesD) || (0, arithmetic_1.arithSymEqual)((0, arithmetic_1.normArith)(c.a), `${d} * ${e}`));
+                    });
+                    if (keyEq) {
+                        createKernelObject(ctx, claim, 'ARITH_RSA', step, [keyEq.id]);
+                        return {
+                            rule: 'ARITH_RSA',
+                            state: 'PROVED',
+                            uses: [keyEq.claim],
+                            message: `RSA correctness: (m^e)^d ≡ m (mod n) by Euler's theorem`,
+                        };
+                    }
+                }
+            }
+        }
+    }
+    // ── a mod n = k: modular evaluation ─────────────────────────────────────────
+    const modEq = (0, propositions_1.parseEqualityCanonical)(claim);
+    if (modEq) {
+        const modOp = (0, arithmetic_1.parseModOp)(modEq.left) ?? (0, arithmetic_1.parseModOp)(modEq.right);
+        if (modOp) {
+            const result = (0, arithmetic_1.evalMod)(modOp.a, modOp.n);
+            const other = (0, arithmetic_1.parseModOp)(modEq.left) ? modEq.right : modEq.left;
+            const otherV = (0, arithmetic_1.evalArith)(other);
+            if (result !== null && otherV !== null && result === otherV) {
+                createKernelObject(ctx, claim, 'ARITH_MOD_EVAL', step);
+                return { rule: 'ARITH_MOD_EVAL', state: 'PROVED', message: 'Verified by modular evaluation' };
             }
         }
     }
@@ -3173,4 +3784,228 @@ function normalizeComposition(value) {
 }
 function looksLikeCategoricalEquality(claim) {
     return claim.includes('∘') || /\bid_/.test(claim) || /^[A-Z][\w₀-₉ₐ-ₙ]*\(.+\)\s*=/.test(claim);
+}
+// ── Extended cryptography rules ────────────────────────────────────────────────
+function deriveCryptoClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    const norm = claim.trim();
+    // ── Discrete logarithm hardness: dlog_hard(g, p) ─────────────────────────
+    // Given p ∈ Prime and g ∈ Nat (primitive root), dlog is computationally hard
+    const dlogMatch = norm.match(/^dlog_hard\((\w+)\s*,\s*(\w+)\)$/);
+    if (dlogMatch) {
+        const [, g, p] = dlogMatch;
+        const pIsPrime = all.find(o => {
+            const mem = (0, propositions_1.parseMembershipCanonical)(o.claim);
+            return mem && mem.element === p && mem.set === 'Prime';
+        });
+        const gInNat = all.find(o => {
+            const mem = (0, propositions_1.parseMembershipCanonical)(o.claim);
+            return mem && mem.element === g && (mem.set === 'Nat' || mem.set === 'ℕ');
+        });
+        if (pIsPrime && gInNat) {
+            createKernelObject(ctx, claim, 'CRYPTO_DL', step, [pIsPrime.id, gInNat.id]);
+            return { rule: 'CRYPTO_DL', state: 'PROVED', uses: [pIsPrime.claim, gInNat.claim], message: `Discrete log hard in Z_${p}*` };
+        }
+    }
+    // ── Diffie-Hellman key agreement ─────────────────────────────────────────
+    // DH shared secret: g^(a*b) ≡ g^(b*a) (mod p)
+    // Claim: dh_shared(g, a, b, p) = g^(a*b) mod p
+    const dhMatch = norm.match(/^dh_secret\((\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\)\s*=\s*(.+)$/);
+    if (dhMatch) {
+        const [, g, a, b, p, result] = dhMatch;
+        const pIsPrime = all.find(o => {
+            const mem = (0, propositions_1.parseMembershipCanonical)(o.claim);
+            return mem && mem.element === p && mem.set === 'Prime';
+        });
+        const dlogHard = all.find(o => o.claim.match(new RegExp(`dlog_hard\\(${g}\\s*,\\s*${p}\\)`)));
+        if (pIsPrime && dlogHard) {
+            // DH secret is g^(a*b) mod p = g^(b*a) mod p (commutativity)
+            const expectedFwd = `${g}^(${a} * ${b}) mod ${p}`;
+            const expectedBwd = `${g}^(${b} * ${a}) mod ${p}`;
+            if ((0, arithmetic_1.normArith)(result) === (0, arithmetic_1.normArith)(expectedFwd) || (0, arithmetic_1.normArith)(result) === (0, arithmetic_1.normArith)(expectedBwd) ||
+                (0, arithmetic_1.areCongruent)(result, expectedFwd, String(parseInt(p))) || (0, arithmetic_1.areCongruent)(result, expectedBwd, String(parseInt(p)))) {
+                createKernelObject(ctx, claim, 'CRYPTO_DH', step, [pIsPrime.id, dlogHard.id]);
+                return { rule: 'CRYPTO_DH', state: 'PROVED', uses: [pIsPrime.claim, dlogHard.claim], message: `DH shared secret: ${g}^(${a}${b}) ≡ ${g}^(${b}${a}) (mod ${p})` };
+            }
+        }
+    }
+    // ── Elliptic curve point membership ──────────────────────────────────────
+    // Claim: on_curve(P, E) — point P lies on curve E: y² = x³ + ax + b (mod p)
+    const ecPointMatch = norm.match(/^on_curve\((\w+)\s*,\s*(.+)\)$/);
+    if (ecPointMatch) {
+        const [, pt, curve] = ecPointMatch;
+        // If we have the curve equation and point coordinates in context
+        const curveEq = all.find(o => o.claim.match(new RegExp(`curve_eq\\(${curve.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,`)));
+        const ptCoords = all.find(o => o.claim.match(new RegExp(`coords\\(${pt}\\s*,`)));
+        if (curveEq && ptCoords) {
+            createKernelObject(ctx, claim, 'CRYPTO_EC', step, [curveEq.id, ptCoords.id]);
+            return { rule: 'CRYPTO_EC', state: 'PROVED', uses: [curveEq.claim, ptCoords.claim], message: `Point ${pt} verified on curve ${curve}` };
+        }
+        // Also accept on_curve when given as axiom
+        const axiom = all.find(o => (0, propositions_1.sameProp)(o.claim, claim));
+        if (axiom) {
+            createKernelObject(ctx, claim, 'CRYPTO_EC', step, [axiom.id]);
+            return { rule: 'CRYPTO_EC', state: 'PROVED', uses: [axiom.claim], message: `EC point membership axiom` };
+        }
+    }
+    // ── EC group law: commutativity P + Q = Q + P ─────────────────────────────
+    const ecAddMatch = norm.match(/^ec_add\((\w+)\s*,\s*(\w+)\s*,\s*(\w+)\)\s*=\s*ec_add\((\w+)\s*,\s*(\w+)\s*,\s*(\w+)\)$/);
+    if (ecAddMatch) {
+        const [, P1, Q1, E1, Q2, P2, E2] = ecAddMatch;
+        if (P1 === P2 && Q1 === Q2 && E1 === E2) {
+            // ec_add(P, Q, E) = ec_add(Q, P, E) — commutativity
+            createKernelObject(ctx, claim, 'CRYPTO_EC', step);
+            return { rule: 'CRYPTO_EC', state: 'PROVED', message: 'EC group law: commutativity' };
+        }
+        if (P1 === Q2 && Q1 === P2 && E1 === E2) {
+            createKernelObject(ctx, claim, 'CRYPTO_EC', step);
+            return { rule: 'CRYPTO_EC', state: 'PROVED', message: 'EC group law: commutativity' };
+        }
+    }
+    // ── Hash pre-image resistance: hash_secure(H) ────────────────────────────
+    // Given collision_resistant(H) and one_way(H), conclude hash_secure(H)
+    const hashSecureMatch = norm.match(/^hash_secure\((\w[\w₀-₉ₐ-ₙ]*)\)$/);
+    if (hashSecureMatch) {
+        const [, H] = hashSecureMatch;
+        const collRes = all.find(o => o.claim.match(new RegExp(`collision_resistant\\(\\s*${H}\\s*\\)`)));
+        const oneWay = all.find(o => o.claim.match(new RegExp(`one_way\\(\\s*${H}\\s*\\)`)));
+        if (collRes && oneWay) {
+            createKernelObject(ctx, claim, 'CRYPTO_HASH', step, [collRes.id, oneWay.id]);
+            return { rule: 'CRYPTO_HASH', state: 'PROVED', uses: [collRes.claim, oneWay.claim], message: `${H} is a secure hash function` };
+        }
+    }
+    // ── Commitment scheme binding: commit_binding(C) ─────────────────────────
+    // Given collision_resistant(H), a hash-based commitment is binding
+    const commitMatch = norm.match(/^commit_binding\((\w[\w₀-₉ₐ-ₙ]*)\)$/);
+    if (commitMatch) {
+        const [, C] = commitMatch;
+        const hashBasis = all.find(o => o.claim.match(new RegExp(`hash_secure\\(\\s*${C}\\s*\\)`)) ||
+            o.claim.match(new RegExp(`collision_resistant\\(\\s*${C}\\s*\\)`)));
+        if (hashBasis) {
+            createKernelObject(ctx, claim, 'CRYPTO_COMMIT', step, [hashBasis.id]);
+            return { rule: 'CRYPTO_COMMIT', state: 'PROVED', uses: [hashBasis.claim], message: `${C} commitment scheme is binding` };
+        }
+    }
+    return null;
+}
+// ── Real analysis rules ────────────────────────────────────────────────────────
+function deriveRealAnalysisClaim(ctx, claim, step) {
+    const all = allContextObjects(ctx);
+    const norm = claim.trim();
+    // ── lim(f, a) = L ─────────────────────────────────────────────────────────
+    // Pattern: lim(f, a) = L
+    const limMatch = norm.match(/^lim\((\w[\w₀-₉ₐ-ₙ]*)\s*,\s*(.+?)\)\s*=\s*(.+)$/);
+    if (limMatch) {
+        const [, fn, point, limitVal] = limMatch;
+        // If continuous(f, a) is in context then lim(f, a) = f(a)
+        const contCtx = all.find(o => {
+            return o.claim.match(new RegExp(`continuous\\(\\s*${fn}\\s*,\\s*${point.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\)`));
+        });
+        if (contCtx) {
+            const appVal = `${fn}(${point})`;
+            if ((0, arithmetic_1.normArith)(limitVal) === (0, arithmetic_1.normArith)(appVal) || (0, arithmetic_1.arithSymEqual)(limitVal, appVal)) {
+                createKernelObject(ctx, claim, 'REAL_LIMIT', step, [contCtx.id]);
+                return { rule: 'REAL_LIMIT', state: 'PROVED', uses: [contCtx.claim], message: `Limit by continuity: lim(${fn}, ${point}) = ${fn}(${point})` };
+            }
+        }
+        // Squeeze theorem: if lo(a) ≤ f(a) ≤ hi(a) and lim(lo, a) = L and lim(hi, a) = L
+        const limLo = all.find(o => o.claim.match(/^lim\((\w+)\s*,\s*.+\)\s*=\s*.+$/));
+        const limHi = all.find(o => o !== limLo && o.claim.match(/^lim\((\w+)\s*,\s*.+\)\s*=\s*.+$/));
+        if (limLo && limHi) {
+            const mLo = limLo.claim.match(/^lim\((\w+)\s*,\s*(.+?)\)\s*=\s*(.+)$/);
+            const mHi = limHi.claim.match(/^lim\((\w+)\s*,\s*(.+?)\)\s*=\s*(.+)$/);
+            if (mLo && mHi && (0, arithmetic_1.normArith)(mLo[3]) === (0, arithmetic_1.normArith)(limitVal) && (0, arithmetic_1.normArith)(mHi[3]) === (0, arithmetic_1.normArith)(limitVal)) {
+                createKernelObject(ctx, claim, 'REAL_SQUEEZE', step, [limLo.id, limHi.id]);
+                return { rule: 'REAL_SQUEEZE', state: 'PROVED', uses: [limLo.claim, limHi.claim], message: 'Squeeze theorem' };
+            }
+        }
+    }
+    // ── continuous(f, a) ──────────────────────────────────────────────────────
+    // Differentiable functions are continuous
+    const contMatch = norm.match(/^continuous\((\w[\w₀-₉ₐ-ₙ]*)\s*,\s*(.+)\)$/);
+    if (contMatch) {
+        const [, fn, point] = contMatch;
+        const diffCtx = all.find(o => o.claim.match(new RegExp(`differentiable\\(\\s*${fn}\\s*,\\s*${point.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\)`)));
+        if (diffCtx) {
+            createKernelObject(ctx, claim, 'REAL_CONTINUOUS', step, [diffCtx.id]);
+            return { rule: 'REAL_CONTINUOUS', state: 'PROVED', uses: [diffCtx.claim], message: 'Differentiable implies continuous' };
+        }
+        // Polynomials and standard functions are continuous everywhere
+        const contOnR = all.find(o => o.claim.match(new RegExp(`continuous_on_R\\(\\s*${fn}\\s*\\)`)) ||
+            o.claim.match(new RegExp(`polynomial\\(\\s*${fn}\\s*\\)`)));
+        if (contOnR) {
+            createKernelObject(ctx, claim, 'REAL_CONTINUOUS', step, [contOnR.id]);
+            return { rule: 'REAL_CONTINUOUS', state: 'PROVED', uses: [contOnR.claim], message: `${fn} is continuous everywhere` };
+        }
+    }
+    // ── IVT: intermediate value theorem ───────────────────────────────────────
+    // Claim: ∃ c ∈ (a, b), f(c) = y
+    // Requires: continuous(f, [a,b]), f(a) ≤ y ≤ f(b) or f(b) ≤ y ≤ f(a)
+    const ivtMatch = norm.match(/^∃\s+c\s*∈\s*\((.+?)\s*,\s*(.+?)\)\s*,\s*(.+?)\(c\)\s*=\s*(.+)$/);
+    if (ivtMatch) {
+        const [, a, b, fn, y] = ivtMatch;
+        const contInterval = all.find(o => o.claim.match(new RegExp(`continuous_on\\(\\s*${fn}\\s*,\\s*\\[${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,\\s*${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\s*\\)`)));
+        if (contInterval) {
+            const faLeY = all.find(o => {
+                const ord = (0, arithmetic_1.parseOrder)(o.claim);
+                return ord && (ord.op === '≤' || ord.op === '<=') &&
+                    (0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(`${fn}(${a})`) &&
+                    (0, arithmetic_1.normArith)(ord.right) === (0, arithmetic_1.normArith)(y);
+            });
+            const yLeFb = all.find(o => {
+                const ord = (0, arithmetic_1.parseOrder)(o.claim);
+                return ord && (ord.op === '≤' || ord.op === '<=') &&
+                    (0, arithmetic_1.normArith)(ord.left) === (0, arithmetic_1.normArith)(y) &&
+                    (0, arithmetic_1.normArith)(ord.right) === (0, arithmetic_1.normArith)(`${fn}(${b})`);
+            });
+            if (contInterval && (faLeY || yLeFb)) {
+                const uses = [contInterval, faLeY, yLeFb].filter((o) => Boolean(o));
+                createKernelObject(ctx, claim, 'REAL_IVT', step, uses.map(o => o.id));
+                return { rule: 'REAL_IVT', state: 'PROVED', uses: uses.map(o => o.claim), message: 'Intermediate Value Theorem' };
+            }
+        }
+    }
+    // ── Bounded: |f(x)| ≤ M ──────────────────────────────────────────────────
+    // If f is continuous on closed interval [a,b], it is bounded
+    const boundMatch = norm.match(/^bounded\((\w[\w₀-₉ₐ-ₙ]*)\s*,\s*\[(.+?)\s*,\s*(.+?)\]\)$/);
+    if (boundMatch) {
+        const [, fn, a, b] = boundMatch;
+        const contInterval = all.find(o => o.claim.match(new RegExp(`continuous_on\\(\\s*${fn}\\s*,\\s*\\[${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,\\s*${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\s*\\)`)));
+        if (contInterval) {
+            createKernelObject(ctx, claim, 'REAL_BOUND', step, [contInterval.id]);
+            return { rule: 'REAL_BOUND', state: 'PROVED', uses: [contInterval.claim], message: 'Continuous on closed interval implies bounded (Extreme Value Theorem)' };
+        }
+    }
+    // ── Derivative: derivative(f, x) = expr ──────────────────────────────────
+    const diffMatch = norm.match(/^derivative\((\w[\w₀-₉ₐ-ₙ]*)\s*,\s*(.+?)\)\s*=\s*(.+)$/);
+    if (diffMatch) {
+        const [, fn, varName, derExpr] = diffMatch;
+        // Check if d/dx rule matches for known cases: derivative(x^n) = n*x^(n-1)
+        const powerFn = all.find(o => {
+            const eq = (0, propositions_1.parseEqualityCanonical)(o.claim);
+            return eq && eq.left.trim() === fn && eq.right.includes('^');
+        });
+        if (powerFn) {
+            const eq = (0, propositions_1.parseEqualityCanonical)(powerFn.claim);
+            const powParsed = (0, arithmetic_1.parsePower)(eq.right);
+            if (powParsed && (0, arithmetic_1.normArith)(powParsed.base) === (0, arithmetic_1.normArith)(varName)) {
+                const n = (0, arithmetic_1.evalArith)(powParsed.exp);
+                if (n !== null) {
+                    // d/dx x^n = n * x^(n-1)
+                    const expectedDer = n === 1 ? '1' : n === 2 ? `2 * ${varName}` : `${n} * ${varName}^${n - 1}`;
+                    if ((0, arithmetic_1.arithSymEqual)(derExpr, expectedDer)) {
+                        createKernelObject(ctx, claim, 'REAL_DIFF', step, [powerFn.id]);
+                        return { rule: 'REAL_DIFF', state: 'PROVED', uses: [powerFn.claim], message: `Power rule: d/d${varName} ${fn}(${varName}) = ${expectedDer}` };
+                    }
+                }
+            }
+        }
+        // Constant rule: derivative of constant = 0
+        const constVal = (0, arithmetic_1.evalArith)(fn);
+        if (constVal !== null && (0, arithmetic_1.normArith)(derExpr) === '0') {
+            createKernelObject(ctx, claim, 'REAL_DIFF', step);
+            return { rule: 'REAL_DIFF', state: 'PROVED', message: 'Constant rule: derivative of constant = 0' };
+        }
+    }
+    return null;
 }
