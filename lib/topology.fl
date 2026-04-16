@@ -18,7 +18,7 @@ lemma EmptyIsOpen() {
 
 proof EmptyIsOpen() {
   conclude(open(∅, T))
-} →
+} ∧
 
 lemma WholeSpaceIsOpen() {
   assume(topology(T, X)) →
@@ -27,7 +27,7 @@ lemma WholeSpaceIsOpen() {
 
 proof WholeSpaceIsOpen() {
   conclude(open(X, T))
-} →
+} ∧
 
 // ── Union of open sets is open ────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ lemma UnionOfOpenIsOpen() {
 
 proof UnionOfOpenIsOpen() {
   conclude(open(U ∪ V, T))
-} →
+} ∧
 
 // ── Finite intersection of open sets is open ─────────────────────────────────
 
@@ -49,7 +49,7 @@ lemma IntersectionOfOpenIsOpen() {
 
 proof IntersectionOfOpenIsOpen() {
   conclude(open(U ∩ V, T))
-} →
+} ∧
 
 // ── Closed sets: complement of open ──────────────────────────────────────────
 
@@ -60,7 +60,7 @@ lemma OpenComplementClosed() {
 
 proof OpenComplementClosed() {
   conclude(closed(complement(U, X), T))
-} →
+} ∧
 
 lemma ClosedComplementOpen() {
   assume(topology(T, X) ∧ closed(C, T)) →
@@ -69,7 +69,7 @@ lemma ClosedComplementOpen() {
 
 proof ClosedComplementOpen() {
   conclude(open(complement(C, X), T))
-} →
+} ∧
 
 // ── Empty and whole space are closed ─────────────────────────────────────────
 
@@ -79,10 +79,10 @@ lemma EmptyIsClosed() {
 } ↔
 
 proof EmptyIsClosed() {
-  assert(open(X, T)) ∧
-  assert(complement(X, X) = ∅) →
+  prove(open(X, T)) ∧
+  prove(complement(X, X) = ∅) →
   conclude(closed(∅, T))
-} →
+} ∧
 
 lemma WholeSpaceIsClosed() {
   assume(topology(T, X)) →
@@ -90,10 +90,10 @@ lemma WholeSpaceIsClosed() {
 } ↔
 
 proof WholeSpaceIsClosed() {
-  assert(open(∅, T)) ∧
-  assert(complement(∅, X) = X) →
+  prove(open(∅, T)) ∧
+  prove(complement(∅, X) = X) →
   conclude(closed(X, T))
-} →
+} ∧
 
 // ── Continuity via open preimages ─────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ lemma ContinuousOpenPreimage() {
 
 proof ContinuousOpenPreimage() {
   conclude(open(preimage(f, V), T1))
-} →
+} ∧
 
 // ── Continuity via closed preimages ──────────────────────────────────────────
 
@@ -115,7 +115,7 @@ lemma ContinuousClosedPreimage() {
 
 proof ContinuousClosedPreimage() {
   conclude(closed(preimage(f, C), T1))
-} →
+} ∧
 
 // ── Composition of continuous maps is continuous ──────────────────────────────
 
@@ -126,7 +126,7 @@ lemma ContinuousComposition() {
 
 proof ContinuousComposition() {
   conclude(continuous(compose(g, f), T1, T3))
-} →
+} ∧
 
 // ── Compact: closed subset of a compact space is compact ─────────────────────
 
@@ -137,7 +137,7 @@ lemma ClosedSubsetOfCompact() {
 
 proof ClosedSubsetOfCompact() {
   conclude(compact(C, T))
-} →
+} ∧
 
 // ── Continuous image of compact is compact ────────────────────────────────────
 
@@ -148,7 +148,7 @@ lemma CompactImageIsCompact() {
 
 proof CompactImageIsCompact() {
   conclude(compact(image(f, X), T2))
-} →
+} ∧
 
 // ── Compact subset of Hausdorff is closed ─────────────────────────────────────
 
@@ -159,7 +159,7 @@ lemma CompactInHausdorffIsClosed() {
 
 proof CompactInHausdorffIsClosed() {
   conclude(closed(K, T))
-} →
+} ∧
 
 // ── Continuous image of compact in Hausdorff space ────────────────────────────
 
@@ -170,7 +170,7 @@ lemma CompactContinuousToHausdorff() {
 
 proof CompactContinuousToHausdorff() {
   conclude(homeomorphism(f, T1, T2))
-} →
+} ∧
 
 // ── Connected: intermediate value property ───────────────────────────────────
 
@@ -181,7 +181,7 @@ lemma ConnectedIVT() {
 
 proof ConnectedIVT() {
   conclude(∃ x ∈ X, f(x) = c)
-} →
+} ∧
 
 // ── Product of connected spaces is connected ─────────────────────────────────
 
@@ -192,7 +192,7 @@ lemma ProductConnected() {
 
 proof ProductConnected() {
   conclude(connected(product(X, Y), product_topology(T1, T2)))
-} →
+} ∧
 
 // ── Hausdorff: limits are unique ──────────────────────────────────────────────
 
@@ -203,11 +203,11 @@ lemma HausdorffLimitUnique() {
 
 proof HausdorffLimitUnique() {
   assume(¬ (L1 = L2)) →
-  assert(∃ U ∈ T, ∃ V ∈ T, L1 ∈ U ∧ L2 ∈ V ∧ U ∩ V = ∅) ∧
-  assert(∃ N ∈ Nat, ∀ n ∈ Nat, n > N → x_n ∈ U) ∧
-  assert(∃ M ∈ Nat, ∀ n ∈ Nat, n > M → x_n ∈ V) →
-  assert(∃ n ∈ Nat, x_n ∈ U ∩ V) →
-  assert(∃ n ∈ Nat, x_n ∈ ∅) →
-  assert(⊥) →
+  prove(∃ U ∈ T, ∃ V ∈ T, L1 ∈ U ∧ L2 ∈ V ∧ U ∩ V = ∅) ∧
+  prove(∃ N ∈ Nat, ∀ n ∈ Nat, n > N → x_n ∈ U) ∧
+  prove(∃ M ∈ Nat, ∀ n ∈ Nat, n > M → x_n ∈ V) →
+  prove(∃ n ∈ Nat, x_n ∈ U ∩ V) →
+  prove(∃ n ∈ Nat, x_n ∈ ∅) →
+  prove(⊥) →
   conclude(L1 = L2)
 }

@@ -1,5 +1,5 @@
 theorem Identity() {
-  assert(p -> p)
+  declareToProve(p → p)
 } ↔
 
 proof Identity() {

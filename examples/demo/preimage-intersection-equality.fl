@@ -1,25 +1,25 @@
 theorem PreimageIntersectionEquality() {
-  assert(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+  declareToProve(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
 } ↔
 
 proof PreimageIntersectionEquality() {
   setVar(x: Element) →
   assume(x ∈ preimage(f, B ∩ C)) →
-  assert(f(x) ∈ B ∩ C) →
-  assert(f(x) ∈ B) ∧
-  assert(f(x) ∈ C) ∧
-  assert(x ∈ preimage(f, B)) ∧
-  assert(x ∈ preimage(f, C)) ∧
-  assert(x ∈ preimage(f, B) ∩ preimage(f, C)) →
-  assert(preimage(f, B ∩ C) ⊂ preimage(f, B) ∩ preimage(f, C)) →
+  prove(f(x) ∈ B ∩ C) →
+  prove(f(x) ∈ B) ∧
+  prove(f(x) ∈ C) ∧
+  prove(x ∈ preimage(f, B)) ∧
+  prove(x ∈ preimage(f, C)) ∧
+  prove(x ∈ preimage(f, B) ∩ preimage(f, C)) →
+  prove(preimage(f, B ∩ C) ⊂ preimage(f, B) ∩ preimage(f, C)) →
   setVar(y: Element) →
   assume(y ∈ preimage(f, B) ∩ preimage(f, C)) →
-  assert(y ∈ preimage(f, B)) ∧
-  assert(y ∈ preimage(f, C)) ∧
-  assert(f(y) ∈ B) ∧
-  assert(f(y) ∈ C) →
-  assert(f(y) ∈ B ∩ C) →
-  assert(y ∈ preimage(f, B ∩ C)) →
-  assert(preimage(f, B) ∩ preimage(f, C) ⊂ preimage(f, B ∩ C)) →
+  prove(y ∈ preimage(f, B)) ∧
+  prove(y ∈ preimage(f, C)) ∧
+  prove(f(y) ∈ B) ∧
+  prove(f(y) ∈ C) →
+  prove(f(y) ∈ B ∩ C) →
+  prove(y ∈ preimage(f, B ∩ C)) →
+  prove(preimage(f, B) ∩ preimage(f, C) ⊂ preimage(f, B ∩ C)) →
   conclude(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
 }

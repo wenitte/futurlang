@@ -55,7 +55,50 @@ function checkFile(nodes, options = {}) {
             diagnostics.push({ severity: 'info', message: `Lemma '${node.name}' has no proof` });
         }
     }
-    const state = combineStates(reports.map(report => report.state), pairedCount === 0 ? 'FAILED' : 'PROVED');
+    // ── Inter-block connective validation ────────────────────────────────────────
+    // Build a map: proof name → set of lemma/theorem names it references via apply()
+    const proofApplyNames = new Map();
+    for (const pair of pairs) {
+        proofApplyNames.set(normalizeName(pair.theorem.name), collectApplyNames(pair.proof.body ?? []));
+    }
+    // Walk top-level nodes in order; for each proof node with a non-↔ connective,
+    // validate that the connective matches the actual dependency on the next block.
+    for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        if (node.type !== 'Proof')
+            continue;
+        const proofNode = node;
+        if (proofNode.fnMeta)
+            continue; // fn-desugared proofs are not subject to inter-block validation
+        const conn = proofNode.connective;
+        if (!conn || conn === '↔' || conn === '∨')
+            continue; // ∨ not validated here
+        // Find the next theorem/lemma
+        let j = i + 1;
+        while (j < nodes.length && nodes[j].type !== 'Theorem' && nodes[j].type !== 'Lemma')
+            j++;
+        if (j >= nodes.length)
+            continue;
+        const nextBlock = nodes[j];
+        const nextApply = proofApplyNames.get(normalizeName(nextBlock.name)) ?? new Set();
+        const prevName = normalizeName(proofNode.name);
+        const nextUsesThis = nextApply.has(prevName);
+        if (conn === '→' && !nextUsesThis) {
+            diagnostics.push({
+                severity: 'error',
+                message: `Incorrect inter-block connective '→' before '${nextBlock.name}': this block does not depend on '${proofNode.name}'. Use ∧ for independent blocks.`,
+            });
+        }
+        else if (conn === '∧' && nextUsesThis) {
+            diagnostics.push({
+                severity: 'error',
+                message: `Incorrect inter-block connective '∧' before '${nextBlock.name}': this block depends on '${proofNode.name}' via apply(). Use → to show the dependency.`,
+            });
+        }
+    }
+    const hasInterBlockErrors = diagnostics.some(d => d.severity === 'error');
+    const pairState = combineStates(reports.map(report => report.state), pairedCount === 0 ? 'FAILED' : 'PROVED');
+    const state = hasInterBlockErrors ? 'FAILED' : pairState;
     return {
         state,
         valid: state === 'PROVED',
@@ -65,6 +108,25 @@ function checkFile(nodes, options = {}) {
         reports,
         diagnostics,
     };
+}
+function collectApplyNames(nodes) {
+    const names = new Set();
+    function walk(ns) {
+        for (const n of ns) {
+            if (n.type === 'Apply')
+                names.add(normalizeName(n.target));
+            if ('body' in n && Array.isArray(n.body))
+                walk(n.body);
+            if ('steps' in n && Array.isArray(n.steps))
+                walk(n.steps);
+            if ('cases' in n && Array.isArray(n.cases)) {
+                for (const c of n.cases)
+                    walk(c.body ?? []);
+            }
+        }
+    }
+    walk(nodes);
+    return names;
 }
 function checkPair(pair, lemmas, structs, types, _options) {
     // Validate declaration body syntax — warnings for legacy keywords, errors for structural violations

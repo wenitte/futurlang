@@ -1,8 +1,6 @@
 theorem ProbabilityUnionBound() {
-  given(ProbabilityMeasure(P, Σ, X)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  assert(P(A ∪ B) ≤ P(A) + P(B))
+  assume(ProbabilityMeasure(P, Σ, X) ∧ A ∈ Σ ∧ B ∈ Σ) →
+  declareToProve(P(A ∪ B) ≤ P(A) + P(B))
 } ↔
 
 proof ProbabilityUnionBound() {

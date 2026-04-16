@@ -1,7 +1,6 @@
 theorem MeasurablePreimage() {
-  given(Measurable(f, Σ_X, Σ_Y)) →
-  given(B ∈ Σ_Y) →
-  assert(preimage(f, B) ∈ Σ_X)
+  assume(Measurable(f, Σ_X, Σ_Y) ∧ B ∈ Σ_Y) →
+  declareToProve(preimage(f, B) ∈ Σ_X)
 } ↔
 
 proof MeasurablePreimage() {

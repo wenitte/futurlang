@@ -15,7 +15,7 @@ lemma GroupIdentityUnique() {
 
 proof GroupIdentityUnique() {
   conclude(e = e2)
-} →
+} ∧
 
 // ── Inverse uniqueness ────────────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ lemma GroupInverseUnique() {
 
 proof GroupInverseUnique() {
   conclude(x = y)
-} →
+} ∧
 
 // ── Left cancellation ─────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ lemma GroupLeftCancel() {
 
 proof GroupLeftCancel() {
   conclude(b = c)
-} →
+} ∧
 
 // ── Inverse of inverse ────────────────────────────────────────────────────────
 
@@ -47,9 +47,9 @@ lemma GroupInvInv() {
 } ↔
 
 proof GroupInvInv() {
-  assert(op(G, inv(G, g), g) = identity_elem(G)) →
+  prove(op(G, inv(G, g), g) = identity_elem(G)) →
   conclude(inv(G, inv(G, g)) = g)
-} →
+} ∧
 
 // ── Inverse of product ────────────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ lemma GroupInvProduct() {
 
 proof GroupInvProduct() {
   conclude(inv(G, op(G, a, b)) = op(G, inv(G, b), inv(G, a)))
-} →
+} ∧
 
 // ── Abelian group: commutativity ──────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ lemma AbelianComm() {
 
 proof AbelianComm() {
   conclude(op(G, a, b) = op(G, b, a))
-} →
+} ∧
 
 // ── Subgroup closure ──────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ lemma SubgroupClosed() {
 
 proof SubgroupClosed() {
   conclude(op(G, a, b) ∈ H)
-} →
+} ∧
 
 // ── Subgroup contains identity ────────────────────────────────────────────────
 
@@ -93,7 +93,7 @@ lemma SubgroupIdentity() {
 
 proof SubgroupIdentity() {
   conclude(identity_elem(G) ∈ H)
-} →
+} ∧
 
 // ── Subgroup closed under inverses ────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ lemma SubgroupInverse() {
 
 proof SubgroupInverse() {
   conclude(inv(G, h) ∈ H)
-} →
+} ∧
 
 // ── Homomorphism preserves identity ──────────────────────────────────────────
 
@@ -115,7 +115,7 @@ lemma HomPreservesIdentity() {
 
 proof HomPreservesIdentity() {
   conclude(φ(identity_elem(G)) = identity_elem(H))
-} →
+} ∧
 
 // ── Homomorphism preserves inverses ──────────────────────────────────────────
 
@@ -126,7 +126,7 @@ lemma HomPreservesInverse() {
 
 proof HomPreservesInverse() {
   conclude(φ(inv(G, g)) = inv(H, φ(g)))
-} →
+} ∧
 
 // ── Kernel is a subgroup ──────────────────────────────────────────────────────
 
@@ -136,10 +136,10 @@ lemma KernelIsSubgroup() {
 } ↔
 
 proof KernelIsSubgroup() {
-  assert(φ(identity_elem(G)) = identity_elem(H)) ∧
-  assert(identity_elem(G) ∈ ker(φ)) →
+  prove(φ(identity_elem(G)) = identity_elem(H)) ∧
+  prove(identity_elem(G) ∈ ker(φ)) →
   conclude(subgroup(ker(φ), G))
-} →
+} ∧
 
 // ── Ring: distributivity ──────────────────────────────────────────────────────
 
@@ -150,7 +150,7 @@ lemma RingDistribLeft() {
 
 proof RingDistribLeft() {
   conclude(mul(R, a, add(R, b, c)) = add(R, mul(R, a, b), mul(R, a, c)))
-} →
+} ∧
 
 // ── Ring: zero annihilates ────────────────────────────────────────────────────
 
@@ -161,7 +161,7 @@ lemma RingZeroAnnihilates() {
 
 proof RingZeroAnnihilates() {
   conclude(mul(R, zero(R), a) = zero(R))
-} →
+} ∧
 
 // ── Field: nonzero elements form a group ─────────────────────────────────────
 

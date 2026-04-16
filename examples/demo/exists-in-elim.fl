@@ -1,6 +1,6 @@
 theorem ExistsInElim() {
-  given(∃ x ∈ A, x ∈ B) →
-  assert(q)
+  assume(∃ x ∈ A, x ∈ B) →
+  declareToProve(q)
 } ↔
 
 proof ExistsInElim() {

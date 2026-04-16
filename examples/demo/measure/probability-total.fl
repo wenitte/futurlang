@@ -1,6 +1,6 @@
 theorem ProbabilityTotal() {
-  given(ProbabilityMeasure(P, Σ, X)) →
-  assert(P(X) = 1)
+  assume(ProbabilityMeasure(P, Σ, X)) →
+  declareToProve(P(X) = 1)
 } ↔
 
 proof ProbabilityTotal() {

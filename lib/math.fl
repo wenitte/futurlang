@@ -20,7 +20,7 @@ lemma AddZero() {
 
 proof AddZero() {
   conclude(n + 0 = n)
-} →
+} ∧
 
 lemma MulOne() {
   assume(n ∈ Nat) →
@@ -29,7 +29,7 @@ lemma MulOne() {
 
 proof MulOne() {
   conclude(n * 1 = n)
-} →
+} ∧
 
 lemma MulZero() {
   assume(n ∈ Nat) →
@@ -38,7 +38,7 @@ lemma MulZero() {
 
 proof MulZero() {
   conclude(n * 0 = 0)
-} →
+} ∧
 
 lemma MulComm() {
   assume(a ∈ Nat ∧ b ∈ Nat) →
@@ -47,7 +47,7 @@ lemma MulComm() {
 
 proof MulComm() {
   conclude(a * b = b * a)
-} →
+} ∧
 
 lemma AddComm() {
   assume(a ∈ Nat ∧ b ∈ Nat) →
@@ -56,7 +56,7 @@ lemma AddComm() {
 
 proof AddComm() {
   conclude(a + b = b + a)
-} →
+} ∧
 
 lemma MulAssoc() {
   assume(a ∈ Nat ∧ b ∈ Nat ∧ c ∈ Nat) →
@@ -65,7 +65,7 @@ lemma MulAssoc() {
 
 proof MulAssoc() {
   conclude(a * (b * c) = a * b * c)
-} →
+} ∧
 
 // ── Even / odd ────────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ lemma EvenDouble() {
 
 proof EvenDouble() {
   conclude(even(2 * n))
-} →
+} ∧
 
 lemma EvenPlusEven() {
   assume(a ∈ Nat ∧ b ∈ Nat ∧ even(a) ∧ even(b)) →
@@ -85,7 +85,7 @@ lemma EvenPlusEven() {
 
 proof EvenPlusEven() {
   conclude(even(a + b))
-} →
+} ∧
 
 lemma EvenTimesAny() {
   assume(a ∈ Nat ∧ b ∈ Nat ∧ even(a)) →
@@ -94,7 +94,7 @@ lemma EvenTimesAny() {
 
 proof EvenTimesAny() {
   conclude(even(a * b))
-} →
+} ∧
 
 lemma EvenSquareImpliesEven() {
   assume(n ∈ Nat ∧ even(n * n)) →
@@ -103,7 +103,7 @@ lemma EvenSquareImpliesEven() {
 
 proof EvenSquareImpliesEven() {
   conclude(even(n))
-} →
+} ∧
 
 // ── Divisibility ──────────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ lemma DividesRefl() {
 
 proof DividesRefl() {
   conclude(divides(1, n))
-} →
+} ∧
 
 lemma EvenIffDivides2() {
   assume(n ∈ Nat ∧ even(n)) →
@@ -123,7 +123,7 @@ lemma EvenIffDivides2() {
 
 proof EvenIffDivides2() {
   conclude(divides(2, n))
-} →
+} ∧
 
 // ── Ordering ──────────────────────────────────────────────────────────────────
 
@@ -134,7 +134,7 @@ lemma NatNonNeg() {
 
 proof NatNonNeg() {
   conclude(n ≥ 0)
-} →
+} ∧
 
 lemma SquareNonNeg() {
   assume(n ∈ Int) →
@@ -143,7 +143,7 @@ lemma SquareNonNeg() {
 
 proof SquareNonNeg() {
   conclude(n * n ≥ 0)
-} →
+} ∧
 
 lemma AbsNonNeg() {
   assume(n ∈ Int) →
@@ -152,7 +152,7 @@ lemma AbsNonNeg() {
 
 proof AbsNonNeg() {
   conclude(abs(n) ≥ 0)
-} →
+} ∧
 
 // ── Number theory ─────────────────────────────────────────────────────────────
 
@@ -162,15 +162,15 @@ lemma Sqrt2Irrational() {
 } ↔
 
 proof Sqrt2Irrational() {
-  assert(even(p * p)) ∧
-  assert(even(p)) ∧
-  assert(p * p = 4 * (k * k)) →
-  assert(2 * (q * q) = 4 * (k * k)) →
-  assert(q * q = 2 * (k * k)) →
-  assert(even(q * q)) →
-  assert(even(q)) ∧
-  assert(⊥)
-} →
+  prove(even(p * p)) ∧
+  prove(even(p)) ∧
+  prove(p * p = 4 * (k * k)) →
+  prove(2 * (q * q) = 4 * (k * k)) →
+  prove(q * q = 2 * (k * k)) →
+  prove(even(q * q)) →
+  prove(even(q)) ∧
+  prove(⊥)
+} ∧
 
 // ── Modular arithmetic ────────────────────────────────────────────────────────
 
@@ -181,7 +181,7 @@ lemma FermatLittle() {
 
 proof FermatLittle() {
   conclude(a^(p - 1) ≡ 1 (mod p))
-} →
+} ∧
 
 lemma EulerTheorem() {
   assume(n ∈ Nat ∧ a ∈ Nat ∧ coprime(a, n)) →
@@ -190,7 +190,7 @@ lemma EulerTheorem() {
 
 proof EulerTheorem() {
   conclude(a^φ(n) ≡ 1 (mod n))
-} →
+} ∧
 
 lemma RSACorrectness() {
   assume(n ∈ Nat ∧ e ∈ Nat ∧ d ∈ Nat ∧ m ∈ Nat ∧ e * d ≡ 1 (mod φ(n))) →

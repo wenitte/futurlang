@@ -1,7 +1,6 @@
 theorem SubsetAntisymmetry() {
-  given(A subset B) →
-  given(B subset A) →
-  assert(A = B)
+  assume(A subset B ∧ B subset A) →
+  declareToProve(A = B)
 } ↔
 
 proof SubsetAntisymmetry() {

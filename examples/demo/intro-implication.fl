@@ -1,5 +1,5 @@
 theorem IntroImplication() {
-  assert(p → q → p)
+  declareToProve(p → q → p)
 } ↔
 
 proof IntroImplication() {

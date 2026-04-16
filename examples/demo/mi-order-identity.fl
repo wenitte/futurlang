@@ -1,5 +1,5 @@
 theorem OrderIdentity() {
-  assert((x ≤ y) ⇒ (x ≤ y))
+  declareToProve((x ≤ y) ⇒ (x ≤ y))
 } ↔
 
 proof OrderIdentity() {

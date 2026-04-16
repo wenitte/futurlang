@@ -11,7 +11,7 @@ lemma ModusPonens() {
 
 proof ModusPonens() {
   conclude(Q)
-} →
+} ∧
 
 // ── Modus tollens ────────────────────────────────────────────────────────────
 
@@ -22,10 +22,10 @@ lemma ModusTollens() {
 
 proof ModusTollens() {
   assume(P) →
-  assert(Q) →
+  prove(Q) →
   contradiction() →
   conclude(¬ P)
-} →
+} ∧
 
 // ── Hypothetical syllogism ────────────────────────────────────────────────────
 
@@ -36,10 +36,10 @@ lemma HypotheticalSyllogism() {
 
 proof HypotheticalSyllogism() {
   assume(P) →
-  assert(Q) →
-  assert(R) →
+  prove(Q) →
+  prove(R) →
   conclude(P → R)
-} →
+} ∧
 
 // ── Conjunction introduction ──────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ lemma AndIntro() {
 
 proof AndIntro() {
   conclude(P ∧ Q)
-} →
+} ∧
 
 // ── Conjunction elimination ───────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ lemma AndElimLeft() {
 
 proof AndElimLeft() {
   conclude(P)
-} →
+} ∧
 
 lemma AndElimRight() {
   assume(P ∧ Q) →
@@ -70,7 +70,7 @@ lemma AndElimRight() {
 
 proof AndElimRight() {
   conclude(Q)
-} →
+} ∧
 
 // ── Disjunction introduction ──────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ lemma OrIntroLeft() {
 
 proof OrIntroLeft() {
   conclude(P ∨ Q)
-} →
+} ∧
 
 lemma OrIntroRight() {
   assume(Q) →
@@ -90,7 +90,7 @@ lemma OrIntroRight() {
 
 proof OrIntroRight() {
   conclude(P ∨ Q)
-} →
+} ∧
 
 // ── Disjunction elimination ───────────────────────────────────────────────────
 
@@ -101,13 +101,13 @@ lemma OrElim() {
 
 proof OrElim() {
   assume(P) →
-  assert(R) →
-  assert(P → R) →
+  prove(R) →
+  prove(P → R) →
   assume(Q) →
-  assert(R) →
-  assert(Q → R) →
+  prove(R) →
+  prove(Q → R) →
   conclude(R)
-} →
+} ∧
 
 // ── Double negation ───────────────────────────────────────────────────────────
 
@@ -120,7 +120,7 @@ proof DoubleNegIntro() {
   assume(¬ P) →
   contradiction() →
   conclude(¬ ¬ P)
-} →
+} ∧
 
 lemma DoubleNegElim() {
   assume(¬ ¬ P) →
@@ -131,7 +131,7 @@ proof DoubleNegElim() {
   assume(¬ P) →
   contradiction() →
   conclude(P)
-} →
+} ∧
 
 // ── De Morgan's laws ──────────────────────────────────────────────────────────
 
@@ -143,17 +143,17 @@ lemma DeMorganAndToOr() {
 proof DeMorganAndToOr() {
   assume(¬ (¬ P ∨ ¬ Q)) →
   assume(¬ P) →
-  assert(¬ P ∨ ¬ Q) →
+  prove(¬ P ∨ ¬ Q) →
   contradiction() →
-  assert(P) →
+  prove(P) →
   assume(¬ Q) →
-  assert(¬ P ∨ ¬ Q) →
+  prove(¬ P ∨ ¬ Q) →
   contradiction() →
-  assert(Q) →
-  assert(P ∧ Q) →
+  prove(Q) →
+  prove(P ∧ Q) →
   contradiction() →
   conclude(¬ P ∨ ¬ Q)
-} →
+} ∧
 
 lemma DeMorganOrToAnd() {
   assume(¬ (P ∨ Q)) →
@@ -162,15 +162,15 @@ lemma DeMorganOrToAnd() {
 
 proof DeMorganOrToAnd() {
   assume(P) →
-  assert(P ∨ Q) →
+  prove(P ∨ Q) →
   contradiction() →
-  assert(¬ P) →
+  prove(¬ P) →
   assume(Q) →
-  assert(P ∨ Q) →
+  prove(P ∨ Q) →
   contradiction() →
-  assert(¬ Q) →
+  prove(¬ Q) →
   conclude(¬ P ∧ ¬ Q)
-} →
+} ∧
 
 // ── Biconditional introduction and elimination ────────────────────────────────
 
@@ -181,7 +181,7 @@ lemma IffIntro() {
 
 proof IffIntro() {
   conclude(P ↔ Q)
-} →
+} ∧
 
 lemma IffElimLeft() {
   assume(P ↔ Q ∧ P) →
@@ -190,7 +190,7 @@ lemma IffElimLeft() {
 
 proof IffElimLeft() {
   conclude(Q)
-} →
+} ∧
 
 lemma IffElimRight() {
   assume(P ↔ Q ∧ Q) →
@@ -199,7 +199,7 @@ lemma IffElimRight() {
 
 proof IffElimRight() {
   conclude(P)
-} →
+} ∧
 
 // ── Contrapositive ────────────────────────────────────────────────────────────
 
@@ -211,11 +211,11 @@ lemma Contrapositive() {
 proof Contrapositive() {
   assume(¬ Q) →
   assume(P) →
-  assert(Q) ∧
+  prove(Q) ∧
   contradiction() ∧
-  assert(¬ P) →
+  prove(¬ P) →
   conclude(¬ Q → ¬ P)
-} →
+} ∧
 
 // ── Proof by contradiction ────────────────────────────────────────────────────
 
@@ -226,9 +226,9 @@ lemma ProofByContradiction() {
 
 proof ProofByContradiction() {
   assume(¬ P) →
-  assert(⊥) →
+  prove(⊥) →
   conclude(P)
-} →
+} ∧
 
 // ── Excluded middle ───────────────────────────────────────────────────────────
 
@@ -239,13 +239,13 @@ lemma ExcludedMiddle() {
 proof ExcludedMiddle() {
   assume(¬ (P ∨ ¬ P)) →
   assume(P) →
-  assert(P ∨ ¬ P) ∧
+  prove(P ∨ ¬ P) ∧
   contradiction() ∧
-  assert(¬ P) →
-  assert(P ∨ ¬ P) →
+  prove(¬ P) →
+  prove(P ∨ ¬ P) →
   contradiction() →
   conclude(P ∨ ¬ P)
-} →
+} ∧
 
 // ── Absorption laws ──────────────────────────────────────────────────────────
 
@@ -255,9 +255,9 @@ lemma AbsorbAndOr() {
 } ↔
 
 proof AbsorbAndOr() {
-  assert(P ∨ Q) →
+  prove(P ∨ Q) →
   conclude(P ∧ (P ∨ Q))
-} →
+} ∧
 
 lemma AbsorbOrAnd() {
   assume(P) →

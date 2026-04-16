@@ -4,8 +4,8 @@ type Shape =
 } →
 
 theorem WildMatch() {
-  given(s ∈ Shape) →
-  assert(s ∈ Shape)
+  assume(s ∈ Shape) →
+  declareToProve(s ∈ Shape)
 } ↔
 
 proof WildMatch() {

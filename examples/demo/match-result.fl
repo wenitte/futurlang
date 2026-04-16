@@ -4,8 +4,8 @@ type Result =
 } →
 
 theorem ResultValid() {
-  given(r ∈ Result) →
-  assert(r ∈ Result)
+  assume(r ∈ Result) →
+  declareToProve(r ∈ Result)
 } ↔
 
 proof ResultValid() {

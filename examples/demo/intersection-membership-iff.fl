@@ -1,17 +1,17 @@
 theorem IntersectionMembershipIff() {
-  assert((x ∈ A ∩ B) ↔ (x ∈ A ∧ x ∈ B))
+  declareToProve((x ∈ A ∩ B) ↔ (x ∈ A ∧ x ∈ B))
 } ↔
 
 proof IntersectionMembershipIff() {
   assume(x ∈ A ∩ B) →
-  assert(x ∈ A) ∧
-  assert(x ∈ B) →
-  assert(x ∈ A ∧ x ∈ B) →
-  assert((x ∈ A ∩ B) → (x ∈ A ∧ x ∈ B)) →
+  prove(x ∈ A) ∧
+  prove(x ∈ B) →
+  prove(x ∈ A ∧ x ∈ B) →
+  prove((x ∈ A ∩ B) → (x ∈ A ∧ x ∈ B)) →
   assume(x ∈ A ∧ x ∈ B) →
-  assert(x ∈ A) →
-  assert(x ∈ B) →
-  assert(x ∈ A ∩ B) →
-  assert((x ∈ A ∧ x ∈ B) → (x ∈ A ∩ B)) →
+  prove(x ∈ A) →
+  prove(x ∈ B) →
+  prove(x ∈ A ∩ B) →
+  prove((x ∈ A ∧ x ∈ B) → (x ∈ A ∩ B)) →
   conclude((x ∈ A ∩ B) ↔ (x ∈ A ∧ x ∈ B))
 }

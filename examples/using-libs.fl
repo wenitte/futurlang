@@ -14,18 +14,16 @@ import logic
 // Uses SubsetTransport twice, then SubsetTransitivity.
 
 theorem DoubleTransport() {
-  given(x ∈ A) →
-  given(A ⊆ B) →
-  given(B ⊆ C) →
-  assert(x ∈ C)
+  assume(x ∈ A ∧ A ⊆ B ∧ B ⊆ C) →
+  declareToProve(x ∈ C)
 } ↔
 
 proof DoubleTransport() {
   apply(SubsetTransitivity) →
-  assert(A ⊆ C) →
+  prove(A ⊆ C) →
   apply(SubsetTransport) →
   conclude(x ∈ C)
-} →
+} ∧
 
 // ── Arithmetic: even sum is even ─────────────────────────────────────────────
 //
@@ -33,17 +31,14 @@ proof DoubleTransport() {
 // Uses EvenPlusEven from lib/math.fl.
 
 theorem EvenSum() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(even(a)) →
-  given(even(b)) →
-  assert(even(a + b))
+  assume(a ∈ Nat ∧ b ∈ Nat ∧ even(a) ∧ even(b)) →
+  declareToProve(even(a + b))
 } ↔
 
 proof EvenSum() {
   apply(EvenPlusEven) →
   conclude(even(a + b))
-} →
+} ∧
 
 // ── Logic: modus tollens chain ───────────────────────────────────────────────
 //
@@ -51,20 +46,18 @@ proof EvenSum() {
 // Uses HypotheticalSyllogism + ModusTollens from lib/logic.fl.
 
 theorem NegateChain() {
-  given(P → Q) →
-  given(Q → R) →
-  given(¬ R) →
-  assert(¬ P)
+  assume(P → Q ∧ Q → R ∧ ¬ R) →
+  declareToProve(¬ P)
 } ↔
 
 proof NegateChain() {
   apply(HypotheticalSyllogism) →
-  assert(P → R) →
+  prove(P → R) →
   assume(P) →
-  assert(R) →
+  prove(R) →
   contradiction() →
   conclude(¬ P)
-} →
+} ∧
 
 // ── Logic: De Morgan ─────────────────────────────────────────────────────────
 //
@@ -72,14 +65,14 @@ proof NegateChain() {
 // Uses DeMorganAndToOr from lib/logic.fl.
 
 theorem DeMorganUsage() {
-  given(¬ (P ∧ Q)) →
-  assert(¬ P ∨ ¬ Q)
+  assume(¬ (P ∧ Q)) →
+  declareToProve(¬ P ∨ ¬ Q)
 } ↔
 
 proof DeMorganUsage() {
   apply(DeMorganAndToOr) →
   conclude(¬ P ∨ ¬ Q)
-} →
+} ∧
 
 // ── Combining libs: even implies divisible by 2 ──────────────────────────────
 //
@@ -87,35 +80,33 @@ proof DeMorganUsage() {
 // Uses EvenIffDivides2 from lib/math.fl.
 
 theorem EvenMeansDivisible() {
-  given(n ∈ Nat) →
-  given(even(n)) →
-  assert(divides(2, n))
+  assume(n ∈ Nat ∧ even(n)) →
+  declareToProve(divides(2, n))
 } ↔
 
 proof EvenMeansDivisible() {
   apply(EvenIffDivides2) →
   conclude(divides(2, n))
-} →
+} ∧
 
 // ── Congruence is transitive ──────────────────────────────────────────────────
 //
 // Uses CongruenceTrans from lib/number-theory.fl.
 
 theorem ModChain() {
-  given(a ≡ b (mod 7)) →
-  given(b ≡ c (mod 7)) →
-  assert(a ≡ c (mod 7))
+  assume(a ≡ b (mod 7) ∧ b ≡ c (mod 7)) →
+  declareToProve(a ≡ c (mod 7))
 } ↔
 
 proof ModChain() {
   conclude(a ≡ c (mod 7))
-} →
+} ∧
 
 // ── Congruence reflexivity ────────────────────────────────────────────────────
 
 theorem ModRefl() {
-  given(a ∈ Int) →
-  assert(a ≡ a (mod 5))
+  assume(a ∈ Int) →
+  declareToProve(a ≡ a (mod 5))
 } ↔
 
 proof ModRefl() {

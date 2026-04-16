@@ -1,7 +1,6 @@
 theorem SigmaClosedComplement() {
-  given(SigmaAlgebra(Σ, X)) →
-  given(A ∈ Σ) →
-  assert(complement(A, X) ∈ Σ)
+  assume(SigmaAlgebra(Σ, X) ∧ A ∈ Σ) →
+  declareToProve(complement(A, X) ∈ Σ)
 } ↔
 
 proof SigmaClosedComplement() {

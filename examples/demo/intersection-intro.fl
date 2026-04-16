@@ -1,7 +1,6 @@
 theorem IntersectionIntro() {
-  given(x ∈ A) →
-  given(x ∈ B) →
-  assert(x ∈ A ∩ B)
+  assume(x ∈ A ∧ x ∈ B) →
+  declareToProve(x ∈ A ∩ B)
 } ↔
 
 proof IntersectionIntro() {

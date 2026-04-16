@@ -1,6 +1,6 @@
 theorem UnionIntro() {
-  given(x ∈ A) →
-  assert(x ∈ A ∪ B)
+  assume(x ∈ A) →
+  declareToProve(x ∈ A ∪ B)
 } ↔
 
 proof UnionIntro() {

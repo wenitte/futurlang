@@ -8,7 +8,7 @@ lemma Factorial0() {
 
 proof Factorial0() {
   conclude(factorial(0) = 1)
-} →
+} ∧
 
 lemma Factorial1() {
   declareToProve(factorial(1) = 1)
@@ -16,7 +16,7 @@ lemma Factorial1() {
 
 proof Factorial1() {
   conclude(factorial(1) = 1)
-} →
+} ∧
 
 lemma Factorial2() {
   declareToProve(factorial(2) = 2)
@@ -24,7 +24,7 @@ lemma Factorial2() {
 
 proof Factorial2() {
   conclude(factorial(2) = 2)
-} →
+} ∧
 
 lemma Factorial3() {
   declareToProve(factorial(3) = 6)
@@ -32,7 +32,7 @@ lemma Factorial3() {
 
 proof Factorial3() {
   conclude(factorial(3) = 6)
-} →
+} ∧
 
 lemma Factorial4() {
   declareToProve(factorial(4) = 24)
@@ -40,7 +40,7 @@ lemma Factorial4() {
 
 proof Factorial4() {
   conclude(factorial(4) = 24)
-} →
+} ∧
 
 lemma Factorial5() {
   declareToProve(factorial(5) = 120)
@@ -48,7 +48,7 @@ lemma Factorial5() {
 
 proof Factorial5() {
   conclude(factorial(5) = 120)
-} →
+} ∧
 
 // ── Factorial recurrence ──────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ lemma FactorialRecurrence() {
 
 proof FactorialRecurrence() {
   conclude(factorial(n) = n * factorial(n - 1))
-} →
+} ∧
 
 // ── Binomial coefficients ─────────────────────────────────────────────────────
 
@@ -69,10 +69,10 @@ lemma Binom0() {
 } ↔
 
 proof Binom0() {
-  assert(binom(n, 0) = factorial(n) / (factorial(0) * factorial(n))) ∧
-  assert(factorial(0) = 1) →
+  prove(binom(n, 0) = factorial(n) / (factorial(0) * factorial(n))) ∧
+  prove(factorial(0) = 1) →
   conclude(binom(n, 0) = 1)
-} →
+} ∧
 
 lemma BinomN() {
   assume(n ∈ Nat) →
@@ -80,10 +80,10 @@ lemma BinomN() {
 } ↔
 
 proof BinomN() {
-  assert(binom(n, n) = factorial(n) / (factorial(n) * factorial(0))) ∧
-  assert(factorial(0) = 1) →
+  prove(binom(n, n) = factorial(n) / (factorial(n) * factorial(0))) ∧
+  prove(factorial(0) = 1) →
   conclude(binom(n, n) = 1)
-} →
+} ∧
 
 lemma Binom52() {
   declareToProve(binom(5, 2) = 10)
@@ -91,7 +91,7 @@ lemma Binom52() {
 
 proof Binom52() {
   conclude(binom(5, 2) = 10)
-} →
+} ∧
 
 lemma Binom63() {
   declareToProve(binom(6, 3) = 20)
@@ -99,7 +99,7 @@ lemma Binom63() {
 
 proof Binom63() {
   conclude(binom(6, 3) = 20)
-} →
+} ∧
 
 // ── Pascal's identity ─────────────────────────────────────────────────────────
 
@@ -110,7 +110,7 @@ lemma PascalIdentity() {
 
 proof PascalIdentity() {
   conclude(binom(n + 1, k + 1) = binom(n, k) + binom(n, k + 1))
-} →
+} ∧
 
 // ── Symmetry of binomial coefficients ────────────────────────────────────────
 
@@ -120,10 +120,10 @@ lemma BinomSymmetry() {
 } ↔
 
 proof BinomSymmetry() {
-  assert(binom(n, k) = factorial(n) / (factorial(k) * factorial(n - k))) ∧
-  assert(binom(n, n - k) = factorial(n) / (factorial(n - k) * factorial(k))) →
+  prove(binom(n, k) = factorial(n) / (factorial(k) * factorial(n - k))) ∧
+  prove(binom(n, n - k) = factorial(n) / (factorial(n - k) * factorial(k))) →
   conclude(binom(n, k) = binom(n, n - k))
-} →
+} ∧
 
 // ── Vandermonde's identity ────────────────────────────────────────────────────
 
@@ -134,7 +134,7 @@ lemma Vandermonde() {
 
 proof Vandermonde() {
   conclude(binom(m + n, r) = ∑ k ∈ {0, ..., r}, binom(m, k) * binom(n, r - k))
-} →
+} ∧
 
 // ── Pigeonhole principle ──────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ lemma Pigeonhole() {
 
 proof Pigeonhole() {
   conclude(pigeonhole(n, k))
-} →
+} ∧
 
 lemma PigeonholeConcreteExample() {
   declareToProve(pigeonhole(13, 12))
@@ -153,7 +153,7 @@ lemma PigeonholeConcreteExample() {
 
 proof PigeonholeConcreteExample() {
   conclude(pigeonhole(13, 12))
-} →
+} ∧
 
 // ── Generalized pigeonhole ────────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ lemma GeneralizedPigeonhole() {
 
 proof GeneralizedPigeonhole() {
   conclude(∃ box ∈ Boxes, items_in(box) > m)
-} →
+} ∧
 
 // ── Inclusion-exclusion ───────────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ lemma InclusionExclusion2() {
 
 proof InclusionExclusion2() {
   conclude(|A ∪ B| = |A| + |B| - |A ∩ B|)
-} →
+} ∧
 
 lemma InclusionExclusion3() {
   assume(finite(A) ∧ finite(B) ∧ finite(C)) →
@@ -184,7 +184,7 @@ lemma InclusionExclusion3() {
 
 proof InclusionExclusion3() {
   conclude(|A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|)
-} →
+} ∧
 
 // ── Counting permutations ─────────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ lemma PermCount() {
 
 proof PermCount() {
   conclude(perm(n, k) = factorial(n) / factorial(n - k))
-} →
+} ∧
 
 // ── Stars and bars ────────────────────────────────────────────────────────────
 
@@ -206,7 +206,7 @@ lemma StarsAndBars() {
 
 proof StarsAndBars() {
   conclude(multiset_count(n, k) = binom(n + k - 1, k - 1))
-} →
+} ∧
 
 // ── Sum of binomials ─────────────────────────────────────────────────────────
 

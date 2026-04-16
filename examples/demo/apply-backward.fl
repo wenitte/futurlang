@@ -1,7 +1,6 @@
 theorem ApplyBackward() {
-  given(p → q) →
-  given(p) →
-  assert(q)
+  assume(p → q ∧ p) →
+  declareToProve(q)
 } ↔
 
 proof ApplyBackward() {

@@ -1,6 +1,6 @@
 theorem SigmaContainsEmpty() {
-  given(SigmaAlgebra(Σ, X)) →
-  assert(∅ ∈ Σ)
+  assume(SigmaAlgebra(Σ, X)) →
+  declareToProve(∅ ∈ Σ)
 } ↔
 
 proof SigmaContainsEmpty() {

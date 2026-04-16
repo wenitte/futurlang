@@ -16,7 +16,7 @@ lemma PORefl() {
 
 proof PORefl() {
   conclude(leq(a, a))
-} →
+} ∧
 
 lemma POAntisym() {
   assume(partial_order(R, S) ∧ a ∈ S ∧ b ∈ S ∧ leq(a, b) ∧ leq(b, a)) →
@@ -25,7 +25,7 @@ lemma POAntisym() {
 
 proof POAntisym() {
   conclude(a = b)
-} →
+} ∧
 
 lemma POTrans() {
   assume(partial_order(R, S) ∧ a ∈ S ∧ b ∈ S ∧ c ∈ S ∧ leq(a, b) ∧ leq(b, c)) →
@@ -34,7 +34,7 @@ lemma POTrans() {
 
 proof POTrans() {
   conclude(leq(a, c))
-} →
+} ∧
 
 // ── Total order: every two elements are comparable ───────────────────────────
 
@@ -45,7 +45,7 @@ lemma TotalComparable() {
 
 proof TotalComparable() {
   conclude(leq(a, b) || leq(b, a))
-} →
+} ∧
 
 // ── Min and max in a totally ordered set ─────────────────────────────────────
 
@@ -56,7 +56,7 @@ lemma MinLeAll() {
 
 proof MinLeAll() {
   conclude(leq(m, x))
-} →
+} ∧
 
 lemma MaxGeAll() {
   assume(total_order(R, S) ∧ max_elem(M, S, R) ∧ x ∈ S) →
@@ -65,7 +65,7 @@ lemma MaxGeAll() {
 
 proof MaxGeAll() {
   conclude(leq(x, M))
-} →
+} ∧
 
 // ── Lattice: join is least upper bound ───────────────────────────────────────
 
@@ -76,7 +76,7 @@ lemma JoinUpperBoundLeft() {
 
 proof JoinUpperBoundLeft() {
   conclude(leq(a, join(a, b)))
-} →
+} ∧
 
 lemma JoinUpperBoundRight() {
   assume(lattice(L) ∧ a ∈ L ∧ b ∈ L) →
@@ -85,7 +85,7 @@ lemma JoinUpperBoundRight() {
 
 proof JoinUpperBoundRight() {
   conclude(leq(b, join(a, b)))
-} →
+} ∧
 
 lemma JoinLeastUpper() {
   assume(lattice(L) ∧ a ∈ L ∧ b ∈ L ∧ c ∈ L ∧ leq(a, c) ∧ leq(b, c)) →
@@ -94,7 +94,7 @@ lemma JoinLeastUpper() {
 
 proof JoinLeastUpper() {
   conclude(leq(join(a, b), c))
-} →
+} ∧
 
 // ── Lattice: meet is greatest lower bound ────────────────────────────────────
 
@@ -105,7 +105,7 @@ lemma MeetLowerBoundLeft() {
 
 proof MeetLowerBoundLeft() {
   conclude(leq(meet(a, b), a))
-} →
+} ∧
 
 lemma MeetLowerBoundRight() {
   assume(lattice(L) ∧ a ∈ L ∧ b ∈ L) →
@@ -114,7 +114,7 @@ lemma MeetLowerBoundRight() {
 
 proof MeetLowerBoundRight() {
   conclude(leq(meet(a, b), b))
-} →
+} ∧
 
 lemma MeetGreatestLower() {
   assume(lattice(L) ∧ a ∈ L ∧ b ∈ L ∧ c ∈ L ∧ leq(c, a) ∧ leq(c, b)) →
@@ -123,7 +123,7 @@ lemma MeetGreatestLower() {
 
 proof MeetGreatestLower() {
   conclude(leq(c, meet(a, b)))
-} →
+} ∧
 
 // ── Lattice identities ────────────────────────────────────────────────────────
 
@@ -133,14 +133,14 @@ lemma JoinComm() {
 } ↔
 
 proof JoinComm() {
-  assert(leq(a, join(b, a))) ∧
-  assert(leq(b, join(b, a))) ∧
-  assert(leq(join(a, b), join(b, a))) ∧
-  assert(leq(b, join(a, b))) ∧
-  assert(leq(a, join(a, b))) ∧
-  assert(leq(join(b, a), join(a, b))) →
+  prove(leq(a, join(b, a))) ∧
+  prove(leq(b, join(b, a))) ∧
+  prove(leq(join(a, b), join(b, a))) ∧
+  prove(leq(b, join(a, b))) ∧
+  prove(leq(a, join(a, b))) ∧
+  prove(leq(join(b, a), join(a, b))) →
   conclude(join(a, b) = join(b, a))
-} →
+} ∧
 
 lemma MeetComm() {
   assume(lattice(L) ∧ a ∈ L ∧ b ∈ L) →
@@ -148,12 +148,12 @@ lemma MeetComm() {
 } ↔
 
 proof MeetComm() {
-  assert(leq(meet(b, a), b)) ∧
-  assert(leq(meet(b, a), a)) ∧
-  assert(leq(meet(a, b), a)) ∧
-  assert(leq(meet(a, b), b)) →
+  prove(leq(meet(b, a), b)) ∧
+  prove(leq(meet(b, a), a)) ∧
+  prove(leq(meet(a, b), a)) ∧
+  prove(leq(meet(a, b), b)) →
   conclude(meet(a, b) = meet(b, a))
-} →
+} ∧
 
 lemma JoinIdempotent() {
   assume(lattice(L) ∧ a ∈ L) →
@@ -161,10 +161,10 @@ lemma JoinIdempotent() {
 } ↔
 
 proof JoinIdempotent() {
-  assert(leq(a, join(a, a))) ∧
-  assert(leq(join(a, a), a)) →
+  prove(leq(a, join(a, a))) ∧
+  prove(leq(join(a, a), a)) →
   conclude(join(a, a) = a)
-} →
+} ∧
 
 lemma MeetIdempotent() {
   assume(lattice(L) ∧ a ∈ L) →
@@ -172,10 +172,10 @@ lemma MeetIdempotent() {
 } ↔
 
 proof MeetIdempotent() {
-  assert(leq(meet(a, a), a)) ∧
-  assert(leq(a, meet(a, a))) →
+  prove(leq(meet(a, a), a)) ∧
+  prove(leq(a, meet(a, a))) →
   conclude(meet(a, a) = a)
-} →
+} ∧
 
 // ── Lattice absorption ────────────────────────────────────────────────────────
 
@@ -185,10 +185,10 @@ lemma JoinAbsorption() {
 } ↔
 
 proof JoinAbsorption() {
-  assert(leq(meet(a, b), a)) ∧
-  assert(leq(a, join(a, meet(a, b)))) →
+  prove(leq(meet(a, b), a)) ∧
+  prove(leq(a, join(a, meet(a, b)))) →
   conclude(join(a, meet(a, b)) = a)
-} →
+} ∧
 
 lemma MeetAbsorption() {
   assume(lattice(L) ∧ a ∈ L ∧ b ∈ L) →
@@ -196,11 +196,11 @@ lemma MeetAbsorption() {
 } ↔
 
 proof MeetAbsorption() {
-  assert(leq(a, join(a, b))) ∧
-  assert(leq(meet(a, join(a, b)), a)) ∧
-  assert(leq(a, meet(a, join(a, b)))) →
+  prove(leq(a, join(a, b))) ∧
+  prove(leq(meet(a, join(a, b)), a)) ∧
+  prove(leq(a, meet(a, join(a, b)))) →
   conclude(meet(a, join(a, b)) = a)
-} →
+} ∧
 
 // ── Well-order: every nonempty subset has a minimum ──────────────────────────
 
@@ -211,7 +211,7 @@ lemma WellOrderMinimum() {
 
 proof WellOrderMinimum() {
   conclude(∃ m ∈ T, ∀ x ∈ T, leq(m, x))
-} →
+} ∧
 
 // ── Nat with ≤ is a well-order ────────────────────────────────────────────────
 
@@ -221,7 +221,7 @@ lemma NatIsWellOrdered() {
 
 proof NatIsWellOrdered() {
   conclude(well_order(leq, Nat))
-} →
+} ∧
 
 // ── Hasse diagram: covers and strict order ────────────────────────────────────
 

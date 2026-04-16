@@ -1,6 +1,6 @@
 theorem IntersectionRight() {
-  given(x ∈ A ∩ B) →
-  assert(x ∈ B)
+  assume(x ∈ A ∩ B) →
+  declareToProve(x ∈ B)
 } ↔
 
 proof IntersectionRight() {

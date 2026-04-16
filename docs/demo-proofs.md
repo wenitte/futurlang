@@ -16,6 +16,7 @@ They cover:
 
 Most shipped demo proofs are expected to return `PROVED`.
 
-The explicit exception is:
+The explicit exceptions are:
 
-- `list-nonstructural-fail.fl` → `UNVERIFIED`
+- `list-nonstructural-fail.fl` → `UNVERIFIED` (non-structural recursion on `List`)
+- `match-exhaustive-fail.fl` → `FAILED` (intentionally incomplete match coverage)

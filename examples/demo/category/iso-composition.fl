@@ -1,9 +1,6 @@
 theorem IsoComposition() {
-  given(f : A → B) →
-  given(g : B → A) →
-  given(g ∘ f = id_A) →
-  given(f ∘ g = id_B) →
-  assert(Iso(f))
+  assume(f : A → B ∧ g : B → A ∧ g ∘ f = id_A ∧ f ∘ g = id_B) →
+  declareToProve(Iso(f))
 } ↔
 
 proof IsoComposition() {

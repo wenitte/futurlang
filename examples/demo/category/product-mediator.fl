@@ -1,12 +1,6 @@
 theorem ProductMediatorDemo() {
-  given(pi1 : P → A) →
-  given(pi2 : P → B) →
-  given(f : X → A) →
-  given(g : X → B) →
-  given(m : X → P) →
-  given(pi1 ∘ m = f) →
-  given(pi2 ∘ m = g) →
-  assert(ProductMediator(m, f, g, pi1, pi2))
+  assume(pi1 : P → A ∧ pi2 : P → B ∧ f : X → A ∧ g : X → B ∧ m : X → P ∧ pi1 ∘ m = f ∧ pi2 ∘ m = g) →
+  declareToProve(ProductMediator(m, f, g, pi1, pi2))
 } ↔
 
 proof ProductMediatorDemo() {

@@ -1,7 +1,6 @@
 theorem ForallInElim() {
-  given(∀ x ∈ A, x ∈ B) →
-  given(a ∈ A) →
-  assert(a ∈ B)
+  assume(∀ x ∈ A, x ∈ B ∧ a ∈ A) →
+  declareToProve(a ∈ B)
 } ↔
 
 proof ForallInElim() {

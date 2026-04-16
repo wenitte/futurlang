@@ -8,9 +8,9 @@ lemma DividesRefl() {
 } ↔
 
 proof DividesRefl() {
-  assert(n = 1 * n) →
+  prove(n = 1 * n) →
   conclude(divides(n, n))
-} →
+} ∧
 
 // ── Divisibility: transitivity ────────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ lemma DividesTrans() {
 
 proof DividesTrans() {
   conclude(divides(a, c))
-} →
+} ∧
 
 // ── Divisibility: antisymmetry (over Nat) ─────────────────────────────────────
 
@@ -31,10 +31,10 @@ lemma DividesAntisym() {
 } ↔
 
 proof DividesAntisym() {
-  assert(a ≤ b) ∧
-  assert(b ≤ a) →
+  prove(a ≤ b) ∧
+  prove(b ≤ a) →
   conclude(a = b)
-} →
+} ∧
 
 // ── GCD divides both arguments ────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ lemma GCDDividesLeft() {
 
 proof GCDDividesLeft() {
   conclude(divides(gcd(a, b), a))
-} →
+} ∧
 
 lemma GCDDividesRight() {
   assume(a ∈ Nat ∧ b ∈ Nat) →
@@ -54,7 +54,7 @@ lemma GCDDividesRight() {
 
 proof GCDDividesRight() {
   conclude(divides(gcd(a, b), b))
-} →
+} ∧
 
 // ── GCD commutativity ────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ lemma GCDComm() {
 
 proof GCDComm() {
   conclude(gcd(a, b) = gcd(b, a))
-} →
+} ∧
 
 // ── Bezout's identity ─────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ lemma Bezout() {
 
 proof Bezout() {
   conclude(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = gcd(a, b))
-} →
+} ∧
 
 // ── Euclid's lemma ────────────────────────────────────────────────────────────
 
@@ -87,12 +87,12 @@ lemma EuclidLemma() {
 
 proof EuclidLemma() {
   assume(¬ divides(p, a)) →
-  assert(gcd(p, a) = 1) ∧
-  assert(∃ s ∈ Int, ∃ t ∈ Int, s * p + t * a = 1) →
-  assert(s * p * b + t * a * b = b) ∧
-  assert(divides(p, s * p * b)) →
+  prove(gcd(p, a) = 1) ∧
+  prove(∃ s ∈ Int, ∃ t ∈ Int, s * p + t * a = 1) →
+  prove(s * p * b + t * a * b = b) ∧
+  prove(divides(p, s * p * b)) →
   conclude(divides(p, a) || divides(p, b))
-} →
+} ∧
 
 // ── Every natural number > 1 has a prime divisor ─────────────────────────────
 
@@ -103,7 +103,7 @@ lemma HasPrimeDivisor() {
 
 proof HasPrimeDivisor() {
   conclude(∃ p ∈ Prime, divides(p, n))
-} →
+} ∧
 
 // ── Infinitely many primes ────────────────────────────────────────────────────
 
@@ -113,10 +113,10 @@ lemma InfinitelyManyPrimes() {
 
 proof InfinitelyManyPrimes() {
   setVar(n: Nat) →
-  assert(∃ k ∈ Nat, k = factorial(n) + 1) ∧
-  assert(∃ p ∈ Prime, divides(p, k)) →
+  prove(∃ k ∈ Nat, k = factorial(n) + 1) ∧
+  prove(∃ p ∈ Prime, divides(p, k)) →
   conclude(∀ n ∈ Nat, ∃ p ∈ Prime, p > n)
-} →
+} ∧
 
 // ── Fundamental Theorem of Arithmetic ────────────────────────────────────────
 
@@ -127,7 +127,7 @@ lemma FundamentalTheoremArithmetic() {
 
 proof FundamentalTheoremArithmetic() {
   conclude(unique_prime_factorization(n))
-} →
+} ∧
 
 // ── GCD and LCM relationship ──────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ lemma GCDLCMProduct() {
 
 proof GCDLCMProduct() {
   conclude(gcd(a, b) * lcm(a, b) = a * b)
-} →
+} ∧
 
 // ── Coprime and divisibility ──────────────────────────────────────────────────
 
@@ -148,12 +148,12 @@ lemma CoprimeAndDivides() {
 } ↔
 
 proof CoprimeAndDivides() {
-  assert(gcd(a, b) = 1) ∧
-  assert(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = 1) →
-  assert(s * a * c + t * b * c = c) ∧
-  assert(divides(a, s * a * c)) →
+  prove(gcd(a, b) = 1) ∧
+  prove(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = 1) →
+  prove(s * a * c + t * b * c = c) ∧
+  prove(divides(a, s * a * c)) →
   conclude(divides(a, c))
-} →
+} ∧
 
 // ── Modular arithmetic: congruence is an equivalence relation ─────────────────
 
@@ -164,7 +164,7 @@ lemma CongruenceRefl() {
 
 proof CongruenceRefl() {
   conclude(a ≡ a (mod n))
-} →
+} ∧
 
 lemma CongruenceSym() {
   assume(a ∈ Int ∧ b ∈ Int ∧ n ∈ Nat ∧ a ≡ b (mod n)) →
@@ -173,7 +173,7 @@ lemma CongruenceSym() {
 
 proof CongruenceSym() {
   conclude(b ≡ a (mod n))
-} →
+} ∧
 
 lemma CongruenceTrans() {
   assume(a ∈ Int ∧ b ∈ Int ∧ c ∈ Int ∧ n ∈ Nat ∧ a ≡ b (mod n) ∧ b ≡ c (mod n)) →
@@ -182,7 +182,7 @@ lemma CongruenceTrans() {
 
 proof CongruenceTrans() {
   conclude(a ≡ c (mod n))
-} →
+} ∧
 
 // ── Chinese Remainder Theorem ─────────────────────────────────────────────────
 
@@ -192,6 +192,6 @@ lemma ChineseRemainder() {
 } ↔
 
 proof ChineseRemainder() {
-  assert(∃ s ∈ Int, ∃ t ∈ Int, s * m + t * n = 1) →
+  prove(∃ s ∈ Int, ∃ t ∈ Int, s * m + t * n = 1) →
   conclude(∃ x ∈ Int, x ≡ a (mod m) ∧ x ≡ b (mod n))
 }

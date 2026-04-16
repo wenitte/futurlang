@@ -1,7 +1,6 @@
 theorem SubsetTransitivity() {
-  given(A ⊂ B) →
-  given(B ⊂ C) →
-  assert(A ⊂ C)
+  assume(A ⊂ B ∧ B ⊂ C) →
+  declareToProve(A ⊂ C)
 } ↔
 
 proof SubsetTransitivity() {

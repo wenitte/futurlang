@@ -3,8 +3,8 @@ fn double(n ∈ Nat) -> Nat {
 } →
 
 theorem DoubleStable() {
-  given(n ∈ Nat) →
-  assert(double(n) -> double(n))
+  assume(n ∈ Nat) →
+  declareToProve(double(n) -> double(n))
 } ↔
 
 proof DoubleStable() {

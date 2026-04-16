@@ -1,6 +1,6 @@
 theorem MeasureEmpty() {
-  given(Measure(μ, Σ)) →
-  assert(μ(∅) = 0)
+  assume(Measure(μ, Σ)) →
+  declareToProve(μ(∅) = 0)
 } ↔
 
 proof MeasureEmpty() {

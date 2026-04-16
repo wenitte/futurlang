@@ -1,9 +1,9 @@
 theorem ImageUnionLeft() {
-  given(x in A) →
-  assert(f(x) ∈ image(f, A union B))
+  assume(x in A) →
+  declareToProve(f(x) ∈ image(f, A union B))
 } ↔
 
 proof ImageUnionLeft() {
-  assert(x in A union B) →
+  prove(x in A union B) →
   conclude(f(x) ∈ image(f, A union B))
 }

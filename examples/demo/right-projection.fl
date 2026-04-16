@@ -1,6 +1,6 @@
 theorem RightProjection() {
-  given(p && q) →
-  assert(q)
+  assume(p && q) →
+  declareToProve(q)
 } ↔
 
 proof RightProjection() {

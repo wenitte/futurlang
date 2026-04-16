@@ -1,6 +1,6 @@
 theorem IntersectionLeft() {
-  given((x ∈ A) ∧ (x ∈ B)) →
-  assert(x ∈ A)
+  assume((x ∈ A) ∧ (x ∈ B)) →
+  declareToProve(x ∈ A)
 } ↔
 
 proof IntersectionLeft() {

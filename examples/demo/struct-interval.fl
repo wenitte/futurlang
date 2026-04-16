@@ -4,8 +4,8 @@ struct Interval {
 } →
 
 theorem IntervalFieldProjection() {
-  given(i ∈ Interval) →
-  assert(i.lo ∈ Real)
+  assume(i ∈ Interval) →
+  declareToProve(i.lo ∈ Real)
 } ↔
 
 proof IntervalFieldProjection() {

@@ -30,6 +30,13 @@ Every FuturLang file is one visible truth chain.
 - `let ...`
 - `contradiction()`
 
+Adjacent proof statements inside a proof body are connected by explicit connectives:
+
+- `→` when the current step's derivation depends on the previous step
+- `∧` when the two steps are independent of each other
+
+The checker validates these connectives against the kernel's `inputs` graph. A mismatch is a type error that causes `FAILED`.
+
 ## Executable Expressions
 
 The executable subset currently includes:

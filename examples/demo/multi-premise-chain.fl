@@ -1,11 +1,10 @@
 theorem ChainImplication() {
-  given(p -> q) →
-  given(q -> r) →
-  assert(r)
+  assume(p -> q ∧ q -> r) →
+  declareToProve(r)
 } ↔
 
 proof ChainImplication() {
   assume(p) →
-  assert(q) →
+  prove(q) →
   conclude(r)
 }

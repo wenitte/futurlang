@@ -1,11 +1,9 @@
 theorem SubsetChain() {
-  given(x ∈ A) →
-  given(A ⊂ B) →
-  given(B ⊂ C) →
-  assert(x ∈ C)
+  assume(x ∈ A ∧ A ⊂ B ∧ B ⊂ C) →
+  declareToProve(x ∈ C)
 } ↔
 
 proof SubsetChain() {
-  assert(x ∈ B) →
+  prove(x ∈ B) →
   conclude(x ∈ C)
 }

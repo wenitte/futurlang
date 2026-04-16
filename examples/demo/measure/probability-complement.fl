@@ -1,7 +1,6 @@
 theorem ProbabilityComplement() {
-  given(ProbabilityMeasure(P, Σ, X)) →
-  given(A ∈ Σ) →
-  assert(P(complement(A, X)) = 1 - P(A))
+  assume(ProbabilityMeasure(P, Σ, X) ∧ A ∈ Σ) →
+  declareToProve(P(complement(A, X)) = 1 - P(A))
 } ↔
 
 proof ProbabilityComplement() {

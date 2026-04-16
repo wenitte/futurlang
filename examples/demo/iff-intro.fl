@@ -1,7 +1,6 @@
 theorem IffIntro() {
-  given(p -> q) →
-  given(q -> p) →
-  assert(p <-> q)
+  assume(p -> q ∧ q -> p) →
+  declareToProve(p <-> q)
 } ↔
 
 proof IffIntro() {

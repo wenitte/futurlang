@@ -9,7 +9,7 @@ lemma ScalarZeroAnnihilates() {
 
 proof ScalarZeroAnnihilates() {
   conclude(smul(F, zero(F), v) = vzero(V))
-} →
+} ∧
 
 lemma VectorZeroAnnihilates() {
   assume(vector_space(V, F) ∧ c ∈ F) →
@@ -18,7 +18,7 @@ lemma VectorZeroAnnihilates() {
 
 proof VectorZeroAnnihilates() {
   conclude(smul(F, c, vzero(V)) = vzero(V))
-} →
+} ∧
 
 // ── Negation via scalar -1 ────────────────────────────────────────────────────
 
@@ -28,9 +28,9 @@ lemma NegIsMinusOne() {
 } ↔
 
 proof NegIsMinusOne() {
-  assert(smul(F, zero(F), v) = vzero(V)) →
+  prove(smul(F, zero(F), v) = vzero(V)) →
   conclude(smul(F, neg(F, one(F)), v) = vneg(V, v))
-} →
+} ∧
 
 // ── Subspace ──────────────────────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ lemma SubspaceContainsZero() {
 
 proof SubspaceContainsZero() {
   conclude(vzero(V) ∈ W)
-} →
+} ∧
 
 lemma SubspaceClosed() {
   assume(subspace(W, V, F) ∧ u ∈ W ∧ v ∈ W ∧ c ∈ F ∧ d ∈ F) →
@@ -49,9 +49,9 @@ lemma SubspaceClosed() {
 } ↔
 
 proof SubspaceClosed() {
-  assert(smul(F, c, u) ∈ W) →
+  prove(smul(F, c, u) ∈ W) →
   conclude(vadd(V, smul(F, c, u), smul(F, d, v)) ∈ W)
-} →
+} ∧
 
 // ── Linear map properties ─────────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ lemma LinearMapPreservesZero() {
 
 proof LinearMapPreservesZero() {
   conclude(T(vzero(V)) = vzero(W))
-} →
+} ∧
 
 lemma LinearMapPreservesNeg() {
   assume(linear_map(T, V, W) ∧ v ∈ V) →
@@ -71,7 +71,7 @@ lemma LinearMapPreservesNeg() {
 
 proof LinearMapPreservesNeg() {
   conclude(T(vneg(V, v)) = vneg(W, T(v)))
-} →
+} ∧
 
 // ── Kernel and image are subspaces ────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ lemma KernelIsSubspace() {
 
 proof KernelIsSubspace() {
   conclude(subspace(ker(T), V, F))
-} →
+} ∧
 
 lemma ImageIsSubspace() {
   assume(linear_map(T, V, W)) →
@@ -91,7 +91,7 @@ lemma ImageIsSubspace() {
 
 proof ImageIsSubspace() {
   conclude(subspace(image(T), W, F))
-} →
+} ∧
 
 // ── Rank-Nullity theorem ──────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ lemma RankNullity() {
 
 proof RankNullity() {
   conclude(dim(V) = dim(ker(T)) + dim(image(T)))
-} →
+} ∧
 
 // ── Injective iff trivial kernel ──────────────────────────────────────────────
 
@@ -113,7 +113,7 @@ lemma InjectiveIffTrivialKernel() {
 
 proof InjectiveIffTrivialKernel() {
   conclude(injective(T) <-> ker(T) = vzero(V))
-} →
+} ∧
 
 // ── Isomorphism preserves dimension ──────────────────────────────────────────
 
@@ -123,7 +123,7 @@ lemma IsomorphismPreservesDim() {
 } ↔
 
 proof IsomorphismPreservesDim() {
-  assert(injective(T)) ∧
-  assert(surjective(T)) →
+  prove(injective(T)) ∧
+  prove(surjective(T)) →
   conclude(dim(V) = dim(W))
 }

@@ -1,5 +1,5 @@
 theorem InductionSum() {
-  assert(SumTo(n))
+  declareToProve(SumTo(n))
 } ↔
 
 proof InductionSum() {

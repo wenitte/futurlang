@@ -1,6 +1,6 @@
 theorem ObtainExists() {
-  given(∃ x ∈ S, x ∈ T) →
-  assert(∃ y ∈ T, y ∈ S)
+  assume(∃ x ∈ S, x ∈ T) →
+  declareToProve(∃ y ∈ T, y ∈ S)
 } ↔
 
 proof ObtainExists() {

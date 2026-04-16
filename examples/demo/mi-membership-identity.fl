@@ -1,5 +1,5 @@
 theorem MembershipIdentity() {
-  assert((x ∈ A) ⇒ (x ∈ A))
+  declareToProve((x ∈ A) ⇒ (x ∈ A))
 } ↔
 
 proof MembershipIdentity() {

@@ -1,5 +1,5 @@
 theorem FoldSum() {
-  assert(fold([0..n], 0, +))
+  declareToProve(fold([0..n], 0, +))
 } ↔
 
 proof FoldSum() {

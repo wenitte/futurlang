@@ -1,8 +1,6 @@
 theorem SigmaClosedUnion() {
-  given(SigmaAlgebra(Σ, X)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  assert(A ∪ B ∈ Σ)
+  assume(SigmaAlgebra(Σ, X) ∧ A ∈ Σ ∧ B ∈ Σ) →
+  declareToProve(A ∪ B ∈ Σ)
 } ↔
 
 proof SigmaClosedUnion() {

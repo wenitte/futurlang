@@ -1,6 +1,6 @@
 theorem SigmaContainsSpace() {
-  given(SigmaAlgebra(Σ, X)) →
-  assert(X ∈ Σ)
+  assume(SigmaAlgebra(Σ, X)) →
+  declareToProve(X ∈ Σ)
 } ↔
 
 proof SigmaContainsSpace() {

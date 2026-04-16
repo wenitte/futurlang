@@ -10,7 +10,7 @@ theorem DiffImpliesCont() {
 
 proof DiffImpliesCont() {
   conclude(continuous(f, a))
-} →
+} ∧
 
 // ── Limit by continuity ───────────────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ theorem LimitByContinuity() {
 
 proof LimitByContinuity() {
   conclude(lim(f, a) = f(a))
-} →
+} ∧
 
 // ── Extreme Value Theorem: continuous on [a,b] implies bounded ────────────────
 
@@ -32,7 +32,7 @@ theorem EVT() {
 
 proof EVT() {
   conclude(bounded(f, [a, b]))
-} →
+} ∧
 
 // ── Intermediate Value Theorem ────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ theorem IVT() {
 
 proof IVT() {
   conclude(∃ c ∈ (a, b), f(c) = y)
-} →
+} ∧
 
 // ── Power rule for derivatives ────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 theorem Pair() {
-  assert(p && q)
+  declareToProve(p && q)
 } ↔
 
 proof Pair() {

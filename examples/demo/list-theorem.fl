@@ -1,6 +1,6 @@
 theorem ListCaseProof() {
-  given(xs ∈ List(Nat)) →
-  assert(xs ∈ List(Nat))
+  assume(xs ∈ List(Nat)) →
+  declareToProve(xs ∈ List(Nat))
 } ↔
 
 proof ListCaseProof() {

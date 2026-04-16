@@ -1,5 +1,5 @@
 theorem LeftProjection() {
-  assert((p && q) -> p)
+  declareToProve((p && q) -> p)
 } ↔
 
 proof LeftProjection() {

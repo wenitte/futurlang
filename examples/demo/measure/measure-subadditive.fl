@@ -1,8 +1,6 @@
 theorem MeasureSubadditive() {
-  given(Measure(μ, Σ)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  assert(μ(A ∪ B) ≤ μ(A) + μ(B))
+  assume(Measure(μ, Σ) ∧ A ∈ Σ ∧ B ∈ Σ) →
+  declareToProve(μ(A ∪ B) ≤ μ(A) + μ(B))
 } ↔
 
 proof MeasureSubadditive() {

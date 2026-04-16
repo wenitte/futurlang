@@ -10,7 +10,7 @@ fn clamp(x ∈ Real, lo ∈ Real, hi ∈ Real) -> Real {
 theorem DoubleIsPositive() {
   let n = 4 →
   let result = double(n) →
-  assert(result > 0)
+  declareToProve(result > 0)
 } →
 
 proof DoubleIsPositive() {

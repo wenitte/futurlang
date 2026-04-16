@@ -1,3 +1,7 @@
-theorem Hello_World() { assert( "Hello World can be proven" ) &&
+theorem Hello() {
+  declareToProve(1 = 1)
+} ↔
 
-let message = "Hello World"; assert(message == "Hello World"); }
+proof Hello() {
+  conclude(1 = 1)
+}

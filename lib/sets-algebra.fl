@@ -6,7 +6,7 @@ proof SubsetRefl() {
   setVar(x: Element) →
   assume(x ∈ A) →
   conclude(A ⊂ A)
-} →
+} ∧
 
 lemma UnionSubsetLeft() {
   declareToProve(A ⊂ A ∪ B)
@@ -15,9 +15,9 @@ lemma UnionSubsetLeft() {
 proof UnionSubsetLeft() {
   setVar(x: Element) →
   assume(x ∈ A) →
-  assert(x ∈ A ∪ B) →
+  prove(x ∈ A ∪ B) →
   conclude(A ⊂ A ∪ B)
-} →
+} ∧
 
 lemma UnionSubsetRight() {
   declareToProve(B ⊂ A ∪ B)
@@ -26,9 +26,9 @@ lemma UnionSubsetRight() {
 proof UnionSubsetRight() {
   setVar(x: Element) →
   assume(x ∈ B) →
-  assert(x ∈ A ∪ B) →
+  prove(x ∈ A ∪ B) →
   conclude(B ⊂ A ∪ B)
-} →
+} ∧
 
 lemma IntersectionSubsetLeft() {
   declareToProve(A ∩ B ⊂ A)
@@ -37,9 +37,9 @@ lemma IntersectionSubsetLeft() {
 proof IntersectionSubsetLeft() {
   setVar(x: Element) →
   assume(x ∈ A ∩ B) →
-  assert(x ∈ A) →
+  prove(x ∈ A) →
   conclude(A ∩ B ⊂ A)
-} →
+} ∧
 
 lemma IntersectionSubsetRight() {
   declareToProve(A ∩ B ⊂ B)
@@ -48,9 +48,9 @@ lemma IntersectionSubsetRight() {
 proof IntersectionSubsetRight() {
   setVar(x: Element) →
   assume(x ∈ A ∩ B) →
-  assert(x ∈ B) →
+  prove(x ∈ B) →
   conclude(A ∩ B ⊂ B)
-} →
+} ∧
 
 lemma IntersectionCommutativity() {
   declareToProve(A ∩ B = B ∩ A)
@@ -59,18 +59,18 @@ lemma IntersectionCommutativity() {
 proof IntersectionCommutativity() {
   setVar(x: Element) →
   assume(x ∈ A ∩ B) →
-  assert(x ∈ A) ∧
-  assert(x ∈ B) →
-  assert(x ∈ B ∩ A) →
-  assert(A ∩ B ⊂ B ∩ A) →
+  prove(x ∈ A) ∧
+  prove(x ∈ B) →
+  prove(x ∈ B ∩ A) →
+  prove(A ∩ B ⊂ B ∩ A) →
   setVar(y: Element) →
   assume(y ∈ B ∩ A) →
-  assert(y ∈ B) ∧
-  assert(y ∈ A) →
-  assert(y ∈ A ∩ B) →
-  assert(B ∩ A ⊂ A ∩ B) →
+  prove(y ∈ B) ∧
+  prove(y ∈ A) →
+  prove(y ∈ A ∩ B) →
+  prove(B ∩ A ⊂ A ∩ B) →
   conclude(A ∩ B = B ∩ A)
-} →
+} ∧
 
 lemma UnionCommutativity() {
   declareToProve(A ∪ B = B ∪ A)
@@ -79,26 +79,26 @@ lemma UnionCommutativity() {
 proof UnionCommutativity() {
   setVar(x: Element) →
   assume(x ∈ A ∪ B) →
-  assert(x ∈ A ∨ x ∈ B) →
+  prove(x ∈ A ∨ x ∈ B) →
   assume(x ∈ A) →
-  assert(x ∈ B ∪ A) →
-  assert(x ∈ A → x ∈ B ∪ A) →
+  prove(x ∈ B ∪ A) →
+  prove(x ∈ A → x ∈ B ∪ A) →
   assume(x ∈ B) →
-  assert(x ∈ B ∪ A) →
-  assert(x ∈ B → x ∈ B ∪ A) ∧
-  assert(x ∈ B ∪ A) ∧
-  assert(A ∪ B ⊂ B ∪ A) →
+  prove(x ∈ B ∪ A) →
+  prove(x ∈ B → x ∈ B ∪ A) ∧
+  prove(x ∈ B ∪ A) ∧
+  prove(A ∪ B ⊂ B ∪ A) →
   setVar(y: Element) →
   assume(y ∈ B ∪ A) →
-  assert(y ∈ B ∨ y ∈ A) →
+  prove(y ∈ B ∨ y ∈ A) →
   assume(y ∈ B) →
-  assert(y ∈ A ∪ B) →
-  assert(y ∈ B → y ∈ A ∪ B) →
+  prove(y ∈ A ∪ B) →
+  prove(y ∈ B → y ∈ A ∪ B) →
   assume(y ∈ A) →
-  assert(y ∈ A ∪ B) →
-  assert(y ∈ A → y ∈ A ∪ B) ∧
-  assert(y ∈ A ∪ B) ∧
-  assert(B ∪ A ⊂ A ∪ B) →
+  prove(y ∈ A ∪ B) →
+  prove(y ∈ A → y ∈ A ∪ B) ∧
+  prove(y ∈ A ∪ B) ∧
+  prove(B ∪ A ⊂ A ∪ B) →
   conclude(A ∪ B = B ∪ A)
 } →
 
@@ -110,7 +110,7 @@ theorem UnionCommutativityUsage() {
 proof UnionCommutativityUsage() {
   apply(UnionCommutativity) →
   conclude(x ∈ B ∪ A)
-} →
+} ∧
 
 theorem IntersectionSubsetChain() {
   assume(x ∈ A ∩ B ∧ B ⊂ C) →
@@ -119,6 +119,6 @@ theorem IntersectionSubsetChain() {
 
 proof IntersectionSubsetChain() {
   apply(IntersectionSubsetRight) →
-  assert(x ∈ B) →
+  prove(x ∈ B) →
   conclude(x ∈ C)
 }

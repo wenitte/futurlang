@@ -1,5 +1,5 @@
 theorem ListFoldSum() {
-  assert(fold(xs, 0, +))
+  declareToProve(fold(xs, 0, +))
 } ↔
 
 proof ListFoldSum() {

@@ -1,7 +1,6 @@
 theorem EqualitySubstitution() {
-  given(x = y) →
-  given(x ∈ A) →
-  assert(y ∈ A)
+  assume(x = y ∧ x ∈ A) →
+  declareToProve(y ∈ A)
 } ↔
 
 proof EqualitySubstitution() {

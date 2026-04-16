@@ -1,5 +1,5 @@
 theorem FoldConcat() {
-  assert(fold(xs, "", concat))
+  declareToProve(fold(xs, "", concat))
 } ↔
 
 proof FoldConcat() {

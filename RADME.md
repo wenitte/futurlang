@@ -6,6 +6,7 @@ A formal proof language that combines mathematical rigor with programming langua
 
 ### Installation
 
+```sh
 # Clone the repository
 git clone https://github.com/wenitte/futurlang
 cd futurlang
@@ -15,43 +16,129 @@ npm install
 
 # Link globally
 npm link
-
+```
 
 ### Your First Proof
+
 Create a file `hello.fl`:
 
-theorem Hello_World() {
-  assert(
-    "Hello World can be proven"
-  ) &&
+```fl
+theorem Hello() {
+  declareToProve(1 = 1)
+} ↔
 
-  let message = "Hello World";
-  assert(message == "Hello World");
+proof Hello() {
+  conclude(1 = 1)
 }
+```
 
+Run it:
+
+```sh
+fl hello.fl
+```
 
 ## Language Features
 
-### Theorems
-- Case-insensitive names (no duplicates allowed)
-- All statements must be logically connected
-- Every theorem must evaluate to a truth value
-- Can contain variable declarations
+### Top-Level Blocks
 
-### Assertions
-Two types:
-- String assertions: `assert("message")`
-- Variable equality: `assert(var == value)`
+Top-level blocks (`theorem`, `proof`, `lemma`, `definition`, `struct`, `type`, `fn`) are joined by explicit connectives:
 
-### Variables
-Declare with let:
+- `→` sequence (right block depends on left)
+- `∧` parallel blocks
+- `↔` pairing (theorem ↔ proof)
 
-let variableName = value;
+### Theorem Structure
 
+```fl
+theorem Name() {
+  assume(hypothesis) →
+  declareToProve(conclusion)
+} ↔
 
-## Roadmap
-- [ ] Logical connectives (⇒, ∧, ∨, ↔)
-- [ ] Definition support
-- [ ] Lemma support
-- [ ] Proof methods
-- [ ] Type system
+proof Name() {
+  assume(hypothesis) →
+  assert(intermediate step) →
+  conclude(conclusion)
+}
+```
+
+### Proof Statements
+
+- `given(P)` — import a previously proved claim
+- `assume(P)` — introduce a hypothesis
+- `assert(P)` — derive an intermediate result
+- `conclude(P)` — close the proof
+- `apply(LemmaName)` — backward-chain through a lemma
+- `setVar(x: T)` — introduce a bound variable
+- `contradiction()` — discharge by contradiction
+- `obtain(x ∈ S, body)` — destructure an existential
+
+### Connectives Between Proof Steps
+
+Inside a proof, adjacent derivation steps must be connected by:
+
+- `→` when the current step depends on the previous one
+- `∧` when the two steps are logically independent
+
+The checker validates these connectives. Using `→` when steps are independent (or `∧` when a step genuinely depends on the previous) is a type error.
+
+### Notation
+
+The parser accepts both symbol and word forms:
+
+| Symbol | Word form |
+|--------|-----------|
+| `→`, `⇒` | `->` |
+| `↔`, `⇔` | `<->` |
+| `∧` | `&&` |
+| `∨` | `\|\|` |
+| `∈` | `in` |
+| `⊂` | `subset` |
+| `∪` | `union` |
+| `∩` | `intersection` |
+| `∀` | `forall` |
+| `∃` | `exists` |
+
+### Standard Library
+
+The `lib/` directory contains proved lemmas covering:
+
+- `logic.fl` — propositional and predicate logic
+- `sets-basic.fl` — subset transport, union/intersection, image/preimage
+- `sets-algebra.fl` — commutativity, associativity
+- `order.fl` — partial orders, lattices, well-orders
+- `math.fl` — arithmetic, modular arithmetic, irrationality
+- `number-theory.fl` — divisibility, primes, GCD
+- `algebra.fl` — groups, rings, fields
+- `linear-algebra.fl` — vector spaces, rank-nullity
+- `topology.fl` — open sets, continuity, compactness
+- `real-analysis.fl` — limits, completeness, integration
+- `combinatorics.fl` — binomial coefficients, counting
+- `graph-theory.fl` — paths, trees, connectivity
+- `type-system.fl` — type safety, progress, preservation
+- `crypto.fl` — RSA, discrete log, zero-knowledge
+- `dependent-types.fl` — Pi types, Sigma types, identity types
+
+Import lemmas with:
+
+```fl
+import "./lib/logic.fl"
+```
+
+### Executable Mode
+
+`.fl` files that contain `fn` declarations without theorem/proof blocks are treated as executable programs:
+
+```sh
+fl run server.fl
+```
+
+## Proof States
+
+Every checked proof returns exactly one state:
+
+- `PROVED` — fully verified by the kernel
+- `PENDING` — valid structure with unresolved `ω`-morphisms
+- `FAILED` — connective or derivation error
+- `UNVERIFIED` — structure accepted but kernel rule not yet implemented

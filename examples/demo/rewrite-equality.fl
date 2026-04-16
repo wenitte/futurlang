@@ -1,7 +1,6 @@
 theorem RewriteEquality() {
-  given(a = b) →
-  given(a ∈ S) →
-  assert(b ∈ S)
+  assume(a = b ∧ a ∈ S) →
+  declareToProve(b ∈ S)
 } ↔
 
 proof RewriteEquality() {

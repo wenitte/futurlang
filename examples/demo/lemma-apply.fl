@@ -1,6 +1,6 @@
 lemma ForwardStep() {
-  given(p -> q) →
-  assert(q)
+  assume(p -> q) →
+  declareToProve(q)
 } ↔
 
 proof ForwardStep() {
@@ -9,8 +9,8 @@ proof ForwardStep() {
 } →
 
 theorem UsesForwardStep() {
-  given(p -> q) →
-  assert(q)
+  assume(p -> q) →
+  declareToProve(q)
 } ↔
 
 proof UsesForwardStep() {

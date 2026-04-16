@@ -1,6 +1,6 @@
 theorem IdentityComposition() {
-  given(f : A → B) →
-  assert(f ∘ id_A = f)
+  assume(f : A → B) →
+  declareToProve(f ∘ id_A = f)
 } ↔
 
 proof IdentityComposition() {

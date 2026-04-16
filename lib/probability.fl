@@ -16,7 +16,7 @@ lemma ProbTotal() {
 
 proof ProbTotal() {
   conclude(P(Ω) = 1)
-} →
+} ∧
 
 // ── P(∅) = 0 ─────────────────────────────────────────────────────────────────
 
@@ -26,9 +26,9 @@ lemma ProbEmpty() {
 } ↔
 
 proof ProbEmpty() {
-  assert(Measure(P, Σ)) →
+  prove(Measure(P, Σ)) →
   conclude(P(∅) = 0)
-} →
+} ∧
 
 // ── Complement rule: P(Aᶜ) = 1 - P(A) ───────────────────────────────────────
 
@@ -39,7 +39,7 @@ lemma ProbComplement() {
 
 proof ProbComplement() {
   conclude(P(complement(A, Ω)) = 1 - P(A))
-} →
+} ∧
 
 // ── Monotonicity: A ⊆ B implies P(A) ≤ P(B) ─────────────────────────────────
 
@@ -50,7 +50,7 @@ lemma ProbMono() {
 
 proof ProbMono() {
   conclude(P(A) ≤ P(B))
-} →
+} ∧
 
 // ── Countable additivity on disjoint events ───────────────────────────────────
 
@@ -61,7 +61,7 @@ lemma ProbAdditive() {
 
 proof ProbAdditive() {
   conclude(P(A ∪ B) = P(A) + P(B))
-} →
+} ∧
 
 // ── Union bound: P(A ∪ B) ≤ P(A) + P(B) ─────────────────────────────────────
 
@@ -72,7 +72,7 @@ lemma UnionBound() {
 
 proof UnionBound() {
   conclude(P(A ∪ B) ≤ P(A) + P(B))
-} →
+} ∧
 
 // ── Inclusion-exclusion ───────────────────────────────────────────────────────
 
@@ -82,11 +82,11 @@ lemma ProbInclusionExclusion() {
 } ↔
 
 proof ProbInclusionExclusion() {
-  assert(disjoint(A, B \ A)) ∧
-  assert(P(B) = P(A ∩ B) + P(B \ A)) ∧
-  assert(P(B \ A) = P(B) - P(A ∩ B)) →
+  prove(disjoint(A, B \ A)) ∧
+  prove(P(B) = P(A ∩ B) + P(B \ A)) ∧
+  prove(P(B \ A) = P(B) - P(A ∩ B)) →
   conclude(P(A ∪ B) = P(A) + P(B) - P(A ∩ B))
-} →
+} ∧
 
 // ── P(A) ∈ [0, 1] ────────────────────────────────────────────────────────────
 
@@ -96,11 +96,11 @@ lemma ProbBound() {
 } ↔
 
 proof ProbBound() {
-  assert(∅ ⊆ A) →
-  assert(P(∅) ≤ P(A)) ∧
-  assert(P(∅) = 0) →
+  prove(∅ ⊆ A) →
+  prove(P(∅) ≤ P(A)) ∧
+  prove(P(∅) = 0) →
   conclude(0 ≤ P(A))
-} →
+} ∧
 
 lemma ProbAtMostOne() {
   assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ) →
@@ -109,7 +109,7 @@ lemma ProbAtMostOne() {
 
 proof ProbAtMostOne() {
   conclude(P(A) ≤ 1)
-} →
+} ∧
 
 // ── Conditional probability ───────────────────────────────────────────────────
 
@@ -120,7 +120,7 @@ lemma ConditionalProbDef() {
 
 proof ConditionalProbDef() {
   conclude(P(A | B) = P(A ∩ B) / P(B))
-} →
+} ∧
 
 // ── Bayes' theorem ────────────────────────────────────────────────────────────
 
@@ -130,11 +130,11 @@ lemma BayesTheorem() {
 } ↔
 
 proof BayesTheorem() {
-  assert(P(A | B) = P(A ∩ B) / P(B)) ∧
-  assert(P(B | A) = P(A ∩ B) / P(A)) ∧
-  assert(P(A ∩ B) = P(B | A) * P(A)) →
+  prove(P(A | B) = P(A ∩ B) / P(B)) ∧
+  prove(P(B | A) = P(A ∩ B) / P(A)) ∧
+  prove(P(A ∩ B) = P(B | A) * P(A)) →
   conclude(P(A | B) = P(B | A) * P(A) / P(B))
-} →
+} ∧
 
 // ── Independence ─────────────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ lemma IndependenceCharacterization() {
 
 proof IndependenceCharacterization() {
   conclude(P(A ∩ B) = P(A) * P(B))
-} →
+} ∧
 
 // ── Law of total probability ──────────────────────────────────────────────────
 
@@ -156,7 +156,7 @@ lemma TotalProbability() {
 
 proof TotalProbability() {
   conclude(P(A) = P(A ∩ B1) + P(A ∩ B2))
-} →
+} ∧
 
 // ── Markov's inequality ───────────────────────────────────────────────────────
 

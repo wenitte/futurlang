@@ -21,7 +21,7 @@ lemma HandshakeLemma() {
 
 proof HandshakeLemma() {
   conclude(degree_sum(G) = 2 * edge_count(G))
-} →
+} ∧
 
 // ── Even number of odd-degree vertices ───────────────────────────────────────
 
@@ -31,10 +31,10 @@ lemma EvenOddDegreeCount() {
 } ↔
 
 proof EvenOddDegreeCount() {
-  assert(degree_sum(G) = 2 * edge_count(G)) →
-  assert(even(degree_sum(G))) →
+  prove(degree_sum(G) = 2 * edge_count(G)) →
+  prove(even(degree_sum(G))) →
   conclude(even(count_odd_degree(G)))
-} →
+} ∧
 
 // ── Path reflexivity ──────────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ lemma PathRefl() {
 
 proof PathRefl() {
   conclude(path(G, v, v))
-} →
+} ∧
 
 // ── Path from edge ────────────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ lemma PathFromEdge() {
 
 proof PathFromEdge() {
   conclude(path(G, u, v))
-} →
+} ∧
 
 // ── Path symmetry (undirected) ────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ lemma PathSymm() {
 
 proof PathSymm() {
   conclude(path(G, v, u))
-} →
+} ∧
 
 // ── Path transitivity ────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ lemma PathTrans() {
 
 proof PathTrans() {
   conclude(path(G, u, w))
-} →
+} ∧
 
 // ── Trees: n vertices, n-1 edges ─────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ lemma TreeEdgeCount() {
 
 proof TreeEdgeCount() {
   conclude(edge_count(G) = n - 1)
-} →
+} ∧
 
 // ── Trees: unique path between any two vertices ───────────────────────────────
 
@@ -99,11 +99,11 @@ lemma TreeUniquePath() {
 } ↔
 
 proof TreeUniquePath() {
-  assert(connected(G)) ∧
-  assert(acyclic(G)) ∧
-  assert(path(G, u, v)) →
+  prove(connected(G)) ∧
+  prove(acyclic(G)) ∧
+  prove(path(G, u, v)) →
   conclude(unique_path(G, u, v))
-} →
+} ∧
 
 // ── Adding an edge to a tree creates exactly one cycle ───────────────────────
 
@@ -113,9 +113,9 @@ lemma TreePlusCycle() {
 } ↔
 
 proof TreePlusCycle() {
-  assert(path(G, u, v)) ∧
-  assert(has_cycle(add_edge(G, u, v)))
-} →
+  prove(path(G, u, v)) ∧
+  prove(has_cycle(add_edge(G, u, v)))
+} ∧
 
 // ── Connected: all pairs have paths ──────────────────────────────────────────
 
@@ -126,7 +126,7 @@ lemma ConnectedFromPaths() {
 
 proof ConnectedFromPaths() {
   conclude(connected(G))
-} →
+} ∧
 
 // ── Bipartite: no odd cycles ──────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ lemma BipartiteNoOddCycles() {
 
 proof BipartiteNoOddCycles() {
   conclude(¬ has_odd_cycle(G))
-} →
+} ∧
 
 lemma OddCycleImpliesNotBipartite() {
   assume(graph(G) ∧ has_odd_cycle(G)) →
@@ -146,10 +146,10 @@ lemma OddCycleImpliesNotBipartite() {
 
 proof OddCycleImpliesNotBipartite() {
   assume(bipartite(G)) →
-  assert(¬ has_odd_cycle(G)) →
-  assert(⊥) →
+  prove(¬ has_odd_cycle(G)) →
+  prove(⊥) →
   conclude(¬ bipartite(G))
-} →
+} ∧
 
 // ── Euler's formula for planar graphs: V - E + F = 2 ─────────────────────────
 
@@ -160,7 +160,7 @@ lemma EulerFormula() {
 
 proof EulerFormula() {
   conclude(V - E + F = 2)
-} →
+} ∧
 
 // ── K_5 and K_{3,3} are not planar ───────────────────────────────────────────
 
@@ -170,7 +170,7 @@ lemma K5NotPlanar() {
 
 proof K5NotPlanar() {
   conclude(¬ planar(K5))
-} →
+} ∧
 
 lemma K33NotPlanar() {
   declareToProve(¬ planar(K33))
@@ -178,7 +178,7 @@ lemma K33NotPlanar() {
 
 proof K33NotPlanar() {
   conclude(¬ planar(K33))
-} →
+} ∧
 
 // ── Four-color theorem ────────────────────────────────────────────────────────
 
@@ -189,7 +189,7 @@ lemma FourColorTheorem() {
 
 proof FourColorTheorem() {
   conclude(chromatic_number(G) ≤ 4)
-} →
+} ∧
 
 // ── Graph coloring: chromatic number lower bound ──────────────────────────────
 
@@ -200,7 +200,7 @@ lemma ChromaticLowerBound() {
 
 proof ChromaticLowerBound() {
   conclude(chromatic_number(G) ≥ k)
-} →
+} ∧
 
 // ── Directed acyclic graphs: topological ordering ────────────────────────────
 

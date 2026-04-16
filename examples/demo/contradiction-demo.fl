@@ -1,7 +1,6 @@
 theorem ExplosionDemo() {
-  given(p) →
-  given(¬p) →
-  assert(q)
+  assume(p ∧ ¬p) →
+  declareToProve(q)
 } ↔
 
 proof ExplosionDemo() {

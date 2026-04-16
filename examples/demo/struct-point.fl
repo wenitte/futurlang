@@ -4,8 +4,8 @@ struct Point {
 } →
 
 theorem PointFieldProjection() {
-  given(p ∈ Point) →
-  assert(p.x ∈ Real)
+  assume(p ∈ Point) →
+  declareToProve(p.x ∈ Real)
 } ↔
 
 proof PointFieldProjection() {

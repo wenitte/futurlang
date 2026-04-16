@@ -8,8 +8,8 @@ fn xCoord(p ∈ Point) -> Real {
 } →
 
 theorem XCoordStable() {
-  given(p ∈ Point) →
-  assert(xCoord(p) -> xCoord(p))
+  assume(p ∈ Point) →
+  declareToProve(xCoord(p) -> xCoord(p))
 } ↔
 
 proof XCoordStable() {
