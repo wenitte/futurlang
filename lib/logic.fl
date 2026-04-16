@@ -5,28 +5,22 @@
 // ── Modus ponens ──────────────────────────────────────────────────────────────
 
 lemma ModusPonens() {
-  given(P) →
-  given(P → Q) →
-  assert(Q)
+  assume(P ∧ P → Q) →
+  declareToProve(Q)
 } ↔
 
 proof ModusPonens() {
-  given(P) →
-  given(P → Q) →
   conclude(Q)
 } →
 
 // ── Modus tollens ────────────────────────────────────────────────────────────
 
 lemma ModusTollens() {
-  given(P → Q) →
-  given(¬ Q) →
-  assert(¬ P)
+  assume(P → Q ∧ ¬ Q) →
+  declareToProve(¬ P)
 } ↔
 
 proof ModusTollens() {
-  given(P → Q) →
-  given(¬ Q) →
   assume(P) →
   assert(Q) →
   contradiction() →
@@ -36,14 +30,11 @@ proof ModusTollens() {
 // ── Hypothetical syllogism ────────────────────────────────────────────────────
 
 lemma HypotheticalSyllogism() {
-  given(P → Q) →
-  given(Q → R) →
-  assert(P → R)
+  assume(P → Q ∧ Q → R) →
+  declareToProve(P → R)
 } ↔
 
 proof HypotheticalSyllogism() {
-  given(P → Q) →
-  given(Q → R) →
   assume(P) →
   assert(Q) →
   assert(R) →
@@ -53,74 +44,62 @@ proof HypotheticalSyllogism() {
 // ── Conjunction introduction ──────────────────────────────────────────────────
 
 lemma AndIntro() {
-  given(P) →
-  given(Q) →
-  assert(P ∧ Q)
+  assume(P ∧ Q) →
+  declareToProve(P ∧ Q)
 } ↔
 
 proof AndIntro() {
-  given(P) →
-  given(Q) →
   conclude(P ∧ Q)
 } →
 
 // ── Conjunction elimination ───────────────────────────────────────────────────
 
 lemma AndElimLeft() {
-  given(P ∧ Q) →
-  assert(P)
+  assume(P ∧ Q) →
+  declareToProve(P)
 } ↔
 
 proof AndElimLeft() {
-  given(P ∧ Q) →
   conclude(P)
 } →
 
 lemma AndElimRight() {
-  given(P ∧ Q) →
-  assert(Q)
+  assume(P ∧ Q) →
+  declareToProve(Q)
 } ↔
 
 proof AndElimRight() {
-  given(P ∧ Q) →
   conclude(Q)
 } →
 
 // ── Disjunction introduction ──────────────────────────────────────────────────
 
 lemma OrIntroLeft() {
-  given(P) →
-  assert(P ∨ Q)
+  assume(P) →
+  declareToProve(P ∨ Q)
 } ↔
 
 proof OrIntroLeft() {
-  given(P) →
   conclude(P ∨ Q)
 } →
 
 lemma OrIntroRight() {
-  given(Q) →
-  assert(P ∨ Q)
+  assume(Q) →
+  declareToProve(P ∨ Q)
 } ↔
 
 proof OrIntroRight() {
-  given(Q) →
   conclude(P ∨ Q)
 } →
 
 // ── Disjunction elimination ───────────────────────────────────────────────────
 
 lemma OrElim() {
-  given(P ∨ Q) →
-  given(P → R) →
-  given(Q → R) →
-  assert(R)
+  assume(P ∨ Q ∧ P → R ∧ Q → R) →
+  declareToProve(R)
 } ↔
 
 proof OrElim() {
-  given(P ∨ Q) →
-  given(P → R) →
-  given(Q → R) →
   assume(P) →
   assert(R) →
   assert(P → R) →
@@ -133,24 +112,22 @@ proof OrElim() {
 // ── Double negation ───────────────────────────────────────────────────────────
 
 lemma DoubleNegIntro() {
-  given(P) →
-  assert(¬ ¬ P)
+  assume(P) →
+  declareToProve(¬ ¬ P)
 } ↔
 
 proof DoubleNegIntro() {
-  given(P) →
   assume(¬ P) →
   contradiction() →
   conclude(¬ ¬ P)
 } →
 
 lemma DoubleNegElim() {
-  given(¬ ¬ P) →
-  assert(P)
+  assume(¬ ¬ P) →
+  declareToProve(P)
 } ↔
 
 proof DoubleNegElim() {
-  given(¬ ¬ P) →
   assume(¬ P) →
   contradiction() →
   conclude(P)
@@ -159,12 +136,11 @@ proof DoubleNegElim() {
 // ── De Morgan's laws ──────────────────────────────────────────────────────────
 
 lemma DeMorganAndToOr() {
-  given(¬ (P ∧ Q)) →
-  assert(¬ P ∨ ¬ Q)
+  assume(¬ (P ∧ Q)) →
+  declareToProve(¬ P ∨ ¬ Q)
 } ↔
 
 proof DeMorganAndToOr() {
-  given(¬ (P ∧ Q)) →
   assume(¬ (¬ P ∨ ¬ Q)) →
   assume(¬ P) →
   assert(¬ P ∨ ¬ Q) →
@@ -180,12 +156,11 @@ proof DeMorganAndToOr() {
 } →
 
 lemma DeMorganOrToAnd() {
-  given(¬ (P ∨ Q)) →
-  assert(¬ P ∧ ¬ Q)
+  assume(¬ (P ∨ Q)) →
+  declareToProve(¬ P ∧ ¬ Q)
 } ↔
 
 proof DeMorganOrToAnd() {
-  given(¬ (P ∨ Q)) →
   assume(P) →
   assert(P ∨ Q) →
   contradiction() →
@@ -200,54 +175,44 @@ proof DeMorganOrToAnd() {
 // ── Biconditional introduction and elimination ────────────────────────────────
 
 lemma IffIntro() {
-  given(P → Q) →
-  given(Q → P) →
-  assert(P ↔ Q)
+  assume(P → Q ∧ Q → P) →
+  declareToProve(P ↔ Q)
 } ↔
 
 proof IffIntro() {
-  given(P → Q) →
-  given(Q → P) →
   conclude(P ↔ Q)
 } →
 
 lemma IffElimLeft() {
-  given(P ↔ Q) →
-  given(P) →
-  assert(Q)
+  assume(P ↔ Q ∧ P) →
+  declareToProve(Q)
 } ↔
 
 proof IffElimLeft() {
-  given(P ↔ Q) →
-  given(P) →
   conclude(Q)
 } →
 
 lemma IffElimRight() {
-  given(P ↔ Q) →
-  given(Q) →
-  assert(P)
+  assume(P ↔ Q ∧ Q) →
+  declareToProve(P)
 } ↔
 
 proof IffElimRight() {
-  given(P ↔ Q) →
-  given(Q) →
   conclude(P)
 } →
 
 // ── Contrapositive ────────────────────────────────────────────────────────────
 
 lemma Contrapositive() {
-  given(P → Q) →
-  assert(¬ Q → ¬ P)
+  assume(P → Q) →
+  declareToProve(¬ Q → ¬ P)
 } ↔
 
 proof Contrapositive() {
-  given(P → Q) →
   assume(¬ Q) →
   assume(P) →
-  assert(Q) →
-  contradiction() →
+  assert(Q) ∧
+  contradiction() ∧
   assert(¬ P) →
   conclude(¬ Q → ¬ P)
 } →
@@ -255,12 +220,11 @@ proof Contrapositive() {
 // ── Proof by contradiction ────────────────────────────────────────────────────
 
 lemma ProofByContradiction() {
-  given(¬ P → ⊥) →
-  assert(P)
+  assume(¬ P → ⊥) →
+  declareToProve(P)
 } ↔
 
 proof ProofByContradiction() {
-  given(¬ P → ⊥) →
   assume(¬ P) →
   assert(⊥) →
   conclude(P)
@@ -269,14 +233,14 @@ proof ProofByContradiction() {
 // ── Excluded middle ───────────────────────────────────────────────────────────
 
 lemma ExcludedMiddle() {
-  assert(P ∨ ¬ P)
+  declareToProve(P ∨ ¬ P)
 } ↔
 
 proof ExcludedMiddle() {
   assume(¬ (P ∨ ¬ P)) →
   assume(P) →
-  assert(P ∨ ¬ P) →
-  contradiction() →
+  assert(P ∨ ¬ P) ∧
+  contradiction() ∧
   assert(¬ P) →
   assert(P ∨ ¬ P) →
   contradiction() →
@@ -286,22 +250,20 @@ proof ExcludedMiddle() {
 // ── Absorption laws ──────────────────────────────────────────────────────────
 
 lemma AbsorbAndOr() {
-  given(P) →
-  assert(P ∧ (P ∨ Q))
+  assume(P) →
+  declareToProve(P ∧ (P ∨ Q))
 } ↔
 
 proof AbsorbAndOr() {
-  given(P) →
   assert(P ∨ Q) →
   conclude(P ∧ (P ∨ Q))
 } →
 
 lemma AbsorbOrAnd() {
-  given(P) →
-  assert(P ∨ (P ∧ Q))
+  assume(P) →
+  declareToProve(P ∨ (P ∧ Q))
 } ↔
 
 proof AbsorbOrAnd() {
-  given(P) →
   conclude(P ∨ (P ∧ Q))
 }

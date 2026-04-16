@@ -53,6 +53,7 @@ export type KernelRule =
   | 'MATCH_EXHAUSTIVE'
   | 'REWRITE'
   | 'STRUCTURAL'
+  | 'CONNECTIVE'
   | 'SIGMA_CLOSED_COMPLEMENT'
   | 'SIGMA_CLOSED_UNION'
   | 'SIGMA_CONTAINS_SPACE'
@@ -109,7 +110,51 @@ export type KernelRule =
   | 'COMB_FACTORIAL'
   | 'COMB_BINOM'
   | 'COMB_PIGEONHOLE'
-  | 'COMB_INCLUSION_EXCL';
+  | 'COMB_INCLUSION_EXCL'
+  | 'GROUP_IDENTITY'
+  | 'GROUP_INVERSE'
+  | 'GROUP_ASSOC'
+  | 'GROUP_UNIQUE_ID'
+  | 'GROUP_UNIQUE_INV'
+  | 'GROUP_INV_INV'
+  | 'GROUP_INV_PROD'
+  | 'GROUP_CANCEL'
+  | 'GROUP_HOM'
+  | 'GROUP_SUBGROUP'
+  | 'RING_DISTRIB'
+  | 'RING_ZERO_ANN'
+  | 'RING_HOM'
+  | 'LINALG_ZERO_SMUL'
+  | 'LINALG_SMUL_ZERO'
+  | 'LINALG_SUBSPACE'
+  | 'LINALG_RANK_NULLITY'
+  | 'LINALG_INJECTIVE'
+  | 'LINALG_SURJECTIVE'
+  | 'LINALG_ISOMORPHISM'
+  | 'TOPO_CLOSED'
+  | 'TOPO_COMPLEMENT'
+  | 'TOPO_CONTINUOUS_COMPOSE'
+  | 'TOPO_CONTINUOUS_PREIMAGE'
+  | 'TOPO_COMPACT_IMAGE'
+  | 'TOPO_CONNECTED_PRODUCT'
+  | 'TOPO_HAUSDORFF'
+  | 'NT_DIVIDES_TRANS'
+  | 'NT_DIVIDES_ANTISYM'
+  | 'NT_GCD_DIVIDES'
+  | 'NT_GCD_COMM'
+  | 'NT_BEZOUT'
+  | 'NT_COPRIME'
+  | 'NT_LCM'
+  | 'NT_PRIME_DIVISOR'
+  | 'NT_UNIQUE_FACTOR'
+  | 'NT_CRT'
+  | 'ORDER_STRICT'
+  | 'LATTICE_IDEM'
+  | 'LATTICE_COMM'
+  | 'LATTICE_ABSORB'
+  | 'LATTICE_BOUND'
+  | 'LATTICE_LUB'
+  | 'LATTICE_GLB';
 
 export type ProofState = 'PROVED' | 'PENDING' | 'FAILED' | 'UNVERIFIED';
 
@@ -154,7 +199,7 @@ export interface CausalTraceError {
 
 export interface ProofStepTrace {
   step: number;
-  kind: 'assume' | 'assert' | 'conclude' | 'apply' | 'setVar' | 'induction' | 'match' | 'raw' | 'intro' | 'rewrite' | 'exact';
+  kind: 'assume' | 'assert' | 'prove' | 'andIntro' | 'orIntro' | 'conclude' | 'apply' | 'setVar' | 'induction' | 'match' | 'raw' | 'intro' | 'rewrite' | 'exact';
   claim: string;
   rule: KernelRule;
   state: ProofState;

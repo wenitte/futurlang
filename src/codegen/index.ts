@@ -71,6 +71,7 @@ function applyConnective(conn: BlockConnective, left: string, right: string): st
   switch (conn) {
     case '→': return `seq(()=>${left}, ()=>${right})`;
     case '∧': return `and(${left}, ${right})`;
+    case '∨': return `or(${left}, ${right})`;
     case '↔': return `iff(${left}, ${right})`;
     default: return `seq(()=>${left}, ()=>${right})`;
   }
@@ -89,6 +90,18 @@ function nodeToExpr(node: ASTNode, symbolicMode: boolean, ctx: CodegenContext): 
       return symbolicMode
         ? `assertExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
         : `assertExpr(atom(() => !!(${generateRuntimeExpr(node.expr)}), ${JSON.stringify(renderExprSource(node.expr))}))`;
+    case 'Prove':
+      return symbolicMode
+        ? `assertExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
+        : `assertExpr(atom(() => !!(${generateRuntimeExpr(node.expr)}), ${JSON.stringify(renderExprSource(node.expr))}))`;
+    case 'DeclareToProve':
+      return symbolicMode
+        ? `assertExpr(atom(true, ${JSON.stringify(renderExprSource(node.expr))}))`
+        : `assertExpr(atom(() => !!(${generateRuntimeExpr(node.expr)}), ${JSON.stringify(renderExprSource(node.expr))}))`;
+    case 'AndIntroStep':
+      return `atom(true, ${JSON.stringify(`${node.left} ∧ ${node.right}`)})`;
+    case 'OrIntroStep':
+      return `atom(true, ${JSON.stringify(node.claim)})`;
     case 'Given': return `assumeExpr(${JSON.stringify(renderExprSource(node.expr))})`;
     case 'Assume': return `assumeExpr(${JSON.stringify(renderExprSource(node.expr))})`;
     case 'Conclude':

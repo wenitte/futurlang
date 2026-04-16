@@ -105,7 +105,7 @@ export type ExprNode =
 // ── Statement-level AST nodes ───────────────────────────────────────────────
 
 // Inter-block connective: what follows a closing }
-export type BlockConnective = '→' | '∧' | '↔' | null; // null = last block, no connective
+export type BlockConnective = '→' | '∧' | '∨' | '↔' | null; // null = last block, no connective
 
 export interface TheoremNode {
   type: 'Theorem';
@@ -208,6 +208,35 @@ export interface AssertNode {
   connective: BlockConnective; // for assert(...) → inside proof bodies
 }
 
+// Declares the goal of a theorem/lemma — does NOT derive anything
+export interface DeclareToProveNode {
+  type: 'DeclareToProve';
+  expr: ExprNode;
+  connective: BlockConnective;
+}
+
+// Derives a fact as an intermediate proof step
+export interface ProveNode {
+  type: 'Prove';
+  expr: ExprNode;
+  connective: BlockConnective;
+}
+
+// Explicit AND introduction: constructs P ∧ Q from P and Q in context
+export interface AndIntroStepNode {
+  type: 'AndIntroStep';
+  left: string;
+  right: string;
+  connective: BlockConnective;
+}
+
+// Explicit OR introduction: constructs P ∨ Q from P or Q in context
+export interface OrIntroStepNode {
+  type: 'OrIntroStep';
+  claim: string; // the full disjunction P ∨ Q to introduce
+  connective: BlockConnective;
+}
+
 export interface GivenNode {
   type: 'Given';
   expr: ExprNode;
@@ -298,6 +327,10 @@ export type ASTNode =
   | LemmaNode
   | FnDeclNode
   | AssertNode
+  | DeclareToProveNode
+  | ProveNode
+  | AndIntroStepNode
+  | OrIntroStepNode
   | GivenNode
   | AssumeNode
   | ConcludeNode

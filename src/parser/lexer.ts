@@ -5,27 +5,28 @@ import { BlockConnective } from './ast';
 export interface ParsedLine {
   type:
     | 'theorem' | 'definition' | 'struct' | 'typeDecl' | 'proof' | 'lemma' | 'fn'
-    | 'assert'  | 'given'      | 'assume'   | 'conclude' | 'apply'
+    | 'assert'  | 'given'      | 'assume' | 'conclude' | 'apply'
+    | 'declareToProve' | 'prove' | 'andIntroStep' | 'orIntroStep'
     | 'requires' | 'ensures'
-    | 'setVar'  | 'blockEnd'   | 'level'    | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw'
+    | 'setVar'  | 'blockEnd'   | 'level'  | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw'
     | 'intro' | 'rewrite' | 'exact' | 'obtain';
   content: string;
   name?: string;
-  // Connective trailing the line/block-end: → ∧ ↔ or null
+  // Connective trailing the line/block-end: → ∧ ∨ ↔ or null
   connective: BlockConnective;
 }
 
 // Extract the trailing connective from a line, returning [cleaned, connective]
 function extractConnective(line: string): [string, BlockConnective] {
-  // Match trailing →, ∧, ↔ (with optional whitespace and // comment after)
-  const m = line.match(/^([\s\S]*?)\s*(→|∧|↔)\s*(?:\/\/.*)?$/);
+  // Match trailing →, ∧, ∨, ↔ (with optional whitespace and // comment after)
+  const m = line.match(/^([\s\S]*?)\s*(→|∧|∨|↔)\s*(?:\/\/.*)?$/);
   if (m) {
     return [m[1].trimEnd(), m[2] as BlockConnective];
   }
   // Also handle ASCII alternatives at end of line
-  const ascii = line.match(/^([\s\S]*?)\s*(->|&&|<->)\s*(?:\/\/.*)?$/);
+  const ascii = line.match(/^([\s\S]*?)\s*(->|&&|\|\||<->)\s*(?:\/\/.*)?$/);
   if (ascii) {
-    const map: Record<string, BlockConnective> = { '->': '→', '&&': '∧', '<->': '↔' };
+    const map: Record<string, BlockConnective> = { '->': '→', '&&': '∧', '||': '∨', '<->': '↔' };
     return [ascii[1].trimEnd(), map[ascii[2]]];
   }
   // Strip inline comments with no connective
@@ -125,6 +126,50 @@ export function lexFL(text: string): ParsedLine[] {
     if (/^return\b/.test(line)) {
       const [cleaned, conn] = extractConnective(line);
       parsed.push({ type: 'return', content: cleaned, connective: conn });
+      continue;
+    }
+
+    // ── declareToProve(...) — theorem/lemma goal declaration ─────────────────
+    if (/^declareToProve\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'declareToProve', content: cleaned, connective: conn });
+      continue;
+    }
+
+    // ── prove(...) — intermediate proof step ─────────────────────────────────
+    if (/^prove\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'prove', content: cleaned, connective: conn });
+      continue;
+    }
+
+    // ── AndIntro(P, Q) — explicit AND introduction step ──────────────────────
+    if (/^AndIntro\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'andIntroStep', content: cleaned, connective: conn });
+      continue;
+    }
+
+    // ── OrIntro(P ∨ Q) — explicit OR introduction step ───────────────────────
+    if (/^OrIntro\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'orIntroStep', content: cleaned, connective: conn });
       continue;
     }
 

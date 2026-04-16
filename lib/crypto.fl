@@ -4,73 +4,54 @@
 // ── Discrete logarithm hardness ───────────────────────────────────────────────
 
 lemma DLogHard() {
-  given(p ∈ Prime) →
-  given(g ∈ Nat) →
-  assert(dlog_hard(g, p))
+  assume(p ∈ Prime ∧ g ∈ Nat) →
+  declareToProve(dlog_hard(g, p))
 } ↔
 
 proof DLogHard() {
-  given(p ∈ Prime) →
-  given(g ∈ Nat) →
-  assert(dlog_hard(g, p))
+  conclude(dlog_hard(g, p))
 } →
 
 // ── Diffie-Hellman shared secret ──────────────────────────────────────────────
 
 lemma DHSecret() {
-  given(p ∈ Prime) →
-  given(g ∈ Nat) →
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(dlog_hard(g, p)) →
-  assert(dh_secret(g, a, b, p) = g^(a * b) mod p)
+  assume(p ∈ Prime ∧ g ∈ Nat ∧ a ∈ Nat ∧ b ∈ Nat ∧ dlog_hard(g, p)) →
+  declareToProve(dh_secret(g, a, b, p) = g^(a * b) mod p)
 } ↔
 
 proof DHSecret() {
-  given(p ∈ Prime) →
-  given(g ∈ Nat) →
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(dlog_hard(g, p)) →
-  assert(dh_secret(g, a, b, p) = g^(a * b) mod p)
+  conclude(dh_secret(g, a, b, p) = g^(a * b) mod p)
 } →
 
 // ── Hash security ─────────────────────────────────────────────────────────────
 
 lemma HashSecurity() {
-  given(collision_resistant(H)) →
-  given(one_way(H)) →
-  assert(hash_secure(H))
+  assume(collision_resistant(H) ∧ one_way(H)) →
+  declareToProve(hash_secure(H))
 } ↔
 
 proof HashSecurity() {
-  given(collision_resistant(H)) →
-  given(one_way(H)) →
-  assert(hash_secure(H))
+  conclude(hash_secure(H))
 } →
 
 // ── Commitment scheme binding ─────────────────────────────────────────────────
 
 lemma CommitBinding() {
-  given(collision_resistant(H)) →
-  given(one_way(H)) →
-  assert(hash_secure(H)) →
-  assert(commit_binding(H))
+  assume(collision_resistant(H) ∧ one_way(H)) →
+  declareToProve(commit_binding(H))
 } ↔
 
 proof CommitBinding() {
-  given(collision_resistant(H)) →
-  given(one_way(H)) →
-  assert(hash_secure(H)) →
-  assert(commit_binding(H))
+  prove(hash_secure(H)) →
+  conclude(commit_binding(H))
 } →
 
 // ── EC group commutativity ────────────────────────────────────────────────────
 
 lemma ECAddComm() {
-  assert(ec_add(P, Q, E) = ec_add(Q, P, E))
+  declareToProve(ec_add(P, Q, E) = ec_add(Q, P, E))
 } ↔
 
 proof ECAddComm() {
-  assert(ec_add(P, Q, E) = ec_add(Q, P, E))
+  conclude(ec_add(P, Q, E) = ec_add(Q, P, E))
 }

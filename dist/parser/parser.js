@@ -7,6 +7,7 @@
 // program can be folded into a single logical expression.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseLinesToAST = parseLinesToAST;
+exports.validateDeclarationBody = validateDeclarationBody;
 const expr_1 = require("./expr");
 function parseLinesToAST(lines, options = {}) {
     const ast = [];
@@ -87,8 +88,53 @@ function parseLinesToAST(lines, options = {}) {
             }
             // ── Statement nodes ────────────────────────────────────────────────────
             case 'assert': {
-                const expr = parseCallExpr(line.content, 'assert');
-                const node = { type: 'Assert', expr, connective: line.connective };
+                // Legacy keyword — kept for backward compatibility but emits a parse error node
+                const currentBlock = stack[stack.length - 1];
+                const inDecl = currentBlock?.type === 'Theorem' || currentBlock?.type === 'Lemma';
+                const suggestion = inDecl
+                    ? 'Use declareToProve() to declare the theorem goal'
+                    : 'Use prove() for intermediate steps or conclude() for the final step';
+                const errExpr = parseCallExpr(line.content, 'assert');
+                const node = { type: 'Assert', expr: errExpr, connective: line.connective };
+                // Store the migration hint as a parse error on the atom
+                node.legacyError = `assert() is no longer valid. ${suggestion}`;
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'given': {
+                // Legacy keyword — emit error
+                const errExpr = parseCallExpr(line.content, 'given');
+                const node = { type: 'Given', expr: errExpr, connective: line.connective };
+                node.legacyError = 'given() is no longer valid. Use assume() to declare hypotheses';
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'declareToProve': {
+                const expr = parseCallExpr(line.content, 'declareToProve');
+                const node = { type: 'DeclareToProve', expr, connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'prove': {
+                const expr = parseCallExpr(line.content, 'prove');
+                const node = { type: 'Prove', expr, connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'andIntroStep': {
+                // AndIntro(P, Q) — parse two comma-separated claims
+                const inner = line.content.replace(/^AndIntro\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const commaIdx = inner.lastIndexOf(',');
+                const left = commaIdx >= 0 ? inner.slice(0, commaIdx).trim() : inner;
+                const right = commaIdx >= 0 ? inner.slice(commaIdx + 1).trim() : '';
+                const node = { type: 'AndIntroStep', left, right, connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'orIntroStep': {
+                // OrIntro(P ∨ Q) — the full disjunction to introduce
+                const claim = line.content.replace(/^OrIntro\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const node = { type: 'OrIntroStep', claim, connective: line.connective };
                 pushOrTop(stack, ast, node);
                 break;
             }
@@ -110,12 +156,6 @@ function parseLinesToAST(lines, options = {}) {
                 else {
                     throw new Error('ensures() may only appear inside fn blocks');
                 }
-                break;
-            }
-            case 'given': {
-                const expr = parseCallExpr(line.content, 'given');
-                const node = { type: 'Given', expr, connective: line.connective };
-                pushOrTop(stack, ast, node);
                 break;
             }
             case 'assume': {
@@ -650,6 +690,39 @@ function validateTopLevelConnectives(ast) {
             throw new Error(`Missing connective between top-level blocks after ${describeTopLevelNode(node)}`);
         }
     }
+}
+// Validate that a theorem/lemma declaration body uses the correct structure:
+// - Exactly one assume() with connective → (or no assume() for axioms)
+// - Exactly one declareToProve() as the final step
+// - No given() or assert() (legacy keywords produce legacyError annotations)
+function validateDeclarationBody(name, body) {
+    const errors = [];
+    for (const node of body) {
+        const legacy = node.legacyError;
+        if (legacy)
+            errors.push(`In '${name}': ${legacy}`);
+    }
+    const assumes = body.filter(n => n.type === 'Assume');
+    const dtp = body.filter(n => n.type === 'DeclareToProve');
+    const oldAssert = body.filter(n => n.type === 'Assert');
+    const oldGiven = body.filter(n => n.type === 'Given');
+    if (oldAssert.length > 0)
+        errors.push(`In '${name}': replace assert() with declareToProve() in declarations`);
+    if (oldGiven.length > 0)
+        errors.push(`In '${name}': replace given() with assume() in declarations`);
+    // Only require declareToProve when no legacy assert() is present (backward compat)
+    if (dtp.length === 0 && oldAssert.length === 0)
+        errors.push(`In '${name}': declaration must end with declareToProve(...)`);
+    if (dtp.length > 1)
+        errors.push(`In '${name}': declaration must have exactly one declareToProve()`);
+    if (assumes.length > 1)
+        errors.push(`In '${name}': declaration must have at most one assume() — combine multiple hypotheses with ∧`);
+    if (assumes.length === 1) {
+        const assumeNode = assumes[0];
+        if (assumeNode.connective !== '→')
+            errors.push(`In '${name}': assume() must be followed by → (logical implication to the conclusion)`);
+    }
+    return errors;
 }
 function isTopLevelBlock(node) {
     return node.type === 'Theorem' ||

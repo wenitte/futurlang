@@ -3,7 +3,7 @@
 // ── Factorials ────────────────────────────────────────────────────────────────
 
 lemma Factorial0() {
-  assert(factorial(0) = 1)
+  declareToProve(factorial(0) = 1)
 } ↔
 
 proof Factorial0() {
@@ -11,7 +11,7 @@ proof Factorial0() {
 } →
 
 lemma Factorial1() {
-  assert(factorial(1) = 1)
+  declareToProve(factorial(1) = 1)
 } ↔
 
 proof Factorial1() {
@@ -19,7 +19,7 @@ proof Factorial1() {
 } →
 
 lemma Factorial2() {
-  assert(factorial(2) = 2)
+  declareToProve(factorial(2) = 2)
 } ↔
 
 proof Factorial2() {
@@ -27,7 +27,7 @@ proof Factorial2() {
 } →
 
 lemma Factorial3() {
-  assert(factorial(3) = 6)
+  declareToProve(factorial(3) = 6)
 } ↔
 
 proof Factorial3() {
@@ -35,7 +35,7 @@ proof Factorial3() {
 } →
 
 lemma Factorial4() {
-  assert(factorial(4) = 24)
+  declareToProve(factorial(4) = 24)
 } ↔
 
 proof Factorial4() {
@@ -43,7 +43,7 @@ proof Factorial4() {
 } →
 
 lemma Factorial5() {
-  assert(factorial(5) = 120)
+  declareToProve(factorial(5) = 120)
 } ↔
 
 proof Factorial5() {
@@ -53,45 +53,40 @@ proof Factorial5() {
 // ── Factorial recurrence ──────────────────────────────────────────────────────
 
 lemma FactorialRecurrence() {
-  given(n ∈ Nat) →
-  given(n > 0) →
-  assert(factorial(n) = n * factorial(n - 1))
+  assume(n ∈ Nat ∧ n > 0) →
+  declareToProve(factorial(n) = n * factorial(n - 1))
 } ↔
 
 proof FactorialRecurrence() {
-  given(n ∈ Nat) →
-  given(n > 0) →
-  assert(factorial(n) = n * factorial(n - 1))
+  conclude(factorial(n) = n * factorial(n - 1))
 } →
 
 // ── Binomial coefficients ─────────────────────────────────────────────────────
 
 lemma Binom0() {
-  given(n ∈ Nat) →
-  assert(binom(n, 0) = 1)
+  assume(n ∈ Nat) →
+  declareToProve(binom(n, 0) = 1)
 } ↔
 
 proof Binom0() {
-  given(n ∈ Nat) →
-  assert(binom(n, 0) = factorial(n) / (factorial(0) * factorial(n))) →
+  assert(binom(n, 0) = factorial(n) / (factorial(0) * factorial(n))) ∧
   assert(factorial(0) = 1) →
   conclude(binom(n, 0) = 1)
 } →
 
 lemma BinomN() {
-  given(n ∈ Nat) →
-  assert(binom(n, n) = 1)
+  assume(n ∈ Nat) →
+  declareToProve(binom(n, n) = 1)
 } ↔
 
 proof BinomN() {
-  given(n ∈ Nat) →
-  assert(binom(n, n) = factorial(n) / (factorial(n) * factorial(0))) →
+  assert(binom(n, n) = factorial(n) / (factorial(n) * factorial(0))) ∧
   assert(factorial(0) = 1) →
   conclude(binom(n, n) = 1)
 } →
 
 lemma Binom52() {
-  assert(binom(5, 2) = 10)
+  declareToProve(binom(5, 2) = 10)
 } ↔
 
 proof Binom52() {
@@ -99,7 +94,7 @@ proof Binom52() {
 } →
 
 lemma Binom63() {
-  assert(binom(6, 3) = 20)
+  declareToProve(binom(6, 3) = 20)
 } ↔
 
 proof Binom63() {
@@ -109,33 +104,23 @@ proof Binom63() {
 // ── Pascal's identity ─────────────────────────────────────────────────────────
 
 lemma PascalIdentity() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(k ≤ n) →
-  assert(binom(n + 1, k + 1) = binom(n, k) + binom(n, k + 1))
+  assume(n ∈ Nat ∧ k ∈ Nat ∧ k ≤ n) →
+  declareToProve(binom(n + 1, k + 1) = binom(n, k) + binom(n, k + 1))
 } ↔
 
 proof PascalIdentity() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(k ≤ n) →
-  assert(binom(n + 1, k + 1) = binom(n, k) + binom(n, k + 1))
+  conclude(binom(n + 1, k + 1) = binom(n, k) + binom(n, k + 1))
 } →
 
 // ── Symmetry of binomial coefficients ────────────────────────────────────────
 
 lemma BinomSymmetry() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(k ≤ n) →
-  assert(binom(n, k) = binom(n, n - k))
+  assume(n ∈ Nat ∧ k ∈ Nat ∧ k ≤ n) →
+  declareToProve(binom(n, k) = binom(n, n - k))
 } ↔
 
 proof BinomSymmetry() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(k ≤ n) →
-  assert(binom(n, k) = factorial(n) / (factorial(k) * factorial(n - k))) →
+  assert(binom(n, k) = factorial(n) / (factorial(k) * factorial(n - k))) ∧
   assert(binom(n, n - k) = factorial(n) / (factorial(n - k) * factorial(k))) →
   conclude(binom(n, k) = binom(n, n - k))
 } →
@@ -143,37 +128,27 @@ proof BinomSymmetry() {
 // ── Vandermonde's identity ────────────────────────────────────────────────────
 
 lemma Vandermonde() {
-  given(m ∈ Nat) →
-  given(n ∈ Nat) →
-  given(r ∈ Nat) →
-  assert(binom(m + n, r) = ∑ k ∈ {0, ..., r}, binom(m, k) * binom(n, r - k))
+  assume(m ∈ Nat ∧ n ∈ Nat ∧ r ∈ Nat) →
+  declareToProve(binom(m + n, r) = ∑ k ∈ {0, ..., r}, binom(m, k) * binom(n, r - k))
 } ↔
 
 proof Vandermonde() {
-  given(m ∈ Nat) →
-  given(n ∈ Nat) →
-  given(r ∈ Nat) →
-  assert(binom(m + n, r) = ∑ k ∈ {0, ..., r}, binom(m, k) * binom(n, r - k))
+  conclude(binom(m + n, r) = ∑ k ∈ {0, ..., r}, binom(m, k) * binom(n, r - k))
 } →
 
 // ── Pigeonhole principle ──────────────────────────────────────────────────────
 
 lemma Pigeonhole() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(n > k) →
-  assert(pigeonhole(n, k))
+  assume(n ∈ Nat ∧ k ∈ Nat ∧ n > k) →
+  declareToProve(pigeonhole(n, k))
 } ↔
 
 proof Pigeonhole() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(n > k) →
   conclude(pigeonhole(n, k))
 } →
 
 lemma PigeonholeConcreteExample() {
-  assert(pigeonhole(13, 12))
+  declareToProve(pigeonhole(13, 12))
 } ↔
 
 proof PigeonholeConcreteExample() {
@@ -183,85 +158,63 @@ proof PigeonholeConcreteExample() {
 // ── Generalized pigeonhole ────────────────────────────────────────────────────
 
 lemma GeneralizedPigeonhole() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(n > k * m) →
-  assert(∃ box ∈ Boxes, items_in(box) > m)
+  assume(n ∈ Nat ∧ k ∈ Nat ∧ n > k * m) →
+  declareToProve(∃ box ∈ Boxes, items_in(box) > m)
 } ↔
 
 proof GeneralizedPigeonhole() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(n > k * m) →
-  assert(∃ box ∈ Boxes, items_in(box) > m)
+  conclude(∃ box ∈ Boxes, items_in(box) > m)
 } →
 
 // ── Inclusion-exclusion ───────────────────────────────────────────────────────
 
 lemma InclusionExclusion2() {
-  given(finite(A)) →
-  given(finite(B)) →
-  assert(|A ∪ B| = |A| + |B| - |A ∩ B|)
+  assume(finite(A) ∧ finite(B)) →
+  declareToProve(|A ∪ B| = |A| + |B| - |A ∩ B|)
 } ↔
 
 proof InclusionExclusion2() {
-  given(finite(A)) →
-  given(finite(B)) →
   conclude(|A ∪ B| = |A| + |B| - |A ∩ B|)
 } →
 
 lemma InclusionExclusion3() {
-  given(finite(A)) →
-  given(finite(B)) →
-  given(finite(C)) →
-  assert(|A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|)
+  assume(finite(A) ∧ finite(B) ∧ finite(C)) →
+  declareToProve(|A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|)
 } ↔
 
 proof InclusionExclusion3() {
-  given(finite(A)) →
-  given(finite(B)) →
-  given(finite(C)) →
-  assert(|A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|)
+  conclude(|A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|)
 } →
 
 // ── Counting permutations ─────────────────────────────────────────────────────
 
 lemma PermCount() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(k ≤ n) →
-  assert(perm(n, k) = factorial(n) / factorial(n - k))
+  assume(n ∈ Nat ∧ k ∈ Nat ∧ k ≤ n) →
+  declareToProve(perm(n, k) = factorial(n) / factorial(n - k))
 } ↔
 
 proof PermCount() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  given(k ≤ n) →
-  assert(perm(n, k) = factorial(n) / factorial(n - k))
+  conclude(perm(n, k) = factorial(n) / factorial(n - k))
 } →
 
 // ── Stars and bars ────────────────────────────────────────────────────────────
 
 lemma StarsAndBars() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  assert(multiset_count(n, k) = binom(n + k - 1, k - 1))
+  assume(n ∈ Nat ∧ k ∈ Nat) →
+  declareToProve(multiset_count(n, k) = binom(n + k - 1, k - 1))
 } ↔
 
 proof StarsAndBars() {
-  given(n ∈ Nat) →
-  given(k ∈ Nat) →
-  assert(multiset_count(n, k) = binom(n + k - 1, k - 1))
+  conclude(multiset_count(n, k) = binom(n + k - 1, k - 1))
 } →
 
 // ── Sum of binomials ─────────────────────────────────────────────────────────
 
 lemma BinomSumRow() {
-  given(n ∈ Nat) →
-  assert(∑ k ∈ {0, ..., n}, binom(n, k) = 2^n)
+  assume(n ∈ Nat) →
+  declareToProve(∑ k ∈ {0, ..., n}, binom(n, k) = 2^n)
 } ↔
 
 proof BinomSumRow() {
-  given(n ∈ Nat) →
-  assert(∑ k ∈ {0, ..., n}, binom(n, k) = 2^n)
+  conclude(∑ k ∈ {0, ..., n}, binom(n, k) = 2^n)
 }

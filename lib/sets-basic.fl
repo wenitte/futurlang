@@ -1,7 +1,6 @@
 lemma SubsetTransport() {
-  given(x in A) →
-  given(A subset B) →
-  assert(x in B)
+  assume(x in A ∧ A subset B) →
+  declareToProve(x in B)
 } ↔
 
 proof SubsetTransport() {
@@ -9,9 +8,8 @@ proof SubsetTransport() {
 } →
 
 lemma SubsetTransitivity() {
-  given(A subset B) →
-  given(B subset C) →
-  assert(A subset C)
+  assume(A subset B ∧ B subset C) →
+  declareToProve(A subset C)
 } ↔
 
 proof SubsetTransitivity() {
@@ -19,9 +17,8 @@ proof SubsetTransitivity() {
 } →
 
 lemma SubsetAntisymmetry() {
-  given(A subset B) →
-  given(B subset A) →
-  assert(A = B)
+  assume(A subset B ∧ B subset A) →
+  declareToProve(A = B)
 } ↔
 
 proof SubsetAntisymmetry() {
@@ -29,12 +26,12 @@ proof SubsetAntisymmetry() {
 } →
 
 lemma IntersectionMembershipIff() {
-  assert((x in A intersection B) <-> ((x in A) && (x in B)))
+  declareToProve((x in A intersection B) <-> ((x in A) && (x in B)))
 } ↔
 
 proof IntersectionMembershipIff() {
   assume(x ∈ A ∩ B) →
-  assert(x ∈ A) →
+  assert(x ∈ A) ∧
   assert(x ∈ B) →
   assert(x ∈ A ∧ x ∈ B) →
   assert((x ∈ A ∩ B) → (x ∈ A ∧ x ∈ B)) →
@@ -47,8 +44,8 @@ proof IntersectionMembershipIff() {
 } →
 
 lemma IntersectionMembershipLeft() {
-  given(x in A intersection B) →
-  assert(x in A)
+  assume(x in A intersection B) →
+  declareToProve(x in A)
 } ↔
 
 proof IntersectionMembershipLeft() {
@@ -56,8 +53,8 @@ proof IntersectionMembershipLeft() {
 } →
 
 lemma IntersectionMembershipRight() {
-  given(x in A intersection B) →
-  assert(x in B)
+  assume(x in A intersection B) →
+  declareToProve(x in B)
 } ↔
 
 proof IntersectionMembershipRight() {
@@ -65,7 +62,7 @@ proof IntersectionMembershipRight() {
 } →
 
 lemma UnionMembershipIff() {
-  assert((x in A union B) <-> ((x in A) || (x in B)))
+  declareToProve((x in A union B) <-> ((x in A) || (x in B)))
 } ↔
 
 proof UnionMembershipIff() {
@@ -78,22 +75,22 @@ proof UnionMembershipIff() {
   assert((x in A) -> (x in A union B)) →
   assume(x in B) →
   assert(x in A union B) →
-  assert((x in B) -> (x in A union B)) →
-  assert(x in A union B) →
+  assert((x in B) -> (x in A union B)) ∧
+  assert(x in A union B) ∧
   assert(((x in A) || (x in B)) -> (x in A union B)) →
   conclude((x in A union B) <-> ((x in A) || (x in B)))
 } →
 
 lemma PreimageIntersectionIff() {
-  assert((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
+  declareToProve((x ∈ preimage(f, B ∩ C)) <-> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))))
 } ↔
 
 proof PreimageIntersectionIff() {
   assume(x ∈ preimage(f, B ∩ C)) →
   assert(f(x) ∈ B ∩ C) →
-  assert(f(x) ∈ B) →
-  assert(f(x) ∈ C) →
-  assert(x ∈ preimage(f, B)) →
+  assert(f(x) ∈ B) ∧
+  assert(f(x) ∈ C) ∧
+  assert(x ∈ preimage(f, B)) ∧
   assert(x ∈ preimage(f, C)) →
   assert((x ∈ preimage(f, B)) && (x ∈ preimage(f, C))) →
   assert((x ∈ preimage(f, B ∩ C)) -> ((x ∈ preimage(f, B)) && (x ∈ preimage(f, C)))) →
@@ -109,7 +106,7 @@ proof PreimageIntersectionIff() {
 } →
 
 lemma PreimageUnionIff() {
-  assert((x ∈ preimage(f, B ∪ C)) <-> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))))
+  declareToProve((x ∈ preimage(f, B ∪ C)) <-> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))))
 } ↔
 
 proof PreimageUnionIff() {
@@ -121,10 +118,10 @@ proof PreimageUnionIff() {
   assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
   assert((f(x) ∈ B) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
   assume(f(x) ∈ C) →
-  assert(x ∈ preimage(f, C)) →
+  assert(x ∈ preimage(f, C)) ∧
   assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
-  assert((f(x) ∈ C) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
-  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
+  assert((f(x) ∈ C) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) ∧
+  assert((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) ∧
   assert((x ∈ preimage(f, B ∪ C)) -> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C)))) →
   assume((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) →
   assume(x ∈ preimage(f, B)) →
@@ -136,15 +133,15 @@ proof PreimageUnionIff() {
   assert(f(x) ∈ C) →
   assert(f(x) ∈ B ∪ C) →
   assert(x ∈ preimage(f, B ∪ C)) →
-  assert((x ∈ preimage(f, C)) -> (x ∈ preimage(f, B ∪ C))) →
-  assert(x ∈ preimage(f, B ∪ C)) →
+  assert((x ∈ preimage(f, C)) -> (x ∈ preimage(f, B ∪ C))) ∧
+  assert(x ∈ preimage(f, B ∪ C)) ∧
   assert(((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))) -> (x ∈ preimage(f, B ∪ C))) →
   conclude((x ∈ preimage(f, B ∪ C)) <-> ((x ∈ preimage(f, B)) || (x ∈ preimage(f, C))))
 } →
 
 lemma PreimageIntersectionLeft() {
-  given(x ∈ preimage(f, B ∩ C)) →
-  assert(x ∈ preimage(f, B))
+  assume(x ∈ preimage(f, B ∩ C)) →
+  declareToProve(x ∈ preimage(f, B))
 } ↔
 
 proof PreimageIntersectionLeft() {
@@ -154,8 +151,8 @@ proof PreimageIntersectionLeft() {
 } →
 
 lemma PreimageIntersectionRight() {
-  given(x ∈ preimage(f, B ∩ C)) →
-  assert(x ∈ preimage(f, C))
+  assume(x ∈ preimage(f, B ∩ C)) →
+  declareToProve(x ∈ preimage(f, C))
 } ↔
 
 proof PreimageIntersectionRight() {
@@ -165,7 +162,7 @@ proof PreimageIntersectionRight() {
 } →
 
 lemma PreimageIntersectionEquality() {
-  assert(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
+  declareToProve(preimage(f, B ∩ C) = preimage(f, B) ∩ preimage(f, C))
 } ↔
 
 proof PreimageIntersectionEquality() {
@@ -177,9 +174,9 @@ proof PreimageIntersectionEquality() {
   assert(preimage(f, B ∩ C) ⊂ preimage(f, B) ∩ preimage(f, C)) →
   setVar(y: Element) →
   assume(y ∈ preimage(f, B) ∩ preimage(f, C)) →
-  assert(y ∈ preimage(f, B)) →
-  assert(y ∈ preimage(f, C)) →
-  assert(f(y) ∈ B) →
+  assert(y ∈ preimage(f, B)) ∧
+  assert(y ∈ preimage(f, C)) ∧
+  assert(f(y) ∈ B) ∧
   assert(f(y) ∈ C) →
   assert(f(y) ∈ B ∩ C) →
   assert(y ∈ preimage(f, B ∩ C)) →
@@ -188,8 +185,8 @@ proof PreimageIntersectionEquality() {
 } →
 
 lemma ImageIntro() {
-  given(x in A) →
-  assert(f(x) ∈ image(f, A))
+  assume(x in A) →
+  declareToProve(f(x) ∈ image(f, A))
 } ↔
 
 proof ImageIntro() {
@@ -197,8 +194,8 @@ proof ImageIntro() {
 } →
 
 lemma ImageUnionLeft() {
-  given(x in A) →
-  assert(f(x) ∈ image(f, A union B))
+  assume(x in A) →
+  declareToProve(f(x) ∈ image(f, A union B))
 } ↔
 
 proof ImageUnionLeft() {
@@ -207,8 +204,8 @@ proof ImageUnionLeft() {
 } →
 
 lemma ImageUnionRight() {
-  given(x in B) →
-  assert(f(x) ∈ image(f, A union B))
+  assume(x in B) →
+  declareToProve(f(x) ∈ image(f, A union B))
 } ↔
 
 proof ImageUnionRight() {
@@ -217,27 +214,27 @@ proof ImageUnionRight() {
 } →
 
 lemma ImageUnionForward() {
-  assert(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))
+  declareToProve(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))
 } ↔
 
 proof ImageUnionForward() {
   assume(x in A union B) →
   assert((x in A) || (x in B)) →
   assume(x in A) →
-  assert(f(x) ∈ image(f, A)) →
+  assert(f(x) ∈ image(f, A)) ∧
   assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
   assert(x in A → f(x) ∈ image(f, A) ∪ image(f, B)) →
   assume(x in B) →
-  assert(f(x) ∈ image(f, B)) →
-  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(f(x) ∈ image(f, B)) ∧
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) ∧
   assert(x in B → f(x) ∈ image(f, A) ∪ image(f, B)) →
   assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
   conclude(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))
 } →
 
 theorem UsesSetsBasicLibrary() {
-  given(x in A union B) →
-  assert((x in A) || (x in B))
+  assume(x in A union B) →
+  declareToProve((x in A) || (x in B))
 } ↔
 
 proof UsesSetsBasicLibrary() {
@@ -246,8 +243,8 @@ proof UsesSetsBasicLibrary() {
 } →
 
 theorem UsesIntersectionHelperLibrary() {
-  given(x in A intersection B) →
-  assert(x in A)
+  assume(x in A intersection B) →
+  declareToProve(x in A)
 } ↔
 
 proof UsesIntersectionHelperLibrary() {
@@ -255,8 +252,8 @@ proof UsesIntersectionHelperLibrary() {
 } →
 
 theorem UsesPreimageIntersectionLibrary() {
-  given(x ∈ preimage(f, B ∩ C)) →
-  assert(x ∈ preimage(f, B))
+  assume(x ∈ preimage(f, B ∩ C)) →
+  declareToProve(x ∈ preimage(f, B))
 } ↔
 
 proof UsesPreimageIntersectionLibrary() {
@@ -264,8 +261,8 @@ proof UsesPreimageIntersectionLibrary() {
 } →
 
 theorem UsesPreimageIntersectionEqualityLibrary() {
-  given(x ∈ preimage(f, B ∩ C)) →
-  assert(x ∈ preimage(f, B) ∩ preimage(f, C))
+  assume(x ∈ preimage(f, B ∩ C)) →
+  declareToProve(x ∈ preimage(f, B) ∩ preimage(f, C))
 } ↔
 
 proof UsesPreimageIntersectionEqualityLibrary() {
@@ -274,8 +271,8 @@ proof UsesPreimageIntersectionEqualityLibrary() {
 } →
 
 theorem UsesImageUnionLibrary() {
-  given(x in A) →
-  assert(f(x) ∈ image(f, A union B))
+  assume(x in A) →
+  declareToProve(f(x) ∈ image(f, A union B))
 } ↔
 
 proof UsesImageUnionLibrary() {
@@ -283,11 +280,10 @@ proof UsesImageUnionLibrary() {
 } →
 
 theorem UsesImageUnionForwardLibrary() {
-  given(x in A union B) →
-  assert(f(x) ∈ image(f, A) ∪ image(f, B))
+  assume(x in A union B) →
+  declareToProve(f(x) ∈ image(f, A) ∪ image(f, B))
 } ↔
 
 proof UsesImageUnionForwardLibrary() {
-  apply(ImageUnionForward) →
   conclude(f(x) ∈ image(f, A) ∪ image(f, B))
 }

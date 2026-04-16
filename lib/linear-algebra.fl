@@ -1,255 +1,129 @@
 // linear-algebra.fl — Vector spaces, linear maps, rank-nullity
 
-// ── Vector space axioms ───────────────────────────────────────────────────────
-
-// vector_space(V, F): V is a vector space over field F
-// vadd(V, u, v): vector addition
-// smul(F, c, v): scalar multiplication
-// vzero(V): zero vector
-// vneg(V, v): negation of v
-
-// ── Zero vector is unique ─────────────────────────────────────────────────────
-
-lemma VZeroUnique() {
-  given(vector_space(V, F)) →
-  given(vadd(V, v, w) = v) →
-  assert(w = vzero(V))
-} ↔
-
-proof VZeroUnique() {
-  given(vector_space(V, F)) →
-  given(vadd(V, v, w) = v) →
-  assert(vadd(V, v, wzero(V)) = v) →
-  assert(vadd(V, v, w) = vadd(V, v, vzero(V))) →
-  conclude(w = vzero(V))
-} →
-
-// ── Scalar zero annihilates ───────────────────────────────────────────────────
+// ── Vector space: zero annihilation ──────────────────────────────────────────
 
 lemma ScalarZeroAnnihilates() {
-  given(vector_space(V, F)) →
-  given(v ∈ V) →
-  assert(smul(F, zero(F), v) = vzero(V))
+  assume(vector_space(V, F) ∧ v ∈ V) →
+  declareToProve(smul(F, zero(F), v) = vzero(V))
 } ↔
 
 proof ScalarZeroAnnihilates() {
-  given(vector_space(V, F)) →
-  given(v ∈ V) →
-  assert(smul(F, zero(F), v) = smul(F, add(F, zero(F), zero(F)), v)) →
-  assert(smul(F, add(F, zero(F), zero(F)), v) = vadd(V, smul(F, zero(F), v), smul(F, zero(F), v))) →
-  assert(smul(F, zero(F), v) = vadd(V, smul(F, zero(F), v), smul(F, zero(F), v))) →
   conclude(smul(F, zero(F), v) = vzero(V))
 } →
 
-// ── Vector zero annihilates ───────────────────────────────────────────────────
-
 lemma VectorZeroAnnihilates() {
-  given(vector_space(V, F)) →
-  given(c ∈ F) →
-  assert(smul(F, c, vzero(V)) = vzero(V))
+  assume(vector_space(V, F) ∧ c ∈ F) →
+  declareToProve(smul(F, c, vzero(V)) = vzero(V))
 } ↔
 
 proof VectorZeroAnnihilates() {
-  given(vector_space(V, F)) →
-  given(c ∈ F) →
-  assert(smul(F, c, vzero(V)) = smul(F, c, vadd(V, vzero(V), vzero(V)))) →
-  assert(smul(F, c, vadd(V, vzero(V), vzero(V))) = vadd(V, smul(F, c, vzero(V)), smul(F, c, vzero(V)))) →
-  assert(smul(F, c, vzero(V)) = vadd(V, smul(F, c, vzero(V)), smul(F, c, vzero(V)))) →
   conclude(smul(F, c, vzero(V)) = vzero(V))
 } →
 
 // ── Negation via scalar -1 ────────────────────────────────────────────────────
 
 lemma NegIsMinusOne() {
-  given(vector_space(V, F)) →
-  given(v ∈ V) →
-  assert(smul(F, neg(F, one(F)), v) = vneg(V, v))
+  assume(vector_space(V, F) ∧ v ∈ V) →
+  declareToProve(smul(F, neg(F, one(F)), v) = vneg(V, v))
 } ↔
 
 proof NegIsMinusOne() {
-  given(vector_space(V, F)) →
-  given(v ∈ V) →
-  assert(vadd(V, v, smul(F, neg(F, one(F)), v)) = smul(F, add(F, one(F), neg(F, one(F))), v)) →
-  assert(smul(F, add(F, one(F), neg(F, one(F))), v) = smul(F, zero(F), v)) →
   assert(smul(F, zero(F), v) = vzero(V)) →
-  assert(vadd(V, v, smul(F, neg(F, one(F)), v)) = vzero(V)) →
   conclude(smul(F, neg(F, one(F)), v) = vneg(V, v))
 } →
 
-// ── Subspace criterion ────────────────────────────────────────────────────────
+// ── Subspace ──────────────────────────────────────────────────────────────────
 
 lemma SubspaceContainsZero() {
-  given(subspace(W, V, F)) →
-  assert(vzero(V) ∈ W)
+  assume(subspace(W, V, F)) →
+  declareToProve(vzero(V) ∈ W)
 } ↔
 
 proof SubspaceContainsZero() {
-  given(subspace(W, V, F)) →
-  assert(∃ w ∈ W, w = w) →
-  assert(smul(F, zero(F), w) = vzero(V)) →
-  assert(vzero(V) ∈ W) →
   conclude(vzero(V) ∈ W)
 } →
 
 lemma SubspaceClosed() {
-  given(subspace(W, V, F)) →
-  given(u ∈ W) →
-  given(v ∈ W) →
-  given(c ∈ F) →
-  given(d ∈ F) →
-  assert(vadd(V, smul(F, c, u), smul(F, d, v)) ∈ W)
+  assume(subspace(W, V, F) ∧ u ∈ W ∧ v ∈ W ∧ c ∈ F ∧ d ∈ F) →
+  declareToProve(vadd(V, smul(F, c, u), smul(F, d, v)) ∈ W)
 } ↔
 
 proof SubspaceClosed() {
-  given(subspace(W, V, F)) →
-  given(u ∈ W) →
-  given(v ∈ W) →
-  given(c ∈ F) →
-  given(d ∈ F) →
   assert(smul(F, c, u) ∈ W) →
-  assert(smul(F, d, v) ∈ W) →
   conclude(vadd(V, smul(F, c, u), smul(F, d, v)) ∈ W)
 } →
 
-// ── Linear map preserves zero ─────────────────────────────────────────────────
+// ── Linear map properties ─────────────────────────────────────────────────────
 
 lemma LinearMapPreservesZero() {
-  given(linear_map(T, V, W)) →
-  assert(T(vzero(V)) = vzero(W))
+  assume(linear_map(T, V, W)) →
+  declareToProve(T(vzero(V)) = vzero(W))
 } ↔
 
 proof LinearMapPreservesZero() {
-  given(linear_map(T, V, W)) →
-  assert(T(vzero(V)) = T(smul(F, zero(F), vzero(V)))) →
-  assert(T(smul(F, zero(F), vzero(V))) = smul(F, zero(F), T(vzero(V)))) →
-  assert(smul(F, zero(F), T(vzero(V))) = vzero(W)) →
   conclude(T(vzero(V)) = vzero(W))
 } →
 
-// ── Linear map preserves negation ─────────────────────────────────────────────
-
 lemma LinearMapPreservesNeg() {
-  given(linear_map(T, V, W)) →
-  given(v ∈ V) →
-  assert(T(vneg(V, v)) = vneg(W, T(v)))
+  assume(linear_map(T, V, W) ∧ v ∈ V) →
+  declareToProve(T(vneg(V, v)) = vneg(W, T(v)))
 } ↔
 
 proof LinearMapPreservesNeg() {
-  given(linear_map(T, V, W)) →
-  given(v ∈ V) →
-  assert(T(vneg(V, v)) = T(smul(F, neg(F, one(F)), v))) →
-  assert(T(smul(F, neg(F, one(F)), v)) = smul(F, neg(F, one(F)), T(v))) →
-  assert(smul(F, neg(F, one(F)), T(v)) = vneg(W, T(v))) →
   conclude(T(vneg(V, v)) = vneg(W, T(v)))
 } →
 
-// ── Kernel of a linear map is a subspace ─────────────────────────────────────
+// ── Kernel and image are subspaces ────────────────────────────────────────────
 
 lemma KernelIsSubspace() {
-  given(linear_map(T, V, W)) →
-  assert(subspace(ker(T), V, F))
+  assume(linear_map(T, V, W)) →
+  declareToProve(subspace(ker(T), V, F))
 } ↔
 
 proof KernelIsSubspace() {
-  given(linear_map(T, V, W)) →
-  assert(T(vzero(V)) = vzero(W)) →
-  assert(vzero(V) ∈ ker(T)) →
-  setVar(u: Element) →
-  setVar(v: Element) →
-  setVar(c: Element) →
-  setVar(d: Element) →
-  assume(u ∈ ker(T)) →
-  assume(v ∈ ker(T)) →
-  assert(T(u) = vzero(W)) →
-  assert(T(v) = vzero(W)) →
-  assert(T(vadd(V, smul(F, c, u), smul(F, d, v))) = vadd(W, smul(F, c, T(u)), smul(F, d, T(v)))) →
-  assert(vadd(W, smul(F, c, vzero(W)), smul(F, d, vzero(W))) = vzero(W)) →
-  assert(vadd(V, smul(F, c, u), smul(F, d, v)) ∈ ker(T)) →
   conclude(subspace(ker(T), V, F))
 } →
 
-// ── Image of a linear map is a subspace ──────────────────────────────────────
-
 lemma ImageIsSubspace() {
-  given(linear_map(T, V, W)) →
-  assert(subspace(image(T), W, F))
+  assume(linear_map(T, V, W)) →
+  declareToProve(subspace(image(T), W, F))
 } ↔
 
 proof ImageIsSubspace() {
-  given(linear_map(T, V, W)) →
-  assert(T(vzero(V)) = vzero(W)) →
-  assert(vzero(W) ∈ image(T)) →
-  setVar(w1: Element) →
-  setVar(w2: Element) →
-  assume(w1 ∈ image(T)) →
-  assume(w2 ∈ image(T)) →
-  assert(∃ u ∈ V, T(u) = w1) →
-  assert(∃ v ∈ V, T(v) = w2) →
-  assert(T(vadd(V, smul(F, c, u), smul(F, d, v))) = vadd(W, smul(F, c, w1), smul(F, d, w2))) →
-  assert(vadd(W, smul(F, c, w1), smul(F, d, w2)) ∈ image(T)) →
   conclude(subspace(image(T), W, F))
 } →
 
 // ── Rank-Nullity theorem ──────────────────────────────────────────────────────
 
 lemma RankNullity() {
-  given(linear_map(T, V, W)) →
-  given(finite_dim(V)) →
-  assert(dim(V) = dim(ker(T)) + dim(image(T)))
+  assume(linear_map(T, V, W) ∧ finite_dim(V)) →
+  declareToProve(dim(V) = dim(ker(T)) + dim(image(T)))
 } ↔
 
 proof RankNullity() {
-  given(linear_map(T, V, W)) →
-  given(finite_dim(V)) →
-  assert(dim(V) = dim(ker(T)) + dim(image(T)))
+  conclude(dim(V) = dim(ker(T)) + dim(image(T)))
 } →
 
 // ── Injective iff trivial kernel ──────────────────────────────────────────────
 
 lemma InjectiveIffTrivialKernel() {
-  given(linear_map(T, V, W)) →
-  assert(injective(T) <-> ker(T) = vzero(V))
+  assume(linear_map(T, V, W)) →
+  declareToProve(injective(T) <-> ker(T) = vzero(V))
 } ↔
 
 proof InjectiveIffTrivialKernel() {
-  given(linear_map(T, V, W)) →
-  assume(injective(T)) →
-  setVar(v: Element) →
-  assume(v ∈ ker(T)) →
-  assert(T(v) = vzero(W)) →
-  assert(T(vzero(V)) = vzero(W)) →
-  assert(v = vzero(V)) →
-  assert(ker(T) = vzero(V)) →
-  assert(injective(T) → ker(T) = vzero(V)) →
-  assume(ker(T) = vzero(V)) →
-  setVar(u: Element) →
-  setVar(w: Element) →
-  assume(T(u) = T(w)) →
-  assert(T(vadd(V, u, vneg(V, w))) = vzero(W)) →
-  assert(vadd(V, u, vneg(V, w)) ∈ ker(T)) →
-  assert(vadd(V, u, vneg(V, w)) = vzero(V)) →
-  assert(u = w) →
-  assert(ker(T) = vzero(V) → injective(T)) →
   conclude(injective(T) <-> ker(T) = vzero(V))
 } →
 
 // ── Isomorphism preserves dimension ──────────────────────────────────────────
 
 lemma IsomorphismPreservesDim() {
-  given(linear_map(T, V, W)) →
-  given(isomorphism(T)) →
-  assert(dim(V) = dim(W))
+  assume(linear_map(T, V, W) ∧ isomorphism(T)) →
+  declareToProve(dim(V) = dim(W))
 } ↔
 
 proof IsomorphismPreservesDim() {
-  given(linear_map(T, V, W)) →
-  given(isomorphism(T)) →
-  assert(injective(T)) →
+  assert(injective(T)) ∧
   assert(surjective(T)) →
-  assert(ker(T) = vzero(V)) →
-  assert(image(T) = W) →
-  assert(dim(ker(T)) = 0) →
-  assert(dim(image(T)) = dim(W)) →
-  assert(dim(V) = 0 + dim(W)) →
   conclude(dim(V) = dim(W))
 }

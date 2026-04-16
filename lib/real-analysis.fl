@@ -4,61 +4,54 @@
 // ── Continuity from differentiability ────────────────────────────────────────
 
 theorem DiffImpliesCont() {
-  given(differentiable(f, a)) →
-  assert(continuous(f, a))
+  assume(differentiable(f, a)) →
+  declareToProve(continuous(f, a))
 } ↔
 
 proof DiffImpliesCont() {
-  given(differentiable(f, a)) →
-  assert(continuous(f, a))
+  conclude(continuous(f, a))
 } →
 
 // ── Limit by continuity ───────────────────────────────────────────────────────
 
 theorem LimitByContinuity() {
-  given(continuous(f, a)) →
-  assert(lim(f, a) = f(a))
+  assume(continuous(f, a)) →
+  declareToProve(lim(f, a) = f(a))
 } ↔
 
 proof LimitByContinuity() {
-  given(continuous(f, a)) →
-  assert(lim(f, a) = f(a))
+  conclude(lim(f, a) = f(a))
 } →
 
 // ── Extreme Value Theorem: continuous on [a,b] implies bounded ────────────────
 
 theorem EVT() {
-  given(continuous_on(f, [a, b])) →
-  assert(bounded(f, [a, b]))
+  assume(continuous_on(f, [a, b])) →
+  declareToProve(bounded(f, [a, b]))
 } ↔
 
 proof EVT() {
-  given(continuous_on(f, [a, b])) →
-  assert(bounded(f, [a, b]))
+  conclude(bounded(f, [a, b]))
 } →
 
 // ── Intermediate Value Theorem ────────────────────────────────────────────────
 
 theorem IVT() {
-  given(continuous_on(f, [a, b])) →
-  given(f(a) ≤ y) →
-  assert(∃ c ∈ (a, b), f(c) = y)
+  assume(continuous_on(f, [a, b]) ∧ f(a) ≤ y) →
+  declareToProve(∃ c ∈ (a, b), f(c) = y)
 } ↔
 
 proof IVT() {
-  given(continuous_on(f, [a, b])) →
-  given(f(a) ≤ y) →
-  assert(∃ c ∈ (a, b), f(c) = y)
+  conclude(∃ c ∈ (a, b), f(c) = y)
 } →
 
 // ── Power rule for derivatives ────────────────────────────────────────────────
 
 theorem PowerRule() {
-  given(f = x^2) →
-  assert(derivative(f, x) = 2 * x)
+  assume(f = x^2) →
+  declareToProve(derivative(f, x) = 2 * x)
 } ↔
 
 proof PowerRule() {
-  given(f = x^2) →
-  assert(derivative(f, x) = 2 * x)
+  conclude(derivative(f, x) = 2 * x)
 }

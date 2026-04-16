@@ -4,7 +4,7 @@ theorem IntersectionMembershipIff() {
 
 proof IntersectionMembershipIff() {
   assume(x ∈ A ∩ B) →
-  assert(x ∈ A) →
+  assert(x ∈ A) ∧
   assert(x ∈ B) →
   assert(x ∈ A ∧ x ∈ B) →
   assert((x ∈ A ∩ B) → (x ∈ A ∧ x ∈ B)) →

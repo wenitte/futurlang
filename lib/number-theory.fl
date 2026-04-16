@@ -3,12 +3,11 @@
 // ── Divisibility: reflexivity ─────────────────────────────────────────────────
 
 lemma DividesRefl() {
-  given(n ∈ Nat) →
-  assert(divides(n, n))
+  assume(n ∈ Nat) →
+  declareToProve(divides(n, n))
 } ↔
 
 proof DividesRefl() {
-  given(n ∈ Nat) →
   assert(n = 1 * n) →
   conclude(divides(n, n))
 } →
@@ -16,42 +15,23 @@ proof DividesRefl() {
 // ── Divisibility: transitivity ────────────────────────────────────────────────
 
 lemma DividesTrans() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(c ∈ Nat) →
-  given(divides(a, b)) →
-  given(divides(b, c)) →
-  assert(divides(a, c))
+  assume(a ∈ Nat ∧ b ∈ Nat ∧ c ∈ Nat ∧ divides(a, b) ∧ divides(b, c)) →
+  declareToProve(divides(a, c))
 } ↔
 
 proof DividesTrans() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(c ∈ Nat) →
-  given(divides(a, b)) →
-  given(divides(b, c)) →
-  assert(∃ k ∈ Nat, b = a * k) →
-  assert(∃ m ∈ Nat, c = b * m) →
-  assert(∃ j ∈ Nat, c = a * j) →
   conclude(divides(a, c))
 } →
 
 // ── Divisibility: antisymmetry (over Nat) ─────────────────────────────────────
 
 lemma DividesAntisym() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(divides(a, b)) →
-  given(divides(b, a)) →
-  assert(a = b)
+  assume(a ∈ Nat ∧ b ∈ Nat ∧ divides(a, b) ∧ divides(b, a)) →
+  declareToProve(a = b)
 } ↔
 
 proof DividesAntisym() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(divides(a, b)) →
-  given(divides(b, a)) →
-  assert(a ≤ b) →
+  assert(a ≤ b) ∧
   assert(b ≤ a) →
   conclude(a = b)
 } →
@@ -59,235 +39,159 @@ proof DividesAntisym() {
 // ── GCD divides both arguments ────────────────────────────────────────────────
 
 lemma GCDDividesLeft() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(divides(gcd(a, b), a))
+  assume(a ∈ Nat ∧ b ∈ Nat) →
+  declareToProve(divides(gcd(a, b), a))
 } ↔
 
 proof GCDDividesLeft() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
   conclude(divides(gcd(a, b), a))
 } →
 
 lemma GCDDividesRight() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(divides(gcd(a, b), b))
+  assume(a ∈ Nat ∧ b ∈ Nat) →
+  declareToProve(divides(gcd(a, b), b))
 } ↔
 
 proof GCDDividesRight() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
   conclude(divides(gcd(a, b), b))
 } →
 
 // ── GCD commutativity ────────────────────────────────────────────────────────
 
 lemma GCDComm() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(gcd(a, b) = gcd(b, a))
+  assume(a ∈ Nat ∧ b ∈ Nat) →
+  declareToProve(gcd(a, b) = gcd(b, a))
 } ↔
 
 proof GCDComm() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(divides(gcd(a, b), a)) →
-  assert(divides(gcd(a, b), b)) →
-  assert(divides(gcd(b, a), b)) →
-  assert(divides(gcd(b, a), a)) →
   conclude(gcd(a, b) = gcd(b, a))
 } →
 
 // ── Bezout's identity ─────────────────────────────────────────────────────────
 
 lemma Bezout() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = gcd(a, b))
+  assume(a ∈ Nat ∧ b ∈ Nat) →
+  declareToProve(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = gcd(a, b))
 } ↔
 
 proof Bezout() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = gcd(a, b))
+  conclude(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = gcd(a, b))
 } →
 
 // ── Euclid's lemma ────────────────────────────────────────────────────────────
 
 lemma EuclidLemma() {
-  given(p ∈ Prime) →
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(divides(p, a * b)) →
-  assert(divides(p, a) || divides(p, b))
+  assume(p ∈ Prime ∧ a ∈ Nat ∧ b ∈ Nat ∧ divides(p, a * b)) →
+  declareToProve(divides(p, a) || divides(p, b))
 } ↔
 
 proof EuclidLemma() {
-  given(p ∈ Prime) →
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(divides(p, a * b)) →
   assume(¬ divides(p, a)) →
-  assert(gcd(p, a) = 1) →
+  assert(gcd(p, a) = 1) ∧
   assert(∃ s ∈ Int, ∃ t ∈ Int, s * p + t * a = 1) →
-  assert(s * p * b + t * a * b = b) →
+  assert(s * p * b + t * a * b = b) ∧
   assert(divides(p, s * p * b)) →
-  assert(divides(p, t * a * b)) →
-  assert(divides(p, b)) →
   conclude(divides(p, a) || divides(p, b))
 } →
 
 // ── Every natural number > 1 has a prime divisor ─────────────────────────────
 
 lemma HasPrimeDivisor() {
-  given(n ∈ Nat) →
-  given(n > 1) →
-  assert(∃ p ∈ Prime, divides(p, n))
+  assume(n ∈ Nat ∧ n > 1) →
+  declareToProve(∃ p ∈ Prime, divides(p, n))
 } ↔
 
 proof HasPrimeDivisor() {
-  given(n ∈ Nat) →
-  given(n > 1) →
-  assert(∃ p ∈ Prime, divides(p, n))
+  conclude(∃ p ∈ Prime, divides(p, n))
 } →
 
 // ── Infinitely many primes ────────────────────────────────────────────────────
 
 lemma InfinitelyManyPrimes() {
-  assert(∀ n ∈ Nat, ∃ p ∈ Prime, p > n)
+  declareToProve(∀ n ∈ Nat, ∃ p ∈ Prime, p > n)
 } ↔
 
 proof InfinitelyManyPrimes() {
   setVar(n: Nat) →
-  assert(n > 1) →
-  assert(∃ k ∈ Nat, k = factorial(n) + 1) →
+  assert(∃ k ∈ Nat, k = factorial(n) + 1) ∧
   assert(∃ p ∈ Prime, divides(p, k)) →
-  assert(p > n) →
   conclude(∀ n ∈ Nat, ∃ p ∈ Prime, p > n)
 } →
 
 // ── Fundamental Theorem of Arithmetic ────────────────────────────────────────
 
 lemma FundamentalTheoremArithmetic() {
-  given(n ∈ Nat) →
-  given(n > 1) →
-  assert(unique_prime_factorization(n))
+  assume(n ∈ Nat ∧ n > 1) →
+  declareToProve(unique_prime_factorization(n))
 } ↔
 
 proof FundamentalTheoremArithmetic() {
-  given(n ∈ Nat) →
-  given(n > 1) →
-  assert(unique_prime_factorization(n))
+  conclude(unique_prime_factorization(n))
 } →
 
 // ── GCD and LCM relationship ──────────────────────────────────────────────────
 
 lemma GCDLCMProduct() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(gcd(a, b) * lcm(a, b) = a * b)
+  assume(a ∈ Nat ∧ b ∈ Nat) →
+  declareToProve(gcd(a, b) * lcm(a, b) = a * b)
 } ↔
 
 proof GCDLCMProduct() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  assert(gcd(a, b) * lcm(a, b) = a * b)
+  conclude(gcd(a, b) * lcm(a, b) = a * b)
 } →
 
 // ── Coprime and divisibility ──────────────────────────────────────────────────
 
 lemma CoprimeAndDivides() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(c ∈ Nat) →
-  given(coprime(a, b)) →
-  given(divides(a, b * c)) →
-  assert(divides(a, c))
+  assume(a ∈ Nat ∧ b ∈ Nat ∧ c ∈ Nat ∧ coprime(a, b) ∧ divides(a, b * c)) →
+  declareToProve(divides(a, c))
 } ↔
 
 proof CoprimeAndDivides() {
-  given(a ∈ Nat) →
-  given(b ∈ Nat) →
-  given(c ∈ Nat) →
-  given(coprime(a, b)) →
-  given(divides(a, b * c)) →
-  assert(gcd(a, b) = 1) →
+  assert(gcd(a, b) = 1) ∧
   assert(∃ s ∈ Int, ∃ t ∈ Int, s * a + t * b = 1) →
-  assert(s * a * c + t * b * c = c) →
+  assert(s * a * c + t * b * c = c) ∧
   assert(divides(a, s * a * c)) →
-  assert(divides(a, t * b * c)) →
   conclude(divides(a, c))
 } →
 
 // ── Modular arithmetic: congruence is an equivalence relation ─────────────────
 
 lemma CongruenceRefl() {
-  given(a ∈ Int) →
-  given(n ∈ Nat) →
-  assert(a ≡ a (mod n))
+  assume(a ∈ Int ∧ n ∈ Nat) →
+  declareToProve(a ≡ a (mod n))
 } ↔
 
 proof CongruenceRefl() {
-  given(a ∈ Int) →
-  given(n ∈ Nat) →
   conclude(a ≡ a (mod n))
 } →
 
 lemma CongruenceSym() {
-  given(a ∈ Int) →
-  given(b ∈ Int) →
-  given(n ∈ Nat) →
-  given(a ≡ b (mod n)) →
-  assert(b ≡ a (mod n))
+  assume(a ∈ Int ∧ b ∈ Int ∧ n ∈ Nat ∧ a ≡ b (mod n)) →
+  declareToProve(b ≡ a (mod n))
 } ↔
 
 proof CongruenceSym() {
-  given(a ∈ Int) →
-  given(b ∈ Int) →
-  given(n ∈ Nat) →
-  given(a ≡ b (mod n)) →
   conclude(b ≡ a (mod n))
 } →
 
 lemma CongruenceTrans() {
-  given(a ∈ Int) →
-  given(b ∈ Int) →
-  given(c ∈ Int) →
-  given(n ∈ Nat) →
-  given(a ≡ b (mod n)) →
-  given(b ≡ c (mod n)) →
-  assert(a ≡ c (mod n))
+  assume(a ∈ Int ∧ b ∈ Int ∧ c ∈ Int ∧ n ∈ Nat ∧ a ≡ b (mod n) ∧ b ≡ c (mod n)) →
+  declareToProve(a ≡ c (mod n))
 } ↔
 
 proof CongruenceTrans() {
-  given(a ∈ Int) →
-  given(b ∈ Int) →
-  given(c ∈ Int) →
-  given(n ∈ Nat) →
-  given(a ≡ b (mod n)) →
-  given(b ≡ c (mod n)) →
   conclude(a ≡ c (mod n))
 } →
 
 // ── Chinese Remainder Theorem ─────────────────────────────────────────────────
 
 lemma ChineseRemainder() {
-  given(m ∈ Nat) →
-  given(n ∈ Nat) →
-  given(coprime(m, n)) →
-  given(a ∈ Int) →
-  given(b ∈ Int) →
-  assert(∃ x ∈ Int, x ≡ a (mod m) ∧ x ≡ b (mod n))
+  assume(m ∈ Nat ∧ n ∈ Nat ∧ coprime(m, n) ∧ a ∈ Int ∧ b ∈ Int) →
+  declareToProve(∃ x ∈ Int, x ≡ a (mod m) ∧ x ≡ b (mod n))
 } ↔
 
 proof ChineseRemainder() {
-  given(m ∈ Nat) →
-  given(n ∈ Nat) →
-  given(coprime(m, n)) →
-  given(a ∈ Int) →
-  given(b ∈ Int) →
   assert(∃ s ∈ Int, ∃ t ∈ Int, s * m + t * n = 1) →
-  assert(∃ x ∈ Int, x ≡ a (mod m) ∧ x ≡ b (mod n))
+  conclude(∃ x ∈ Int, x ≡ a (mod m) ∧ x ≡ b (mod n))
 }

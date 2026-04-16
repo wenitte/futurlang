@@ -6,12 +6,12 @@ proof ImageUnionForward() {
   assume(x in A union B) →
   assert((x in A) || (x in B)) →
   assume(x in A) →
-  assert(f(x) ∈ image(f, A)) →
+  assert(f(x) ∈ image(f, A)) ∧
   assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
   assert(x in A → f(x) ∈ image(f, A) ∪ image(f, B)) →
   assume(x in B) →
-  assert(f(x) ∈ image(f, B)) →
-  assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
+  assert(f(x) ∈ image(f, B)) ∧
+  assert(f(x) ∈ image(f, A) ∪ image(f, B)) ∧
   assert(x in B → f(x) ∈ image(f, A) ∪ image(f, B)) →
   assert(f(x) ∈ image(f, A) ∪ image(f, B)) →
   conclude(x in A union B → f(x) ∈ image(f, A) ∪ image(f, B))

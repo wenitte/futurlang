@@ -10,7 +10,8 @@ import { normalizeSurfaceSyntax, parseExpr } from './expr';
 import {
   ASTNode, BlockConnective,
   TheoremNode, DefinitionNode, StructField, StructNode, TypeDeclNode, TypeVariant, PatternNode, MatchCaseNode, MatchNode, ProofNode, LemmaNode, FnDeclNode, FnParam,
-  AssertNode, GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode, InductionNode, FoldNode,
+  AssertNode, DeclareToProveNode, ProveNode, AndIntroStepNode, OrIntroStepNode,
+  GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode, InductionNode, FoldNode,
   IntroNode, RewriteNode, ExactNode, ObtainNode,
 } from './ast';
 
@@ -97,8 +98,48 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
 
       // ── Statement nodes ────────────────────────────────────────────────────
       case 'assert': {
-        const expr = parseCallExpr(line.content, 'assert');
-        const node: AssertNode = { type: 'Assert', expr, connective: line.connective };
+        // Legacy keyword — kept for backward compatibility but emits a parse error node
+        const currentBlock = stack[stack.length - 1];
+        const inDecl = currentBlock?.type === 'Theorem' || currentBlock?.type === 'Lemma';
+        const suggestion = inDecl
+          ? 'Use declareToProve() to declare the theorem goal'
+          : 'Use prove() for intermediate steps or conclude() for the final step';
+        const errExpr = parseCallExpr(line.content, 'assert');
+        const node: AssertNode = { type: 'Assert', expr: errExpr, connective: line.connective };
+        // Store the migration hint as a parse error on the atom
+        (node as AssertNode & { legacyError?: string }).legacyError = `assert() is no longer valid. ${suggestion}`;
+        pushOrTop(stack, ast, node); break;
+      }
+      case 'given': {
+        // Legacy keyword — emit error
+        const errExpr = parseCallExpr(line.content, 'given');
+        const node: GivenNode = { type: 'Given', expr: errExpr, connective: line.connective };
+        (node as GivenNode & { legacyError?: string }).legacyError = 'given() is no longer valid. Use assume() to declare hypotheses';
+        pushOrTop(stack, ast, node); break;
+      }
+      case 'declareToProve': {
+        const expr = parseCallExpr(line.content, 'declareToProve');
+        const node: DeclareToProveNode = { type: 'DeclareToProve', expr, connective: line.connective };
+        pushOrTop(stack, ast, node); break;
+      }
+      case 'prove': {
+        const expr = parseCallExpr(line.content, 'prove');
+        const node: ProveNode = { type: 'Prove', expr, connective: line.connective };
+        pushOrTop(stack, ast, node); break;
+      }
+      case 'andIntroStep': {
+        // AndIntro(P, Q) — parse two comma-separated claims
+        const inner = line.content.replace(/^AndIntro\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+        const commaIdx = inner.lastIndexOf(',');
+        const left = commaIdx >= 0 ? inner.slice(0, commaIdx).trim() : inner;
+        const right = commaIdx >= 0 ? inner.slice(commaIdx + 1).trim() : '';
+        const node: AndIntroStepNode = { type: 'AndIntroStep', left, right, connective: line.connective };
+        pushOrTop(stack, ast, node); break;
+      }
+      case 'orIntroStep': {
+        // OrIntro(P ∨ Q) — the full disjunction to introduce
+        const claim = line.content.replace(/^OrIntro\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+        const node: OrIntroStepNode = { type: 'OrIntroStep', claim, connective: line.connective };
         pushOrTop(stack, ast, node); break;
       }
       case 'requires': {
@@ -118,11 +159,6 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
           throw new Error('ensures() may only appear inside fn blocks');
         }
         break;
-      }
-      case 'given': {
-        const expr = parseCallExpr(line.content, 'given');
-        const node: GivenNode = { type: 'Given', expr, connective: line.connective };
-        pushOrTop(stack, ast, node); break;
       }
       case 'assume': {
         const expr = parseCallExpr(line.content, 'assume');
@@ -680,6 +716,39 @@ function validateTopLevelConnectives(ast: ASTNode[]) {
       throw new Error(`Missing connective between top-level blocks after ${describeTopLevelNode(node)}`);
     }
   }
+}
+
+// Validate that a theorem/lemma declaration body uses the correct structure:
+// - Exactly one assume() with connective → (or no assume() for axioms)
+// - Exactly one declareToProve() as the final step
+// - No given() or assert() (legacy keywords produce legacyError annotations)
+export function validateDeclarationBody(name: string, body: ASTNode[]): string[] {
+  const errors: string[] = [];
+  for (const node of body) {
+    const legacy = (node as ASTNode & { legacyError?: string }).legacyError;
+    if (legacy) errors.push(`In '${name}': ${legacy}`);
+  }
+  const assumes = body.filter(n => n.type === 'Assume');
+  const dtp = body.filter(n => n.type === 'DeclareToProve');
+  const oldAssert = body.filter(n => n.type === 'Assert');
+  const oldGiven = body.filter(n => n.type === 'Given');
+  if (oldAssert.length > 0)
+    errors.push(`In '${name}': replace assert() with declareToProve() in declarations`);
+  if (oldGiven.length > 0)
+    errors.push(`In '${name}': replace given() with assume() in declarations`);
+  // Only require declareToProve when no legacy assert() is present (backward compat)
+  if (dtp.length === 0 && oldAssert.length === 0)
+    errors.push(`In '${name}': declaration must end with declareToProve(...)`);
+  if (dtp.length > 1)
+    errors.push(`In '${name}': declaration must have exactly one declareToProve()`);
+  if (assumes.length > 1)
+    errors.push(`In '${name}': declaration must have at most one assume() — combine multiple hypotheses with ∧`);
+  if (assumes.length === 1) {
+    const assumeNode = assumes[0] as AssumeNode;
+    if (assumeNode.connective !== '→')
+      errors.push(`In '${name}': assume() must be followed by → (logical implication to the conclusion)`);
+  }
+  return errors;
 }
 
 function isTopLevelBlock(node: ASTNode): node is BlockNode {

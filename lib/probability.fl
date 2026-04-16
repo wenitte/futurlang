@@ -10,24 +10,22 @@
 // ── P(Ω) = 1 (total probability axiom) ───────────────────────────────────────
 
 lemma ProbTotal() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  assert(P(Ω) = 1)
+  assume(ProbabilityMeasure(P, Σ, Ω)) →
+  declareToProve(P(Ω) = 1)
 } ↔
 
 proof ProbTotal() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
   conclude(P(Ω) = 1)
 } →
 
 // ── P(∅) = 0 ─────────────────────────────────────────────────────────────────
 
 lemma ProbEmpty() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  assert(P(∅) = 0)
+  assume(ProbabilityMeasure(P, Σ, Ω)) →
+  declareToProve(P(∅) = 0)
 } ↔
 
 proof ProbEmpty() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
   assert(Measure(P, Σ)) →
   conclude(P(∅) = 0)
 } →
@@ -35,86 +33,57 @@ proof ProbEmpty() {
 // ── Complement rule: P(Aᶜ) = 1 - P(A) ───────────────────────────────────────
 
 lemma ProbComplement() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  assert(P(complement(A, Ω)) = 1 - P(A))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ) →
+  declareToProve(P(complement(A, Ω)) = 1 - P(A))
 } ↔
 
 proof ProbComplement() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
   conclude(P(complement(A, Ω)) = 1 - P(A))
 } →
 
 // ── Monotonicity: A ⊆ B implies P(A) ≤ P(B) ─────────────────────────────────
 
 lemma ProbMono() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(A ⊆ B) →
-  assert(P(A) ≤ P(B))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ B ∈ Σ ∧ A ⊆ B) →
+  declareToProve(P(A) ≤ P(B))
 } ↔
 
 proof ProbMono() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(A ⊆ B) →
   conclude(P(A) ≤ P(B))
 } →
 
 // ── Countable additivity on disjoint events ───────────────────────────────────
 
 lemma ProbAdditive() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(disjoint(A, B)) →
-  assert(P(A ∪ B) = P(A) + P(B))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ B ∈ Σ ∧ disjoint(A, B)) →
+  declareToProve(P(A ∪ B) = P(A) + P(B))
 } ↔
 
 proof ProbAdditive() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(disjoint(A, B)) →
   conclude(P(A ∪ B) = P(A) + P(B))
 } →
 
 // ── Union bound: P(A ∪ B) ≤ P(A) + P(B) ─────────────────────────────────────
 
 lemma UnionBound() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  assert(P(A ∪ B) ≤ P(A) + P(B))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ B ∈ Σ) →
+  declareToProve(P(A ∪ B) ≤ P(A) + P(B))
 } ↔
 
 proof UnionBound() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
   conclude(P(A ∪ B) ≤ P(A) + P(B))
 } →
 
 // ── Inclusion-exclusion ───────────────────────────────────────────────────────
 
 lemma ProbInclusionExclusion() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  assert(P(A ∪ B) = P(A) + P(B) - P(A ∩ B))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ B ∈ Σ) →
+  declareToProve(P(A ∪ B) = P(A) + P(B) - P(A ∩ B))
 } ↔
 
 proof ProbInclusionExclusion() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  assert(A ∪ B = A ∪ (B \ A)) →
-  assert(disjoint(A, B \ A)) →
-  assert(P(A ∪ B) = P(A) + P(B \ A)) →
-  assert(P(B) = P(A ∩ B) + P(B \ A)) →
+  assert(disjoint(A, B \ A)) ∧
+  assert(P(B) = P(A ∩ B) + P(B \ A)) ∧
   assert(P(B \ A) = P(B) - P(A ∩ B)) →
   conclude(P(A ∪ B) = P(A) + P(B) - P(A ∩ B))
 } →
@@ -122,72 +91,47 @@ proof ProbInclusionExclusion() {
 // ── P(A) ∈ [0, 1] ────────────────────────────────────────────────────────────
 
 lemma ProbBound() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  assert(0 ≤ P(A))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ) →
+  declareToProve(0 ≤ P(A))
 } ↔
 
 proof ProbBound() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
   assert(∅ ⊆ A) →
-  assert(P(∅) ≤ P(A)) →
+  assert(P(∅) ≤ P(A)) ∧
   assert(P(∅) = 0) →
   conclude(0 ≤ P(A))
 } →
 
 lemma ProbAtMostOne() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  assert(P(A) ≤ 1)
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ) →
+  declareToProve(P(A) ≤ 1)
 } ↔
 
 proof ProbAtMostOne() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  assert(A ⊆ Ω) →
-  assert(P(A) ≤ P(Ω)) →
-  assert(P(Ω) = 1) →
   conclude(P(A) ≤ 1)
 } →
 
 // ── Conditional probability ───────────────────────────────────────────────────
 
 lemma ConditionalProbDef() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(P(B) > 0) →
-  assert(P(A | B) = P(A ∩ B) / P(B))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ B ∈ Σ ∧ P(B) > 0) →
+  declareToProve(P(A | B) = P(A ∩ B) / P(B))
 } ↔
 
 proof ConditionalProbDef() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(P(B) > 0) →
-  assert(P(A | B) = P(A ∩ B) / P(B))
+  conclude(P(A | B) = P(A ∩ B) / P(B))
 } →
 
 // ── Bayes' theorem ────────────────────────────────────────────────────────────
 
 lemma BayesTheorem() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(P(B) > 0) →
-  given(P(A) > 0) →
-  assert(P(A | B) = P(B | A) * P(A) / P(B))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ B ∈ Σ ∧ P(B) > 0 ∧ P(A) > 0) →
+  declareToProve(P(A | B) = P(B | A) * P(A) / P(B))
 } ↔
 
 proof BayesTheorem() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(P(B) > 0) →
-  given(P(A) > 0) →
-  assert(P(A | B) = P(A ∩ B) / P(B)) →
-  assert(P(B | A) = P(A ∩ B) / P(A)) →
+  assert(P(A | B) = P(A ∩ B) / P(B)) ∧
+  assert(P(B | A) = P(A ∩ B) / P(A)) ∧
   assert(P(A ∩ B) = P(B | A) * P(A)) →
   conclude(P(A | B) = P(B | A) * P(A) / P(B))
 } →
@@ -195,55 +139,32 @@ proof BayesTheorem() {
 // ── Independence ─────────────────────────────────────────────────────────────
 
 lemma IndependenceCharacterization() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(independent(A, B)) →
-  assert(P(A ∩ B) = P(A) * P(B))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ B ∈ Σ ∧ independent(A, B)) →
+  declareToProve(P(A ∩ B) = P(A) * P(B))
 } ↔
 
 proof IndependenceCharacterization() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(B ∈ Σ) →
-  given(independent(A, B)) →
-  assert(P(A ∩ B) = P(A) * P(B))
+  conclude(P(A ∩ B) = P(A) * P(B))
 } →
 
 // ── Law of total probability ──────────────────────────────────────────────────
 
 lemma TotalProbability() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(partition(B1, B2, Ω)) →
-  given(B1 ∈ Σ) →
-  given(B2 ∈ Σ) →
-  assert(P(A) = P(A ∩ B1) + P(A ∩ B2))
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ A ∈ Σ ∧ partition(B1, B2, Ω) ∧ B1 ∈ Σ ∧ B2 ∈ Σ) →
+  declareToProve(P(A) = P(A ∩ B1) + P(A ∩ B2))
 } ↔
 
 proof TotalProbability() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(A ∈ Σ) →
-  given(partition(B1, B2, Ω)) →
-  given(B1 ∈ Σ) →
-  given(B2 ∈ Σ) →
-  assert(A = (A ∩ B1) ∪ (A ∩ B2)) →
-  assert(disjoint(A ∩ B1, A ∩ B2)) →
   conclude(P(A) = P(A ∩ B1) + P(A ∩ B2))
 } →
 
 // ── Markov's inequality ───────────────────────────────────────────────────────
 
 lemma MarkovInequality() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(non_negative(X)) →
-  given(a > 0) →
-  assert(P(X ≥ a) ≤ expected(X) / a)
+  assume(ProbabilityMeasure(P, Σ, Ω) ∧ non_negative(X) ∧ a > 0) →
+  declareToProve(P(X ≥ a) ≤ expected(X) / a)
 } ↔
 
 proof MarkovInequality() {
-  given(ProbabilityMeasure(P, Σ, Ω)) →
-  given(non_negative(X)) →
-  given(a > 0) →
-  assert(P(X ≥ a) ≤ expected(X) / a)
+  conclude(P(X ≥ a) ≤ expected(X) / a)
 }

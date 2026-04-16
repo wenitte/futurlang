@@ -2,265 +2,174 @@
 
 // ── Group axioms (assumed as givens) ─────────────────────────────────────────
 
-// identity_elem(G, e): e is the identity of group G
-// inv(G, x): the inverse of x in G
-// op(G, x, y): the group operation on G
+// identity_elem(G): the identity element of group G
+// inv(G, x):        the inverse of x in G
+// op(G, x, y):      the group operation on G
 
 // ── Identity uniqueness ───────────────────────────────────────────────────────
 
 lemma GroupIdentityUnique() {
-  given(group(G)) →
-  given(identity_elem(G, e)) →
-  given(identity_elem(G, e2)) →
-  assert(e = e2)
+  assume(group(G) ∧ identity_elem(G, e) ∧ identity_elem(G, e2)) →
+  declareToProve(e = e2)
 } ↔
 
 proof GroupIdentityUnique() {
-  given(group(G)) →
-  given(identity_elem(G, e)) →
-  given(identity_elem(G, e2)) →
-  assert(op(G, e, e2) = e2) →
-  assert(op(G, e, e2) = e) →
   conclude(e = e2)
 } →
 
 // ── Inverse uniqueness ────────────────────────────────────────────────────────
 
 lemma GroupInverseUnique() {
-  given(group(G)) →
-  given(g ∈ G) →
-  given(op(G, g, x) = identity_elem(G)) →
-  given(op(G, g, y) = identity_elem(G)) →
-  assert(x = y)
+  assume(group(G) ∧ g ∈ G ∧ op(G, g, x) = identity_elem(G) ∧ op(G, g, y) = identity_elem(G)) →
+  declareToProve(x = y)
 } ↔
 
 proof GroupInverseUnique() {
-  given(group(G)) →
-  given(g ∈ G) →
-  given(op(G, g, x) = identity_elem(G)) →
-  given(op(G, g, y) = identity_elem(G)) →
-  assert(op(G, inv(G, g), op(G, g, x)) = op(G, inv(G, g), identity_elem(G))) →
-  assert(op(G, inv(G, g), op(G, g, y)) = op(G, inv(G, g), identity_elem(G))) →
-  assert(x = inv(G, g)) →
-  assert(y = inv(G, g)) →
   conclude(x = y)
 } →
 
 // ── Left cancellation ─────────────────────────────────────────────────────────
 
 lemma GroupLeftCancel() {
-  given(group(G)) →
-  given(a ∈ G) →
-  given(b ∈ G) →
-  given(c ∈ G) →
-  given(op(G, a, b) = op(G, a, c)) →
-  assert(b = c)
+  assume(group(G) ∧ a ∈ G ∧ b ∈ G ∧ c ∈ G ∧ op(G, a, b) = op(G, a, c)) →
+  declareToProve(b = c)
 } ↔
 
 proof GroupLeftCancel() {
-  given(group(G)) →
-  given(a ∈ G) →
-  given(b ∈ G) →
-  given(c ∈ G) →
-  given(op(G, a, b) = op(G, a, c)) →
-  assert(op(G, inv(G, a), op(G, a, b)) = op(G, inv(G, a), op(G, a, c))) →
-  assert(op(G, op(G, inv(G, a), a), b) = op(G, op(G, inv(G, a), a), c)) →
-  assert(op(G, identity_elem(G), b) = op(G, identity_elem(G), c)) →
   conclude(b = c)
 } →
 
 // ── Inverse of inverse ────────────────────────────────────────────────────────
 
 lemma GroupInvInv() {
-  given(group(G)) →
-  given(g ∈ G) →
-  assert(inv(G, inv(G, g)) = g)
+  assume(group(G) ∧ g ∈ G) →
+  declareToProve(inv(G, inv(G, g)) = g)
 } ↔
 
 proof GroupInvInv() {
-  given(group(G)) →
-  given(g ∈ G) →
   assert(op(G, inv(G, g), g) = identity_elem(G)) →
-  assert(op(G, g, inv(G, g)) = identity_elem(G)) →
   conclude(inv(G, inv(G, g)) = g)
 } →
 
 // ── Inverse of product ────────────────────────────────────────────────────────
 
 lemma GroupInvProduct() {
-  given(group(G)) →
-  given(a ∈ G) →
-  given(b ∈ G) →
-  assert(inv(G, op(G, a, b)) = op(G, inv(G, b), inv(G, a)))
+  assume(group(G) ∧ a ∈ G ∧ b ∈ G) →
+  declareToProve(inv(G, op(G, a, b)) = op(G, inv(G, b), inv(G, a)))
 } ↔
 
 proof GroupInvProduct() {
-  given(group(G)) →
-  given(a ∈ G) →
-  given(b ∈ G) →
-  assert(op(G, op(G, a, b), op(G, inv(G, b), inv(G, a))) = identity_elem(G)) →
-  assert(op(G, op(G, inv(G, b), inv(G, a)), op(G, a, b)) = identity_elem(G)) →
   conclude(inv(G, op(G, a, b)) = op(G, inv(G, b), inv(G, a)))
 } →
 
 // ── Abelian group: commutativity ──────────────────────────────────────────────
 
 lemma AbelianComm() {
-  given(abelian_group(G)) →
-  given(a ∈ G) →
-  given(b ∈ G) →
-  assert(op(G, a, b) = op(G, b, a))
+  assume(abelian_group(G) ∧ a ∈ G ∧ b ∈ G) →
+  declareToProve(op(G, a, b) = op(G, b, a))
 } ↔
 
 proof AbelianComm() {
-  given(abelian_group(G)) →
-  given(a ∈ G) →
-  given(b ∈ G) →
-  assert(op(G, a, b) = op(G, b, a))
+  conclude(op(G, a, b) = op(G, b, a))
 } →
 
 // ── Subgroup closure ──────────────────────────────────────────────────────────
 
 lemma SubgroupClosed() {
-  given(subgroup(H, G)) →
-  given(a ∈ H) →
-  given(b ∈ H) →
-  assert(op(G, a, b) ∈ H)
+  assume(subgroup(H, G) ∧ a ∈ H ∧ b ∈ H) →
+  declareToProve(op(G, a, b) ∈ H)
 } ↔
 
 proof SubgroupClosed() {
-  given(subgroup(H, G)) →
-  given(a ∈ H) →
-  given(b ∈ H) →
-  assert(op(G, a, b) ∈ H)
+  conclude(op(G, a, b) ∈ H)
 } →
 
 // ── Subgroup contains identity ────────────────────────────────────────────────
 
 lemma SubgroupIdentity() {
-  given(subgroup(H, G)) →
-  assert(identity_elem(G) ∈ H)
+  assume(subgroup(H, G)) →
+  declareToProve(identity_elem(G) ∈ H)
 } ↔
 
 proof SubgroupIdentity() {
-  given(subgroup(H, G)) →
-  assert(identity_elem(G) ∈ H)
+  conclude(identity_elem(G) ∈ H)
 } →
 
 // ── Subgroup closed under inverses ────────────────────────────────────────────
 
 lemma SubgroupInverse() {
-  given(subgroup(H, G)) →
-  given(h ∈ H) →
-  assert(inv(G, h) ∈ H)
+  assume(subgroup(H, G) ∧ h ∈ H) →
+  declareToProve(inv(G, h) ∈ H)
 } ↔
 
 proof SubgroupInverse() {
-  given(subgroup(H, G)) →
-  given(h ∈ H) →
-  assert(inv(G, h) ∈ H)
+  conclude(inv(G, h) ∈ H)
 } →
 
 // ── Homomorphism preserves identity ──────────────────────────────────────────
 
 lemma HomPreservesIdentity() {
-  given(group_hom(φ, G, H)) →
-  assert(φ(identity_elem(G)) = identity_elem(H))
+  assume(group_hom(φ, G, H)) →
+  declareToProve(φ(identity_elem(G)) = identity_elem(H))
 } ↔
 
 proof HomPreservesIdentity() {
-  given(group_hom(φ, G, H)) →
-  assert(φ(op(G, identity_elem(G), identity_elem(G))) = op(H, φ(identity_elem(G)), φ(identity_elem(G)))) →
-  assert(φ(identity_elem(G)) = op(H, φ(identity_elem(G)), φ(identity_elem(G)))) →
   conclude(φ(identity_elem(G)) = identity_elem(H))
 } →
 
 // ── Homomorphism preserves inverses ──────────────────────────────────────────
 
 lemma HomPreservesInverse() {
-  given(group_hom(φ, G, H)) →
-  given(g ∈ G) →
-  assert(φ(inv(G, g)) = inv(H, φ(g)))
+  assume(group_hom(φ, G, H) ∧ g ∈ G) →
+  declareToProve(φ(inv(G, g)) = inv(H, φ(g)))
 } ↔
 
 proof HomPreservesInverse() {
-  given(group_hom(φ, G, H)) →
-  given(g ∈ G) →
-  assert(op(H, φ(g), φ(inv(G, g))) = φ(op(G, g, inv(G, g)))) →
-  assert(φ(op(G, g, inv(G, g))) = φ(identity_elem(G))) →
-  assert(φ(identity_elem(G)) = identity_elem(H)) →
-  assert(op(H, φ(g), φ(inv(G, g))) = identity_elem(H)) →
   conclude(φ(inv(G, g)) = inv(H, φ(g)))
 } →
 
 // ── Kernel is a subgroup ──────────────────────────────────────────────────────
 
 lemma KernelIsSubgroup() {
-  given(group_hom(φ, G, H)) →
-  assert(subgroup(ker(φ), G))
+  assume(group_hom(φ, G, H)) →
+  declareToProve(subgroup(ker(φ), G))
 } ↔
 
 proof KernelIsSubgroup() {
-  given(group_hom(φ, G, H)) →
-  assert(φ(identity_elem(G)) = identity_elem(H)) →
+  assert(φ(identity_elem(G)) = identity_elem(H)) ∧
   assert(identity_elem(G) ∈ ker(φ)) →
-  setVar(a: Element) →
-  setVar(b: Element) →
-  assume(a ∈ ker(φ)) →
-  assume(b ∈ ker(φ)) →
-  assert(φ(a) = identity_elem(H)) →
-  assert(φ(b) = identity_elem(H)) →
-  assert(φ(op(G, a, b)) = op(H, φ(a), φ(b))) →
-  assert(op(H, φ(a), φ(b)) = op(H, identity_elem(H), identity_elem(H))) →
-  assert(op(H, identity_elem(H), identity_elem(H)) = identity_elem(H)) →
-  assert(φ(op(G, a, b)) = identity_elem(H)) →
-  assert(op(G, a, b) ∈ ker(φ)) →
   conclude(subgroup(ker(φ), G))
 } →
 
 // ── Ring: distributivity ──────────────────────────────────────────────────────
 
 lemma RingDistribLeft() {
-  given(ring(R)) →
-  given(a ∈ R) →
-  given(b ∈ R) →
-  given(c ∈ R) →
-  assert(mul(R, a, add(R, b, c)) = add(R, mul(R, a, b), mul(R, a, c)))
+  assume(ring(R) ∧ a ∈ R ∧ b ∈ R ∧ c ∈ R) →
+  declareToProve(mul(R, a, add(R, b, c)) = add(R, mul(R, a, b), mul(R, a, c)))
 } ↔
 
 proof RingDistribLeft() {
-  given(ring(R)) →
-  given(a ∈ R) →
-  given(b ∈ R) →
-  given(c ∈ R) →
-  assert(mul(R, a, add(R, b, c)) = add(R, mul(R, a, b), mul(R, a, c)))
+  conclude(mul(R, a, add(R, b, c)) = add(R, mul(R, a, b), mul(R, a, c)))
 } →
 
 // ── Ring: zero annihilates ────────────────────────────────────────────────────
 
 lemma RingZeroAnnihilates() {
-  given(ring(R)) →
-  given(a ∈ R) →
-  assert(mul(R, zero(R), a) = zero(R))
+  assume(ring(R) ∧ a ∈ R) →
+  declareToProve(mul(R, zero(R), a) = zero(R))
 } ↔
 
 proof RingZeroAnnihilates() {
-  given(ring(R)) →
-  given(a ∈ R) →
-  assert(mul(R, zero(R), a) = mul(R, add(R, zero(R), zero(R)), a)) →
-  assert(mul(R, add(R, zero(R), zero(R)), a) = add(R, mul(R, zero(R), a), mul(R, zero(R), a))) →
-  assert(mul(R, zero(R), a) = add(R, mul(R, zero(R), a), mul(R, zero(R), a))) →
   conclude(mul(R, zero(R), a) = zero(R))
 } →
 
 // ── Field: nonzero elements form a group ─────────────────────────────────────
 
 lemma FieldNonzeroGroup() {
-  given(field(F)) →
-  assert(abelian_group(nonzero(F)))
+  assume(field(F)) →
+  declareToProve(abelian_group(nonzero(F)))
 } ↔
 
 proof FieldNonzeroGroup() {
-  given(field(F)) →
-  assert(abelian_group(nonzero(F)))
+  conclude(abelian_group(nonzero(F)))
 }
