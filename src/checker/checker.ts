@@ -7451,5 +7451,73 @@ export function deriveConclusions(ctx: Context): string[] {
     }
   }
 
+  // ── OR_ELIM: P ∨ Q, P → R, Q → R  →  R ─────────────────────────────────
+  for (const obj of pool) {
+    const disj = parseDisjunctionCanonical(obj.claim);
+    if (!disj) continue;
+    const [p, q] = disj;
+    // For each P → R in pool, check if Q → R is also in pool
+    for (const imp of implications) {
+      const impl = parseImplicationCanonical(imp.claim)!;
+      if (!sameProp(impl[0], p)) continue;
+      const r = impl[1];
+      const hasQtoR = implications.some(o => {
+        const i2 = parseImplicationCanonical(o.claim)!;
+        return sameProp(i2[0], q) && sameProp(i2[1], r);
+      });
+      if (hasQtoR) add(r);
+    }
+  }
+
+  // ── DISJUNCTIVE SYLLOGISM: P ∨ Q, ¬P  →  Q  (and symmetric) ────────────
+  for (const obj of pool) {
+    const disj = parseDisjunctionCanonical(obj.claim);
+    if (!disj) continue;
+    const [p, q] = disj;
+    if (pool.some(o => sameProp(o.claim, `¬${p}`) || sameProp(o.claim, `¬(${p})`))) add(q);
+    if (pool.some(o => sameProp(o.claim, `¬${q}`) || sameProp(o.claim, `¬(${q})`))) add(p);
+  }
+
+  // ── EQUALITY_SUBST: A = B, x ∈ A  →  x ∈ B  (and symmetric) ───────────
+  for (const obj of pool) {
+    const eq = parseEqualityCanonical(obj.claim);
+    if (!eq) continue;
+    for (const memObj of pool) {
+      const mem = parseMembershipCanonical(memObj.claim);
+      if (!mem) continue;
+      if (sameProp(mem.set, eq.left))  add(`${mem.element} ∈ ${eq.right}`);
+      if (sameProp(mem.set, eq.right)) add(`${mem.element} ∈ ${eq.left}`);
+      if (sameProp(mem.element, eq.left))  add(`${eq.right} ∈ ${mem.set}`);
+      if (sameProp(mem.element, eq.right)) add(`${eq.left} ∈ ${mem.set}`);
+    }
+  }
+
+  // ── UNION_INTRO: x ∈ A  →  x ∈ A ∪ B for each set B appearing in pool ──
+  // Bounded: only generate unions over sets already mentioned in the pool.
+  const setsInPool = new Set<string>();
+  for (const obj of pool) {
+    const mem = parseMembershipCanonical(obj.claim);
+    if (mem) setsInPool.add(mem.set);
+    const sub = parseSubsetCanonical(obj.claim);
+    if (sub) { setsInPool.add(sub.left); setsInPool.add(sub.right); }
+  }
+  for (const obj of pool) {
+    const mem = parseMembershipCanonical(obj.claim);
+    if (!mem) continue;
+    for (const s of setsInPool) {
+      if (s !== mem.set) {
+        add(`${mem.element} ∈ ${mem.set} ∪ ${s}`);
+        add(`${mem.element} ∈ ${s} ∪ ${mem.set}`);
+      }
+    }
+  }
+
+  // ── DOUBLE_NEG_ELIM: ¬¬P  →  P ──────────────────────────────────────────
+  for (const obj of pool) {
+    if (obj.claim.startsWith('¬¬')) {
+      add(obj.claim.slice(2).trim());
+    }
+  }
+
   return Array.from(derived);
 }
