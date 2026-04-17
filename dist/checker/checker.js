@@ -160,6 +160,7 @@ function checkPair(pair, lemmas, structs, types, _options) {
     let prevDerivedObject = null;
     let prevConnective = null;
     let prevIsAssume = false;
+    let prevAssumeKind = 'assume()';
     for (let index = 0; index < pair.proof.body.length; index++) {
         const step = index + 1;
         const node = pair.proof.body[index];
@@ -183,21 +184,28 @@ function checkPair(pair, lemmas, structs, types, _options) {
         const currDerivedObject = ctx.objects.length > objectsBefore
             ? ctx.objects[ctx.objects.length - 1]
             : null;
+        // Apply creates objects in ctx.objects when it successfully resolves a lemma.
+        // Include it so that connectives after apply() are validated.
         const isDerivationStep = node.type === 'Prove' || node.type === 'Conclude'
-            || node.type === 'Assert' || node.type === 'AndIntroStep' || node.type === 'OrIntroStep';
+            || node.type === 'Assert' || node.type === 'AndIntroStep' || node.type === 'OrIntroStep'
+            || node.type === 'Apply';
         const isNewStyleStep = node.type === 'Prove' || node.type === 'Assert'
-            || node.type === 'AndIntroStep' || node.type === 'OrIntroStep';
-        const isAssume = node.type === 'Assume';
+            || node.type === 'AndIntroStep' || node.type === 'OrIntroStep'
+            || node.type === 'Apply';
+        // assume(), intro(), and obtain() all add to ctx.assumptions; the next derivation
+        // step always depends on the introduced hypothesis, so must use →.
+        const isAssume = node.type === 'Assume' || node.type === 'Intro' || node.type === 'Obtain';
         // Validate the connective from the PREVIOUS step to THIS step (new-style nodes only)
-        if (isNewStyleStep && currDerivedObject && prevDerivedObject && prevConnective) {
+        if (isNewStyleStep && prevDerivedObject && prevConnective) {
             if (prevIsAssume) {
-                // After assume(), must use → (the hypothesis leads to what follows)
+                // After assume()/intro()/obtain(), must use → regardless of whether the current
+                // step creates a new object (it may be a reuse step — the rule still applies).
                 if (prevConnective !== '→') {
-                    const msg = `Incorrect connective '${prevConnective}' after assume(): use → because the hypothesis leads to the following derivation.`;
+                    const msg = `Incorrect connective '${prevConnective}' after ${prevAssumeKind}: use → because the introduced hypothesis leads to the following derivation.`;
                     ctx.diagnostics.push({ severity: 'error', step, message: msg, rule: 'CONNECTIVE' });
                 }
             }
-            else {
+            else if (currDerivedObject) {
                 validateConnective(ctx, prevConnective, prevDerivedObject, currDerivedObject, step);
             }
         }
@@ -208,10 +216,11 @@ function checkPair(pair, lemmas, structs, types, _options) {
             prevIsAssume = false;
         }
         else if (isAssume) {
-            // assume() adds to ctx.assumptions, not ctx.objects — track it separately
+            // assume()/intro()/obtain() add to ctx.assumptions — track the last assumption added
             prevDerivedObject = ctx.assumptions[ctx.assumptions.length - 1] ?? null;
             prevConnective = node.connective;
             prevIsAssume = true;
+            prevAssumeKind = node.type === 'Intro' ? 'intro()' : node.type === 'Obtain' ? 'obtain()' : 'assume()';
         }
     }
     const derivedConclusion = findDerivedConclusion(ctx, goal);

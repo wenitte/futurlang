@@ -1,0 +1,50 @@
+// multi-assume.fl
+//
+// Demonstrates that multiple independent hypotheses in a theorem declaration
+// are joined with ∧, not →.
+//
+// assume(p) ∧ assume(q) → declareToProve(r)
+//
+// is logically equivalent to:
+//
+// assume(p ∧ q) → declareToProve(r)
+//
+// Both declare p and q as independent external premises. Using → between
+// two assume() calls would incorrectly assert that q depends on p.
+
+// ── Two assumes joined with ∧ ─────────────────────────────────────────────
+
+theorem ConjFromTwoAssumes() {
+  assume(P) ∧
+  assume(Q) →
+  declareToProve(P ∧ Q)
+} ↔
+
+proof ConjFromTwoAssumes() {
+  conclude(P ∧ Q)
+} ∧
+
+// ── Single conjunct form — equivalent ─────────────────────────────────────
+
+theorem ConjFromOneAssume() {
+  assume(P ∧ Q) →
+  declareToProve(P ∧ Q)
+} ↔
+
+proof ConjFromOneAssume() {
+  conclude(P ∧ Q)
+} ∧
+
+// ── Three independent premises ────────────────────────────────────────────
+
+theorem ThreePremises() {
+  assume(P) ∧
+  assume(Q) ∧
+  assume(R) →
+  declareToProve(R ∧ (P ∧ Q))
+} ↔
+
+proof ThreePremises() {
+  prove(P ∧ Q) →
+  conclude(R ∧ (P ∧ Q))
+}

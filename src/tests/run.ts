@@ -1069,6 +1069,72 @@ proof OrRight() {
   assert.ok(hasWarning, 'expected warning for unvalidated ∨ connective');
 });
 
+runTest('proof-step ∧ after obtain() is rejected (introduced hypothesis must be used with →)', () => {
+  const report = checkFile(parseProgram(`
+lemma ObtainAndFail() {
+  assume(∃ x ∈ S, x ∈ T) →
+  declareToProve(∃ y ∈ T, y ∈ S)
+} ↔
+
+proof ObtainAndFail() {
+  obtain(a, ∃ x ∈ S, x ∈ T) ∧
+  prove(a ∈ T) →
+  conclude(∃ y ∈ T, y ∈ S)
+}
+`));
+  assert.equal(report.state, 'FAILED');
+  const hasConnError = (report.reports[0]?.diagnostics ?? []).some(d =>
+    d.severity === 'error' && d.message.includes('obtain()')
+  );
+  assert.ok(hasConnError, 'expected connective error for obtain() ∧ prove()');
+});
+
+runTest('proof-step ∧ after intro() is rejected (introduced hypothesis must be used with →)', () => {
+  const report = checkFile(parseProgram(`
+lemma IntroAndFail() {
+  declareToProve(P → P)
+} ↔
+
+proof IntroAndFail() {
+  intro(hp) ∧
+  prove(P)
+}
+`));
+  assert.equal(report.state, 'FAILED');
+  const hasConnError = (report.reports[0]?.diagnostics ?? []).some(d =>
+    d.severity === 'error' && d.message.includes('intro()')
+  );
+  assert.ok(hasConnError, 'expected connective error for intro() ∧ prove()');
+});
+
+runTest('proof-step ∧ after apply() is rejected when the next step depends on the applied lemma', () => {
+  const report = checkFile(parseProgram(`
+lemma MP() {
+  assume(P ∧ (P → Q)) →
+  declareToProve(Q)
+} ↔
+
+proof MP() {
+  conclude(Q)
+} →
+
+theorem ApplyAndFail() {
+  assume(P ∧ (P → Q)) →
+  declareToProve(Q ∧ P)
+} ↔
+
+proof ApplyAndFail() {
+  apply(MP) ∧
+  prove(Q ∧ P)
+}
+`));
+  assert.equal(report.state, 'FAILED');
+  const hasConnError = report.reports.some(r =>
+    (r.diagnostics ?? []).some(d => d.severity === 'error' && d.message.includes('depends on') && d.message.includes('∧'))
+  );
+  assert.ok(hasConnError, 'expected connective error for apply() ∧ prove() where prove depends on apply result');
+});
+
 runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
   const demoDir = path.resolve(__dirname, '../../examples/demo');
   const files = collectDemoFiles(demoDir);

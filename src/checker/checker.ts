@@ -304,6 +304,7 @@ function checkPair(
   let prevDerivedObject: ProofObject | null = null;
   let prevConnective: import('../parser/ast').BlockConnective = null;
   let prevIsAssume = false;
+  let prevAssumeKind = 'assume()';
 
   for (let index = 0; index < pair.proof.body.length; index++) {
     const step = index + 1;
@@ -330,21 +331,28 @@ function checkPair(
       ? ctx.objects[ctx.objects.length - 1]
       : null;
 
+    // Apply creates objects in ctx.objects when it successfully resolves a lemma.
+    // Include it so that connectives after apply() are validated.
     const isDerivationStep = node.type === 'Prove' || node.type === 'Conclude'
-      || node.type === 'Assert' || node.type === 'AndIntroStep' || node.type === 'OrIntroStep';
+      || node.type === 'Assert' || node.type === 'AndIntroStep' || node.type === 'OrIntroStep'
+      || node.type === 'Apply';
     const isNewStyleStep = node.type === 'Prove' || node.type === 'Assert'
-      || node.type === 'AndIntroStep' || node.type === 'OrIntroStep';
-    const isAssume = node.type === 'Assume';
+      || node.type === 'AndIntroStep' || node.type === 'OrIntroStep'
+      || node.type === 'Apply';
+    // assume(), intro(), and obtain() all add to ctx.assumptions; the next derivation
+    // step always depends on the introduced hypothesis, so must use →.
+    const isAssume = node.type === 'Assume' || node.type === 'Intro' || node.type === 'Obtain';
 
     // Validate the connective from the PREVIOUS step to THIS step (new-style nodes only)
-    if (isNewStyleStep && currDerivedObject && prevDerivedObject && prevConnective) {
+    if (isNewStyleStep && prevDerivedObject && prevConnective) {
       if (prevIsAssume) {
-        // After assume(), must use → (the hypothesis leads to what follows)
+        // After assume()/intro()/obtain(), must use → regardless of whether the current
+        // step creates a new object (it may be a reuse step — the rule still applies).
         if (prevConnective !== '→') {
-          const msg = `Incorrect connective '${prevConnective}' after assume(): use → because the hypothesis leads to the following derivation.`;
+          const msg = `Incorrect connective '${prevConnective}' after ${prevAssumeKind}: use → because the introduced hypothesis leads to the following derivation.`;
           ctx.diagnostics.push({ severity: 'error', step, message: msg, rule: 'CONNECTIVE' });
         }
-      } else {
+      } else if (currDerivedObject) {
         validateConnective(ctx, prevConnective, prevDerivedObject, currDerivedObject, step);
       }
     }
@@ -355,10 +363,11 @@ function checkPair(
       prevConnective = (node as ASTNode & { connective?: import('../parser/ast').BlockConnective }).connective ?? null;
       prevIsAssume = false;
     } else if (isAssume) {
-      // assume() adds to ctx.assumptions, not ctx.objects — track it separately
+      // assume()/intro()/obtain() add to ctx.assumptions — track the last assumption added
       prevDerivedObject = ctx.assumptions[ctx.assumptions.length - 1] ?? null;
       prevConnective = (node as AssumeNode).connective;
       prevIsAssume = true;
+      prevAssumeKind = node.type === 'Intro' ? 'intro()' : node.type === 'Obtain' ? 'obtain()' : 'assume()';
     }
   }
 
@@ -7306,4 +7315,141 @@ function deriveTopoExtClaim(ctx: Context, claim: string, step: number) {
   }
 
   return null;
+}
+
+// ── deriveConclusions ────────────────────────────────────────────────────────
+//
+// Forward-chaining generative mode: given the current pool of facts, produce
+// all claims that immediately follow from the structural kernel rules without
+// the user needing to name a target.
+//
+// Returns the set of new claim strings derivable from the pool that are not
+// already present in the pool.  Does NOT mutate ctx.
+
+export function deriveConclusions(ctx: Context): string[] {
+  // Deduplicate: premises and ctx.objects both contain seeded premises
+  const seen = new Set<string>();
+  const pool = allContextObjects(ctx).filter(o => {
+    if (seen.has(o.claim)) return false;
+    seen.add(o.claim);
+    return true;
+  });
+  const knownClaims = new Set(pool.map(o => o.claim));
+  const derived = new Set<string>();
+
+  const add = (claim: string) => {
+    const norm = claim.trim();
+    if (norm && !knownClaims.has(norm)) derived.add(norm);
+  };
+
+  // ── AND_ELIM: P ∧ Q  →  P, Q ───────────────────────────────────────────
+  for (const obj of pool) {
+    const conj = parseConjunctionCanonical(obj.claim);
+    if (conj) {
+      add(conj[0]);
+      add(conj[1]);
+    }
+  }
+
+  // ── IMPLIES_ELIM (modus ponens): P → Q, P  →  Q ─────────────────────────
+  for (const obj of pool) {
+    const impl = parseImplicationCanonical(obj.claim);
+    if (!impl) continue;
+    const antecedentKnown = pool.some(o => sameProp(o.claim, impl[0]));
+    if (antecedentKnown) add(impl[1]);
+  }
+
+  // ── IFF_ELIM: P ↔ Q  →  P → Q, Q → P; and forward modus ponens ─────────
+  for (const obj of pool) {
+    const iff = parseIffCanonical(obj.claim);
+    if (!iff) continue;
+    add(`${iff[0]} → ${iff[1]}`);
+    add(`${iff[1]} → ${iff[0]}`);
+    if (pool.some(o => sameProp(o.claim, iff[0]))) add(iff[1]);
+    if (pool.some(o => sameProp(o.claim, iff[1]))) add(iff[0]);
+  }
+
+  // ── SUBSET_ELIM: x ∈ A, A ⊆ B  →  x ∈ B ────────────────────────────────
+  for (const subObj of pool) {
+    const subset = parseSubsetCanonical(subObj.claim);
+    if (!subset) continue;
+    for (const memObj of pool) {
+      const mem = parseMembershipCanonical(memObj.claim);
+      if (!mem) continue;
+      if (sameProp(mem.set, subset.left)) {
+        add(`${mem.element} ∈ ${subset.right}`);
+      }
+    }
+  }
+
+  // ── SUBSET_TRANSITIVITY: A ⊆ B, B ⊆ C  →  A ⊆ C ────────────────────────
+  for (const obj1 of pool) {
+    const s1 = parseSubsetCanonical(obj1.claim);
+    if (!s1) continue;
+    for (const obj2 of pool) {
+      if (obj1 === obj2) continue;
+      const s2 = parseSubsetCanonical(obj2.claim);
+      if (!s2) continue;
+      if (sameProp(s1.right, s2.left)) {
+        add(`${s1.left} ⊆ ${s2.right}`);
+      }
+    }
+  }
+
+  // ── SUBSET_ANTISYMMETRY: A ⊆ B, B ⊆ A  →  A = B ────────────────────────
+  for (const obj1 of pool) {
+    const s1 = parseSubsetCanonical(obj1.claim);
+    if (!s1) continue;
+    for (const obj2 of pool) {
+      if (obj1 === obj2) continue;
+      const s2 = parseSubsetCanonical(obj2.claim);
+      if (!s2) continue;
+      if (sameProp(s1.left, s2.right) && sameProp(s1.right, s2.left)) {
+        add(`${s1.left} = ${s1.right}`);
+      }
+    }
+  }
+
+  // ── INTERSECTION_ELIM: x ∈ A ∩ B  →  x ∈ A, x ∈ B ─────────────────────
+  for (const obj of pool) {
+    const mem = parseMembershipCanonical(obj.claim);
+    if (!mem) continue;
+    const inter = parseBinarySetCanonical(mem.set, '∩');
+    if (inter) {
+      add(`${mem.element} ∈ ${inter[0]}`);
+      add(`${mem.element} ∈ ${inter[1]}`);
+    }
+  }
+
+  // ── INTERSECTION_INTRO: x ∈ A, x ∈ B  →  x ∈ A ∩ B ────────────────────
+  const membershipsByElement = new Map<string, string[]>();
+  for (const obj of pool) {
+    const mem = parseMembershipCanonical(obj.claim);
+    if (!mem) continue;
+    const sets = membershipsByElement.get(mem.element) ?? [];
+    sets.push(mem.set);
+    membershipsByElement.set(mem.element, sets);
+  }
+  for (const [elem, sets] of membershipsByElement) {
+    for (let i = 0; i < sets.length; i++) {
+      for (let j = i + 1; j < sets.length; j++) {
+        add(`${elem} ∈ ${sets[i]} ∩ ${sets[j]}`);
+      }
+    }
+  }
+
+  // ── IFF_INTRO: P → Q, Q → P  →  P ↔ Q ──────────────────────────────────
+  const implications = pool.filter(o => parseImplicationCanonical(o.claim) !== null);
+  for (const obj1 of implications) {
+    const impl1 = parseImplicationCanonical(obj1.claim)!;
+    for (const obj2 of implications) {
+      if (obj1 === obj2) continue;
+      const impl2 = parseImplicationCanonical(obj2.claim)!;
+      if (sameProp(impl1[0], impl2[1]) && sameProp(impl1[1], impl2[0])) {
+        add(`${impl1[0]} ↔ ${impl1[1]}`);
+      }
+    }
+  }
+
+  return Array.from(derived);
 }

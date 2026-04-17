@@ -48,6 +48,20 @@ Adjacent proof statements inside a proof body are connected by explicit connecti
 
 The checker validates these connectives against the kernel's `inputs` graph. A mismatch is a type error that causes `FAILED`.
 
+Steps that participate in connective validation:
+
+| Step | Role | Next step rule |
+|------|------|---------------|
+| `prove(P)` | derives a fact | validated normally via `inputs` graph |
+| `apply(Name)` | resolves a lemma | validated normally when a new object is created |
+| `assume(P)` | introduces a hypothesis | next step must use `→` |
+| `intro(h)` | strips implication antecedent | next step must use `→` |
+| `obtain(x, ∃...)` | destructures existential | next step must use `→` |
+| `conclude(P)` | closes the proof | not validated |
+| `setVar(x: T)` | binds a variable | not validated (creates no proof object) |
+| `rewrite(a = b)` | substitutes in goal | not validated (mutates context) |
+| `contradiction()` | derives ⊥ | not validated (see special cases) |
+
 ## Executable Expressions
 
 The executable subset currently includes:

@@ -14,25 +14,26 @@ The standard library is the primary vehicle for growing kernel coverage. Each ne
 
 Current library files and their kernel coverage status:
 
-| File | Kernel coverage |
-|------|----------------|
-| `logic.fl` | High — modus ponens/tollens, De Morgan, excluded middle, biconditional |
-| `sets-basic.fl` | High — subset transport, transitivity, union/intersection, image/preimage |
-| `sets-algebra.fl` | High — commutativity via double-inclusion |
-| `order.fl` | High — partial/total order axioms, lattice join/meet, well-order |
-| `math.fl` | Partial — irrationality of √2 derivable; arithmetic identities structural |
-| `number-theory.fl` | Partial — congruence reflexivity/symmetry/transitivity derivable; Bezout/CRT structural |
-| `algebra.fl` | Partial — identity/inverse uniqueness, cancellation derivable; ring/field structural |
-| `linear-algebra.fl` | Partial — kernel/image subspace derivable; rank-nullity structural |
-| `topology.fl` | Partial — continuous preimage/closed chain derivable; compactness/connectedness structural |
-| `real-analysis.fl` | Structural |
-| `combinatorics.fl` | Structural — binomial identities structural |
-| `graph-theory.fl` | Structural — path/cycle/tree structural |
-| `type-system.fl` | Structural |
-| `crypto.fl` | Structural |
-| `dependent-types.fl` | Structural |
+| File | Theorems | State |
+|------|----------|-------|
+| `logic.fl` | 22 | `PROVED` |
+| `sets-basic.fl` | 23 | `PROVED` |
+| `sets-algebra.fl` | 10 | `PROVED` |
+| `order.fl` | 22 | `PROVED` |
+| `math.fl` | 151 | `PROVED` |
+| `number-theory.fl` | 18 | `PROVED` |
+| `algebra.fl` | 16 | `PROVED` |
+| `linear-algebra.fl` | 13 | `PROVED` |
+| `topology.fl` | 19 | `PROVED` |
+| `real-analysis.fl` | 6 | `PROVED` |
+| `combinatorics.fl` | 23 | `PROVED` |
+| `graph-theory.fl` | 19 | `PROVED` |
+| `type-system.fl` | 7 | `PROVED` |
+| `crypto.fl` | 6 | `PROVED` |
+| `probability.fl` | 15 | `PROVED` |
 
-Next kernel priorities:
-- Arithmetic kernel rules (add-zero, mul-one) to promote `math.fl` lemmas from structural to `PROVED`
-- Congruence equivalence rules to promote `number-theory.fl` congruence chain
-- Group axiom rules to promote `algebra.fl` identity/cancellation proofs
+All 15 library files return `PROVED`. Next kernel priorities:
+
+- Bounded quantifier rules over structured domains (e.g. well-founded induction, ordinals)
+- Richer witness construction and inspection for existential elimination
+- Extend `Ra` tooling for explicit causal resolution traces

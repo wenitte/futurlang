@@ -1,0 +1,4 @@
+
+fn inc(x ∈ Nat) -> Nat {
+  conclude(x + 1)
+}

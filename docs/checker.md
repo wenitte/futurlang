@@ -30,7 +30,13 @@ Every paired proof returns exactly one state:
 
 ## Connective Validation
 
-Inside a proof body, adjacent `prove(...)` and `assume(...)` steps must be joined by the connective that correctly describes their dependency relationship.
+Inside a proof body, adjacent derivation steps must be joined by the connective that correctly describes their dependency relationship. Steps that participate in connective validation:
+
+- `prove(P)` — derives an intermediate fact
+- `apply(Name)` — resolves a lemma; validated when it produces a new derived object
+- `assume(P)` — introduces a local hypothesis (next step must use `→`)
+- `intro(h)` — strips an implication antecedent (next step must use `→`)
+- `obtain(x, ∃...)` — destructures an existential (next step must use `→`)
 
 **`→` (sequence)**: the current step depends on the previous one. The current step's proof object must have the previous step's proof object in its transitive `inputs`.
 
@@ -46,7 +52,7 @@ Mismatched connectives are reported as errors and cause the proof to return `FAI
 
 **`conclude(...)`** is not validated — it closes the proof and is not subject to connective checking.
 
-**After `assume(...)`**: the immediately following derivation step must use `→` (the assumption is its dependency).
+**After `assume(...)`, `intro(...)`, or `obtain(...)`**: the immediately following derivation step must use `→`. All three introduce hypotheses into the local context; whatever follows always depends on them.
 
 ### Example
 

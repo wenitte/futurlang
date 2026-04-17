@@ -1,0 +1,39 @@
+// chained-lemmas.fl
+//
+// Demonstrates a three-lemma chain where each theorem depends on the
+// previous via apply(), enforced with → between blocks.
+//
+// A ⊆ B, B ⊆ C, C ⊆ D  ⊢  x ∈ D
+//
+// Each step is a separate lemma that the next block applies.
+
+lemma AtoB() {
+  assume(x ∈ A ∧ A ⊆ B) →
+  declareToProve(x ∈ B)
+} ↔
+
+proof AtoB() {
+  conclude(x ∈ B)
+} →
+
+lemma BtoC() {
+  assume(x ∈ A ∧ A ⊆ B ∧ B ⊆ C) →
+  declareToProve(x ∈ C)
+} ↔
+
+proof BtoC() {
+  apply(AtoB) →
+  prove(x ∈ B) →
+  conclude(x ∈ C)
+} →
+
+theorem AtoD() {
+  assume(x ∈ A ∧ A ⊆ B ∧ B ⊆ C ∧ C ⊆ D) →
+  declareToProve(x ∈ D)
+} ↔
+
+proof AtoD() {
+  apply(BtoC) →
+  prove(x ∈ C) →
+  conclude(x ∈ D)
+}
