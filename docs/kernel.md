@@ -2,6 +2,16 @@
 
 FuturLang uses a categorical proof kernel justified by Wenittain Logic.
 
+## Plain English Version
+
+Think of the kernel as a very strict fact-checker.
+
+You give it a pool of starting facts (your `assume()` statements). You tell it a goal (`declareToProve`). Then step by step you either add new facts (`prove`) or use rules the kernel already knows. At every step the kernel asks: "does this actually follow from what we have?" If yes, the new fact goes into the pool. If no, the proof fails.
+
+When you reach `conclude`, the kernel checks that what you concluded matches the goal. If it does, and every intermediate step checked out, it stamps the proof `PROVED`.
+
+The kernel never guesses. It never skips steps. It never accepts a claim it cannot verify from the pool using a rule it knows.
+
 ## Internal Model
 
 - propositions are kernel objects

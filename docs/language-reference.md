@@ -69,6 +69,16 @@ Proof body:
 - `let name = expr` — bind a value
 - `match value { case ... => ... }` — case split
 
+### What these keywords actually do
+
+**`declareToProve(P)`** sets the goal. Nothing is proven yet — you are writing down what the proof block must eventually deliver. Think of it as a return type: the proof owes the checker a verified `P`.
+
+**`prove(P)`** adds a verified intermediate fact to the pool. The kernel checks that `P` follows from everything currently in the pool, then makes `P` available to all later steps. Think of it as a checked `let` binding.
+
+**`conclude(P)`** closes the proof. The kernel checks that `P` matches the goal from `declareToProve`. Must appear exactly once, last.
+
+The flow is always: *set the destination* (`declareToProve`) → *build stepping stones* (`prove`) → *arrive* (`conclude`).
+
 ## Executable Expressions
 
 The executable subset currently includes:

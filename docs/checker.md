@@ -121,6 +121,61 @@ proof UsesHypSyl() {
 }
 ```
 
+## What declareToProve and prove do
+
+**`declareToProve(P)`** sets the target. It says "here is what I am claiming is true." Nothing is proven yet — you are writing down what the proof must deliver. The kernel reads it and waits for `conclude(P)` to close it.
+
+In programming terms: it is a return type annotation. `declareToProve(x ∈ B)` means "this block must return a proof of `x ∈ B`."
+
+**`prove(P)`** derives a stepping stone. It says "I can establish this intermediate fact right now, using what I already have in context." The kernel checks that `P` actually follows from the current pool of facts, then adds `P` to that pool so later steps can use it.
+
+In programming terms: it is a `let` binding where the value is a verified fact.
+
+**`conclude(P)`** is the landing step. It delivers the final claim and closes the proof. The kernel checks that `P` matches the goal set by `declareToProve`.
+
+`declareToProve` is the destination. `prove` is a step on the route. `conclude` is arriving.
+
+## What the kernel does step by step
+
+### SubsetTransport
+
+```fl
+theorem SubsetTransport() {
+  assume(x ∈ A ∧ A ⊆ B) →
+  declareToProve(x ∈ B)
+} ↔
+
+proof SubsetTransport() {
+  conclude(x ∈ B)
+}
+```
+
+1. `assume(x ∈ A ∧ A ⊆ B)` — the conjunction is split; both `x ∈ A` and `A ⊆ B` enter the starting pool.
+2. `declareToProve(x ∈ B)` — the goal is set to `x ∈ B`.
+3. `conclude(x ∈ B)` — the kernel searches for a rule that yields `x ∈ B`. It finds SUBSET_TRANSPORT: if `x ∈ A` and `A ⊆ B`, then `x ∈ B`. Both are in the pool. Rule fires, conclusion matches goal. Returns `PROVED`.
+
+### ModusTollens
+
+```fl
+lemma ModusTollens() {
+  assume((P → Q) ∧ ¬Q) →
+  declareToProve(¬P)
+} ↔
+
+proof ModusTollens() {
+  assume(P) →
+  prove(Q) →
+  contradiction() →
+  conclude(¬P)
+}
+```
+
+1. Pool starts with `P → Q` and `¬Q`. Goal is `¬P`.
+2. `assume(P)` — adds `P` to the pool as a local hypothesis.
+3. `prove(Q)` — kernel finds `P` and `P → Q`. IMPLIES_ELIM fires. `Q` is added to the pool.
+4. `contradiction()` — kernel sees `Q` and `¬Q` both in the pool. That is a contradiction: `⊥` is derived.
+5. `conclude(¬P)` — from `⊥` anything follows. The local `P` assumption is discharged. Conclusion matches goal. Returns `PROVED`.
+
 ## Current Boundary
 
 The checker is broader than the JS evaluator but still narrower than the full FuturLang surface. Unsupported mathematical claims are retained as pending derivations rather than being silently accepted.

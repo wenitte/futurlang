@@ -150,6 +150,68 @@ This is equivalent to the single-conjunct form `assume(p ∧ q) → declareToPro
 - `let name = expr` — bind a value
 - `match value { case ... => ... }` — case split
 
+### What declareToProve and prove actually do
+
+**`declareToProve(P)`** sets the target. It says "here is what I am claiming is true." Nothing is proven yet — you are just writing down what the proof must deliver. The kernel reads it and waits for `conclude(P)` to close it.
+
+In programming terms: it is a return type annotation. `declareToProve(x ∈ B)` means "this block must return a proof of `x ∈ B`."
+
+**`prove(P)`** derives a stepping stone. It says "I can establish this intermediate fact right now, using what I already have in context." The kernel checks that `P` actually follows from the current premises and prior steps, then adds `P` to the pool of known facts available to later steps.
+
+In programming terms: it is a `let` binding where the value is a verified fact. `prove(x ∈ A)` means "compute and store the fact `x ∈ A`."
+
+**`conclude(P)`** is the landing step. It closes the proof by delivering the final claim. The kernel checks that `P` matches the goal set by `declareToProve`.
+
+`declareToProve` is the destination. `prove` is a step on the route. `conclude` is arriving.
+
+### What the kernel does step by step
+
+Here is the SubsetTransport proof walked through plainly:
+
+```fl
+theorem SubsetTransport() {
+  assume(x ∈ A ∧ A ⊆ B) →
+  declareToProve(x ∈ B)
+} ↔
+
+proof SubsetTransport() {
+  conclude(x ∈ B)
+}
+```
+
+What happens when the checker runs this:
+
+1. It reads `assume(x ∈ A ∧ A ⊆ B)`. It splits the conjunction and puts two facts into the starting pool: `x ∈ A` and `A ⊆ B`.
+2. It reads `declareToProve(x ∈ B)`. It sets the goal: "the proof must end with `x ∈ B`."
+3. It enters the proof body and sees `conclude(x ∈ B)`.
+4. It checks: can `x ∈ B` be justified from the pool? It finds the rule SUBSET_TRANSPORT: if `x ∈ A` and `A ⊆ B`, then `x ∈ B`. Both are in the pool. Rule fires.
+5. The conclusion matches the goal. The kernel returns `PROVED`.
+
+Here is a proof with intermediate steps:
+
+```fl
+lemma ModusTollens() {
+  assume((P → Q) ∧ ¬Q) →
+  declareToProve(¬P)
+} ↔
+
+proof ModusTollens() {
+  assume(P) →
+  prove(Q) →
+  contradiction() →
+  conclude(¬P)
+}
+```
+
+Step by step:
+
+1. Pool starts with: `P → Q` and `¬Q`.
+2. Goal is set to `¬P`.
+3. `assume(P)` — adds `P` to the pool as a local hypothesis.
+4. `prove(Q)` — kernel checks: can `Q` be derived? It finds `P` and `P → Q` in the pool. IMPLIES_ELIM fires. `Q` is added to the pool.
+5. `contradiction()` — kernel sees `Q` and `¬Q` both in the pool. That is a contradiction. It derives `⊥`.
+6. `conclude(¬P)` — from `⊥`, anything follows, including `¬P`. The local assumption `P` is discharged. The conclusion matches the goal. Kernel returns `PROVED`.
+
 Missing connectives between adjacent top-level blocks are syntax errors. If two blocks are related, the relationship must be visible in source.
 
 For the explicit construct-by-construct and rule-by-rule reference, see `docs/language-reference.md`.
