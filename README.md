@@ -52,12 +52,12 @@ npm link
 
 ```fl
 theorem Hello_World() {
-  assert("Hello World can be proven")
+  declareToProve("Hello World can be proven")
 } ↔
 
 proof Hello_World() {
   let message = "Hello World" →
-  assert(message == "Hello World")
+  conclude(message == "Hello World")
 }
 ```
 
@@ -84,34 +84,71 @@ FuturLang currently supports:
 
 These blocks are chained together with inter-block connectives:
 
-- `→` or `->`
-- `∧` or `&&`
-- `↔` or `<->`
+| Connective | Meaning |
+|-----------|---------|
+| `↔` | pairs a theorem/lemma with its proof (required) |
+| `∧` | the following block does not `apply()` the current one |
+| `→` | the following block calls `apply(CurrentName)` |
+| `∨` | disjunctive — either block suffices; emits a warning, not yet validated |
+
+### Connectives Between Top-Level Blocks
+
+The connective after a `proof` block must reflect whether the next block's proof calls `apply()` on it:
+
+```fl
+lemma ConjRight() {
+  assume(P ∧ Q) →
+  declareToProve(Q)
+} ↔
+
+proof ConjRight() {
+  conclude(Q)
+} →                   // → because SplitAndUseRight applies ConjRight
+
+theorem SplitAndUseRight() {
+  assume(P ∧ Q) →
+  declareToProve(Q)
+} ↔
+
+proof SplitAndUseRight() {
+  apply(ConjRight)
+}
+```
+
+Using `→` when the next proof does not call `apply()`, or `∧` when it does, causes `FAILED`.
 
 ### Proof statements
 
-Inside blocks, the main statements are:
+**Theorem/lemma declaration body:**
 
-- `given(...)`
-- `assert(...)`
-- `assume(...)`
-- `conclude(...)`
-- `apply(...)`
-- `setVar(...)`
-- `let ...`
-- `contradiction()`
-- `match ...`
+- `assume(P)` — declare a hypothesis. Multiple independent hypotheses use `∧` between them.
+- `declareToProve(P)` — declare the goal (required, exactly once, last)
 
-Each statement also participates in the truth chain.
+Two independent assumptions are written with `∧`:
 
-Their roles are different:
+```fl
+theorem Foo() {
+  assume(p) ∧
+  assume(q) →
+  declareToProve(r)
+}
+```
 
-- `given(...)` declares a theorem or lemma premise. It is available to the paired proof from the start.
-- `assume(...)` introduces a local proof assumption inside the proof body.
-- `assert(...)` states a claim. In theorem and lemma bodies it expresses the claimed result; in proof bodies it expresses an intermediate derived step.
-- `conclude(...)` marks the explicit result the proof is discharging.
-- `apply(...)` consumes a previously established lemma or theorem when its `given(...)` hypotheses are already in context.
-- `contradiction()` marks an explicit contradiction step inside a contradiction-style proof chain.
+This is equivalent to the single-conjunct form `assume(p ∧ q) → declareToProve(r)`.
+
+**Proof body:**
+
+- `assume(P)` — introduce a local hypothesis
+- `prove(P)` — derive an intermediate result
+- `conclude(P)` — close the proof (required)
+- `apply(Name)` — backward-chain through a proved lemma
+- `setVar(x: T)` — introduce a bound variable
+- `contradiction()` — derive `⊥` from conflicting assumptions
+- `obtain(x, ∃ y ∈ S, P)` — destructure an existential
+- `intro(h)` — strip an implication antecedent
+- `rewrite(a = b)` — substitute equals
+- `let name = expr` — bind a value
+- `match value { case ... => ... }` — case split
 
 Missing connectives between adjacent top-level blocks are syntax errors. If two blocks are related, the relationship must be visible in source.
 
@@ -149,9 +186,8 @@ The strongest current math demo path is small set-theoretic reasoning with Unico
 
 ```fl
 theorem SubsetTransport() {
-  given(x ∈ A) →
-  given(A ⊆ B) →
-  assert(x ∈ B)
+  assume(x ∈ A ∧ A ⊆ B) →
+  declareToProve(x ∈ B)
 } ↔
 
 proof SubsetTransport() {

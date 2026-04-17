@@ -719,16 +719,17 @@ function validateTopLevelConnectives(ast: ASTNode[]) {
 }
 
 // Validate that a theorem/lemma declaration body uses the correct structure:
-// - Exactly one assume() with connective → (or no assume() for axioms)
-// - Exactly one declareToProve() as the final step
-// - No given() or assert() (legacy keywords produce legacyError annotations)
+// - assume() nodes are joined with ∧ (independent hypotheses), not → (which would imply dependency)
+// - the last assume() is followed by → to declareToProve()
+// - exactly one declareToProve() as the final step
+// - no given() or assert() (legacy keywords produce legacyError annotations)
 export function validateDeclarationBody(name: string, body: ASTNode[]): string[] {
   const errors: string[] = [];
   for (const node of body) {
     const legacy = (node as ASTNode & { legacyError?: string }).legacyError;
     if (legacy) errors.push(`In '${name}': ${legacy}`);
   }
-  const assumes = body.filter(n => n.type === 'Assume');
+  const assumes = body.filter(n => n.type === 'Assume') as AssumeNode[];
   const dtp = body.filter(n => n.type === 'DeclareToProve');
   const oldAssert = body.filter(n => n.type === 'Assert');
   const oldGiven = body.filter(n => n.type === 'Given');
@@ -741,12 +742,21 @@ export function validateDeclarationBody(name: string, body: ASTNode[]): string[]
     errors.push(`In '${name}': declaration must end with declareToProve(...)`);
   if (dtp.length > 1)
     errors.push(`In '${name}': declaration must have exactly one declareToProve()`);
-  if (assumes.length > 1)
-    errors.push(`In '${name}': declaration must have at most one assume() — combine multiple hypotheses with ∧`);
-  if (assumes.length === 1) {
-    const assumeNode = assumes[0] as AssumeNode;
-    if (assumeNode.connective !== '→')
-      errors.push(`In '${name}': assume() must be followed by → (logical implication to the conclusion)`);
+  // Validate connectives between assume() nodes and from the last assume() to declareToProve().
+  // Hypotheses are always independent of each other — use ∧, not →.
+  // Only the final assume() leads to the conclusion — it must use →.
+  for (let i = 0; i < assumes.length; i++) {
+    const isLast = i === assumes.length - 1;
+    const node = assumes[i];
+    if (isLast) {
+      // Last assume() must connect to declareToProve() via →
+      if (node.connective !== '→' && dtp.length > 0)
+        errors.push(`In '${name}': assume() before declareToProve() must use → not '${node.connective ?? 'missing'}'`);
+    } else {
+      // Non-last assume() connects to the next assume() — must use ∧ (independent hypotheses)
+      if (node.connective === '→')
+        errors.push(`In '${name}': assume() followed by another assume() must use ∧, not → (hypotheses are independent)`);
+    }
   }
   return errors;
 }

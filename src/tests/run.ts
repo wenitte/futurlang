@@ -139,8 +139,8 @@ type Shape =
 } →
 
 theorem ShapeCase() {
-  given(s ∈ Shape) →
-  assert(s ∈ Shape)
+  assume(s ∈ Shape) →
+  declareToProve(s ∈ Shape)
 } ↔
 
 proof ShapeCase() {
@@ -319,7 +319,7 @@ runTest('category kernel validates and rejects composition correctly', () => {
 runTest('checker returns PROVED for classical implication derivations', () => {
   const report = checkFile(parseProgram(`
 theorem Identity() {
-  assert(p -> p)
+  declareToProve(p → p)
 } ↔
 
 proof Identity() {
@@ -334,11 +334,11 @@ proof Identity() {
 runTest('checker returns FAILED for unresolvable existential without witness', () => {
   const report = checkFile(parseProgram(`
 theorem PendingWitness() {
-  assert(∃ x ∈ A, P(x))
+  declareToProve(∃ x ∈ A, P(x))
 } ↔
 
 proof PendingWitness() {
-  assert(∃ x ∈ A, P(x))
+  prove(∃ x ∈ A, P(x))
 }
 `));
   assert.equal(report.state, 'FAILED');
@@ -348,7 +348,7 @@ proof PendingWitness() {
 runTest('checker returns FAILED for invalid proof paths', () => {
   const report = checkFile(parseProgram(`
 theorem BadIdentity() {
-  assert(p -> p)
+  declareToProve(p → p)
 } ↔
 
 proof BadIdentity() {
@@ -363,8 +363,8 @@ proof BadIdentity() {
 runTest('checker imports proved lemmas as morphisms', () => {
   const report = checkFile(parseProgram(`
 lemma ForwardStep() {
-  given(p -> q) →
-  assert(q)
+  assume(p → q) →
+  declareToProve(q)
 } ↔
 
 proof ForwardStep() {
@@ -373,8 +373,8 @@ proof ForwardStep() {
 } →
 
 theorem UsesForwardStep() {
-  given(p -> q) →
-  assert(q)
+  assume(p → q) →
+  declareToProve(q)
 } ↔
 
 proof UsesForwardStep() {
@@ -389,8 +389,8 @@ proof UsesForwardStep() {
 runTest('checker proves categorical identity laws', () => {
   const report = checkFile(parseProgram(`
 theorem IdentityLaw() {
-  given(f : A → B) →
-  assert(f ∘ id_A = f)
+  assume(f : A → B) →
+  declareToProve(f ∘ id_A = f)
 } ↔
 
 proof IdentityLaw() {
@@ -403,9 +403,8 @@ proof IdentityLaw() {
 runTest('checker rejects invalid categorical composition', () => {
   const report = checkFile(parseProgram(`
 theorem BadCompose() {
-  given(f : A → B) →
-  given(g : C → D) →
-  assert(g ∘ f = h)
+  assume(f : A → B ∧ g : C → D) →
+  declareToProve(g ∘ f = h)
 } ↔
 
 proof BadCompose() {
@@ -419,11 +418,8 @@ proof BadCompose() {
 runTest('checker proves explicit isomorphisms', () => {
   const report = checkFile(parseProgram(`
 theorem IsoWitness() {
-  given(f : A → B) →
-  given(g : B → A) →
-  given(g ∘ f = id_A) →
-  given(f ∘ g = id_B) →
-  assert(Iso(f))
+  assume(f : A → B ∧ g : B → A ∧ g ∘ f = id_A ∧ f ∘ g = id_B) →
+  declareToProve(Iso(f))
 } ↔
 
 proof IsoWitness() {
@@ -436,14 +432,8 @@ proof IsoWitness() {
 runTest('checker proves product mediators and pullbacks', () => {
   const productReport = checkFile(parseProgram(`
 theorem ProductWitness() {
-  given(pi1 : P → A) →
-  given(pi2 : P → B) →
-  given(f : X → A) →
-  given(g : X → B) →
-  given(m : X → P) →
-  given(pi1 ∘ m = f) →
-  given(pi2 ∘ m = g) →
-  assert(ProductMediator(m, f, g, pi1, pi2))
+  assume(pi1 : P → A ∧ pi2 : P → B ∧ f : X → A ∧ g : X → B ∧ m : X → P ∧ pi1 ∘ m = f ∧ pi2 ∘ m = g) →
+  declareToProve(ProductMediator(m, f, g, pi1, pi2))
 } ↔
 
 proof ProductWitness() {
@@ -454,12 +444,8 @@ proof ProductWitness() {
 
   const pullbackReport = checkFile(parseProgram(`
 theorem PullbackSquare() {
-  given(p1 : P → X) →
-  given(p2 : P → Y) →
-  given(f : X → Z) →
-  given(g : Y → Z) →
-  given(f ∘ p1 = g ∘ p2) →
-  assert(Pullback(P, p1, p2, f, g))
+  assume(p1 : P → X ∧ p2 : P → Y ∧ f : X → Z ∧ g : Y → Z ∧ f ∘ p1 = g ∘ p2) →
+  declareToProve(Pullback(P, p1, p2, f, g))
 } ↔
 
 proof PullbackSquare() {
@@ -472,12 +458,8 @@ proof PullbackSquare() {
 runTest('checker proves functor composition preservation', () => {
   const report = checkFile(parseProgram(`
 theorem FunctorCompose() {
-  given(Category(C)) →
-  given(Category(D)) →
-  given(Morphism(C, f, A, B)) →
-  given(Morphism(C, g, B, C0)) →
-  given(Functor(F, C, D)) →
-  assert(F(g ∘ f) = F(g) ∘ F(f))
+  assume(Category(C) ∧ Category(D) ∧ Morphism(C, f, A, B) ∧ Morphism(C, g, B, C0) ∧ Functor(F, C, D)) →
+  declareToProve(F(g ∘ f) = F(g) ∘ F(f))
 } ↔
 
 proof FunctorCompose() {
@@ -490,7 +472,7 @@ proof FunctorCompose() {
 runTest('checker proves fold as a trusted kernel primitive', () => {
   const report = checkFile(parseProgram(`
 theorem FoldSum() {
-  assert(fold([0..n], 0, +))
+  declareToProve(fold([0..n], 0, +))
 } ↔
 
 proof FoldSum() {
@@ -504,13 +486,13 @@ proof FoldSum() {
 runTest('checker desugars induction onto the fold kernel path', () => {
   const report = checkFile(parseProgram(`
 theorem InductionSum() {
-  assert(SumTo(n))
+  declareToProve(SumTo(n))
 } ↔
 
 proof InductionSum() {
   induction(n) {
     base: SumTo(0)
-    step: given(SumTo(k)) → conclude(SumTo(k+1))
+    step: assume(SumTo(k)) → conclude(SumTo(k+1))
   }
 }
 `));
@@ -526,8 +508,8 @@ struct Point {
 } →
 
 theorem PointProjection() {
-  given(p ∈ Point) →
-  assert(p.x ∈ Real)
+  assume(p ∈ Point) →
+  declareToProve(p.x ∈ Real)
 } ↔
 
 proof PointProjection() {
@@ -546,9 +528,8 @@ struct Point {
 } →
 
 theorem PointIntro() {
-  given(p.x ∈ Real) →
-  given(p.y ∈ Real) →
-  assert(p ∈ Point)
+  assume(p.x ∈ Real ∧ p.y ∈ Real) →
+  declareToProve(p ∈ Point)
 } ↔
 
 proof PointIntro() {
@@ -567,8 +548,8 @@ type Shape =
 } →
 
 theorem ShapeCovered() {
-  given(s ∈ Shape) →
-  assert(s ∈ Shape)
+  assume(s ∈ Shape) →
+  declareToProve(s ∈ Shape)
 } ↔
 
 proof ShapeCovered() {
@@ -588,8 +569,8 @@ type Shape =
 } →
 
 theorem ShapeMiss() {
-  given(s ∈ Shape) →
-  assert(s ∈ Shape)
+  assume(s ∈ Shape) →
+  declareToProve(s ∈ Shape)
 } ↔
 
 proof ShapeMiss() {
@@ -732,8 +713,8 @@ runTest('cli executes proof-shaped files and still prints checker output', () =>
   const file = path.join(tempDir, 'proof-and-run.fl');
   fs.writeFileSync(file, `
 theorem Identity() {
-  given(p) →
-  assert(p)
+  assume(p) →
+  declareToProve(p)
 } ↔
 
 proof Identity() {
@@ -888,6 +869,204 @@ proof IntroImp() {
 `));
   assert.equal(report.state, 'PROVED');
   assert.equal(report.reports[0].state, 'PROVED');
+});
+
+// ── Inter-block connective validation ─────────────────────────────────────
+
+runTest('inter-block → between independent blocks causes FAILED', () => {
+  const report = checkFile(parseProgram(`
+lemma A() {
+  declareToProve(1 = 1)
+} ↔
+
+proof A() {
+  conclude(1 = 1)
+} →
+
+lemma B() {
+  declareToProve(2 = 2)
+} ↔
+
+proof B() {
+  conclude(2 = 2)
+}
+`));
+  assert.equal(report.state, 'FAILED');
+  const hasInterBlockError = report.diagnostics.some(d =>
+    d.severity === 'error' && d.message.includes('inter-block connective')
+  );
+  assert.ok(hasInterBlockError, 'expected inter-block connective error');
+});
+
+runTest('inter-block ∧ before a block that applies the previous causes FAILED', () => {
+  const report = checkFile(parseProgram(`
+lemma A() {
+  declareToProve(1 = 1)
+} ↔
+
+proof A() {
+  conclude(1 = 1)
+} ∧
+
+lemma B() {
+  assume(1 = 1) →
+  declareToProve(1 = 1)
+} ↔
+
+proof B() {
+  apply(A)
+}
+`));
+  assert.equal(report.state, 'FAILED');
+  const hasInterBlockError = report.diagnostics.some(d =>
+    d.severity === 'error' && d.message.includes('inter-block connective')
+  );
+  assert.ok(hasInterBlockError, 'expected inter-block connective error');
+});
+
+runTest('inter-block → is accepted when next proof applies current block', () => {
+  const report = checkFile(parseProgram(`
+lemma A() {
+  declareToProve(1 = 1)
+} ↔
+
+proof A() {
+  conclude(1 = 1)
+} →
+
+lemma B() {
+  assume(1 = 1) →
+  declareToProve(1 = 1)
+} ↔
+
+proof B() {
+  apply(A)
+}
+`));
+  assert.equal(report.state, 'PROVED');
+});
+
+runTest('inter-block ∧ is accepted between independent blocks', () => {
+  const report = checkFile(parseProgram(`
+lemma A() {
+  declareToProve(1 = 1)
+} ↔
+
+proof A() {
+  conclude(1 = 1)
+} ∧
+
+lemma B() {
+  declareToProve(2 = 2)
+} ↔
+
+proof B() {
+  conclude(2 = 2)
+}
+`));
+  assert.equal(report.state, 'PROVED');
+});
+
+// ── Proof-step connective validation ──────────────────────────────────────
+
+runTest('proof-step → between independent derivations causes FAILED', () => {
+  const report = checkFile(parseProgram(`
+lemma StepArrowFail() {
+  assume(x ∈ A ∩ B) →
+  declareToProve(x ∈ A ∧ x ∈ B)
+} ↔
+
+proof StepArrowFail() {
+  assume(x ∈ A ∩ B) →
+  prove(x ∈ A) →
+  prove(x ∈ B) →
+  conclude(x ∈ A ∧ x ∈ B)
+}
+`));
+  assert.equal(report.state, 'FAILED');
+  const report0 = report.reports[0];
+  const hasConnError = (report0.diagnostics ?? []).some(d =>
+    d.severity === 'error' && d.message.includes('does not depend on')
+  );
+  assert.ok(hasConnError, 'expected connective error for independent steps joined with →');
+});
+
+runTest('proof-step ∧ between independent derivations is accepted', () => {
+  const report = checkFile(parseProgram(`
+lemma StepWedgePass() {
+  assume(x ∈ A ∩ B) →
+  declareToProve(x ∈ A ∧ x ∈ B)
+} ↔
+
+proof StepWedgePass() {
+  assume(x ∈ A ∩ B) →
+  prove(x ∈ A) ∧
+  prove(x ∈ B) →
+  conclude(x ∈ A ∧ x ∈ B)
+}
+`));
+  assert.equal(report.state, 'PROVED');
+});
+
+runTest('declaration body: assume(p) ∧ assume(q) is accepted as independent hypotheses', () => {
+  const report = checkFile(parseProgram(`
+lemma TwoAssumes() {
+  assume(P) ∧
+  assume(Q) →
+  declareToProve(P ∧ Q)
+} ↔
+
+proof TwoAssumes() {
+  conclude(P ∧ Q)
+}
+`));
+  assert.equal(report.state, 'PROVED');
+});
+
+runTest('declaration body: assume(p) → assume(q) is rejected (→ implies dependency between hypotheses)', () => {
+  const report = checkFile(parseProgram(`
+lemma BadTwoAssumes() {
+  assume(P) →
+  assume(Q) →
+  declareToProve(P ∧ Q)
+} ↔
+
+proof BadTwoAssumes() {
+  conclude(P ∧ Q)
+}
+`));
+  assert.equal(report.state, 'FAILED');
+  const hasConnError = (report.reports[0]?.diagnostics ?? []).some(d =>
+    d.severity === 'error' && d.message.includes('independent')
+  );
+  assert.ok(hasConnError, 'expected connective error for assume() → assume()');
+});
+
+runTest('inter-block ∨ emits a warning but does not cause FAILED', () => {
+  const report = checkFile(parseProgram(`
+lemma OrLeft() {
+  assume(P) →
+  declareToProve(P ∨ Q)
+} ↔
+
+proof OrLeft() {
+  conclude(P ∨ Q)
+} ∨
+
+lemma OrRight() {
+  assume(Q) →
+  declareToProve(P ∨ Q)
+} ↔
+
+proof OrRight() {
+  conclude(P ∨ Q)
+}
+`));
+  assert.notEqual(report.state, 'FAILED');
+  const hasWarning = report.diagnostics?.some(d =>
+    d.severity === 'warning' && d.message.includes('∨')
+  );
+  assert.ok(hasWarning, 'expected warning for unvalidated ∨ connective');
 });
 
 runTest('demo examples all reduce to PROVED with no pending morphisms', () => {

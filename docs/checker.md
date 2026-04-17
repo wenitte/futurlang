@@ -30,7 +30,7 @@ Every paired proof returns exactly one state:
 
 ## Connective Validation
 
-Inside a proof body, adjacent `assert(...)` and `assume(...)` steps must be joined by the connective that correctly describes their dependency relationship.
+Inside a proof body, adjacent `prove(...)` and `assume(...)` steps must be joined by the connective that correctly describes their dependency relationship.
 
 **`→` (sequence)**: the current step depends on the previous one. The current step's proof object must have the previous step's proof object in its transitive `inputs`.
 
@@ -40,7 +40,7 @@ Mismatched connectives are reported as errors and cause the proof to return `FAI
 
 ### Special cases
 
-**`contradiction()`** is a raw node and does not update the dependency tracker. The connective that governs validation of the step after `contradiction()` is the one on the `assert(...)` immediately before it.
+**`contradiction()`** is a raw node and does not update the dependency tracker. The connective that governs validation of the step after `contradiction()` is the one on the `prove(...)` immediately before it.
 
 **Reuse steps** (re-proving a claim that already exists in context) create no new proof object and do not update the tracker. The connective governing the step after a reuse step is the one on the last new proof object step.
 
@@ -71,7 +71,9 @@ Between top-level blocks, the connective must reflect whether the following bloc
 
 **`↔`**: always used between a theorem/lemma and its proof.
 
-A wrong connective causes the file to return `FAILED`.
+**`∨` (disjunctive)**: accepted by the parser but not yet validated by the checker. A `warning` diagnostic is emitted; the file does not return `FAILED`.
+
+A wrong `∧`/`→` connective causes the file to return `FAILED`.
 
 ### Example
 

@@ -210,7 +210,14 @@ export function checkFile(nodes: ASTNode[], options: CheckOptions = {}): FileRep
     const proofNode = node as ProofNode;
     if (proofNode.fnMeta) continue; // fn-desugared proofs are not subject to inter-block validation
     const conn = proofNode.connective;
-    if (!conn || conn === '↔' || conn === '∨') continue; // ∨ not validated here
+    if (!conn || conn === '↔') continue;
+    if (conn === '∨') {
+      diagnostics.push({
+        severity: 'warning',
+        message: `Inter-block connective '∨' before the block after '${proofNode.name}' is not validated by the checker. The disjunctive relationship is accepted but not verified.`,
+      });
+      continue;
+    }
 
     // Find the next theorem/lemma
     let j = i + 1;

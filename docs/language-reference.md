@@ -18,7 +18,7 @@ Top-level blocks are connected by explicit logical connectives. The checker enfo
 | `↔` | pairing | always between a theorem/lemma and its proof |
 | `∧` | independent | the next proof does not `apply()` the current block |
 | `→` | dependent | the next proof calls `apply(CurrentName)` |
-| `∨` | disjunctive | either block suffices (not currently validated) |
+| `∨` | disjunctive | either block suffices — emits a warning, not validated |
 
 Using the wrong connective between blocks causes `FAILED`. `fn`-desugared blocks are exempt from inter-block connective validation.
 
@@ -31,8 +31,29 @@ Using the wrong connective between blocks causes `FAILED`. `fn`-desugared blocks
 
 Theorem/lemma declaration body:
 
-- `assume(P)` — declare a hypothesis
+- `assume(P)` — declare a hypothesis. Multiple independent hypotheses are joined with `∧`, not `→`.
 - `declareToProve(P)` — declare the goal (required, exactly once, last)
+
+Two independent hypotheses use `∧` because neither depends on the other:
+
+```fl
+theorem Foo() {
+  assume(p) ∧
+  assume(q) →
+  declareToProve(r)
+}
+```
+
+This is logically equivalent to the single-conjunct form:
+
+```fl
+theorem Foo() {
+  assume(p ∧ q) →
+  declareToProve(r)
+}
+```
+
+Using `→` between two `assume()` calls would assert that `q` depends on `p`, which is incorrect for independent hypotheses.
 
 Proof body:
 
