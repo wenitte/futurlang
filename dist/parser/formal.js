@@ -137,7 +137,9 @@ function ensureTrailingConnective(source) {
             continue;
         if (/(→|∧|↔|->|&&|<->)\s*$/.test(trimmed))
             return source;
-        lines[index] = `${lines[index]} →`;
+        // Use ∧ (independent) as the default: imported library blocks are always
+        // independent of whatever follows them in the importing file.
+        lines[index] = `${lines[index]} ∧`;
         return lines.join('\n');
     }
     return source;
