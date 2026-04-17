@@ -5,6 +5,6 @@ theorem InductionSum() {
 proof InductionSum() {
   induction(n) {
     base: SumTo(0)
-    step: given(SumTo(k)) → conclude(SumTo(k+1))
+    step: assume(SumTo(k)) → conclude(SumTo(k+1))
   }
 }

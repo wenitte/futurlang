@@ -36,6 +36,7 @@ All examples in this directory obey the core FuturLang rule that the source itse
 28. `iff-elim.fl`
 29. `lemma-apply.fl`
 30. `contradiction-demo.fl`
+31. `block-connectives.fl`
 
 ## Demo commands
 
@@ -70,6 +71,7 @@ fl check examples/demo/iff-intro.fl
 fl check examples/demo/iff-elim.fl
 fl check examples/demo/lemma-apply.fl
 fl check examples/demo/contradiction-demo.fl
+fl check examples/demo/block-connectives.fl
 ```
 
 These examples stay inside the current fast checker subset, so they are the right files to use for short live demos.
@@ -116,11 +118,11 @@ These examples stay inside the current fast checker subset, so they are the righ
 
 The conjunction introduction demo now includes an explicit `conclude(p && q)` step so `fl check` can display `AND_INTRO` directly in the proof trace.
 
-`modus-ponens.fl` now uses first-class theorem premises with `given(...)`, which is closer to the long-term repository-style FuturLang syntax than repeating the premise inside the proof body.
+`modus-ponens.fl` uses `assume(P ∧ (P → Q))` to declare both premises in one step, then the proof concludes `Q` by IMPLIES_ELIM.
 
-`right-projection.fl` shows that a theorem premise can directly populate proof context and support elimination without repeating the premise inside the proof.
+`right-projection.fl` shows that a declared premise goes directly into proof context and supports elimination without repeating it inside the proof body.
 
-`multi-premise-chain.fl` shows multiple chained `given(...)` premises in one theorem body.
+`multi-premise-chain.fl` shows multiple independent premises declared with `assume(H₁ ∧ H₂ ∧ ...)` in one theorem body.
 
 `iff-intro.fl` shows kernel-checked biconditional introduction: from `p → q` and `q → p`, the checker derives `p ↔ q`.
 
@@ -129,5 +131,7 @@ The conjunction introduction demo now includes an explicit `conclude(p && q)` st
 `lemma-apply.fl` demonstrates a chained lemma with a chained premise, followed by a theorem proof that satisfies the lemma hypothesis and uses `apply(...)`.
 
 `contradiction-demo.fl` shows the current contradiction subset: a proof enters contradiction mode with a negated local assumption, makes an explicit `contradiction()` step, and then discharges the goal with `conclude(...)`.
+
+`block-connectives.fl` demonstrates the two inter-block connectives the checker validates: `∧` (independent blocks) and `→` (the next proof calls `apply()` on the current block). It shows a minimal example where `ConjLeft` and `ConjRight` are independent (`∧`), then `SplitAndUseRight` depends on `ConjRight` via `apply(ConjRight)` (`→`). Using the wrong connective causes `FAILED`.
 
 The parser also accepts ASCII and word equivalents for the math-facing surface. For example, `x in A union B`, `A subset B`, and `forall x in A, ...` normalize to the same internal notation used by the Unicode demos.
