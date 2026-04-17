@@ -1,0 +1,40 @@
+// block-connectives.fl
+//
+// Demonstrates the two inter-block connectives the kernel validates:
+//
+//   ∧  — the blocks are logically independent
+//   →  — the right block depends on the left via apply()
+//
+// The checker enforces this: using → when the next proof does not call
+// apply() on the current block (or ∧ when it does) causes FAILED.
+
+// ── Two independent lemmas — joined with ∧ ────────────────────────────────
+
+lemma ConjLeft() {
+  assume(P ∧ Q) →
+  declareToProve(P)
+} ↔
+
+proof ConjLeft() {
+  conclude(P)
+} ∧
+
+lemma ConjRight() {
+  assume(P ∧ Q) →
+  declareToProve(Q)
+} ↔
+
+proof ConjRight() {
+  conclude(Q)
+} →
+
+// ── Theorem that depends on ConjRight — joined with → ────────────────────
+
+theorem SplitAndUseRight() {
+  assume(P ∧ Q) →
+  declareToProve(Q)
+} ↔
+
+proof SplitAndUseRight() {
+  apply(ConjRight)
+}

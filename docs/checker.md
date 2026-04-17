@@ -5,7 +5,6 @@
 ## What It Checks
 
 - theorem/proof pairing
-- premise import from `given(...)`
 - assumption import from `assume(...)`
 - morphism construction for classical implication, conjunction, disjunction, contradiction, complement, and lemma import
 - subset, equality, union, intersection, image, and preimage reasoning used by the shipped demos
@@ -14,6 +13,7 @@
 - structural recursion over `List(A)` tails
 - `ω` propagation, partial-map restrictions, and the `ω`-Barrier
 - **connective validation between adjacent proof steps** (see below)
+- **connective validation between top-level blocks** (see below)
 
 ## Output
 
@@ -54,10 +54,68 @@ Mismatched connectives are reported as errors and cause the proof to return `FAI
 proof IntersectionCommutativity() {
   setVar(x: Element) →
   assume(x ∈ A ∩ B) →
-  assert(x ∈ A) ∧        // independent of x ∈ B (both derived from the same assumption)
-  assert(x ∈ B) →
-  assert(x ∈ B ∩ A) →
+  prove(x ∈ A) ∧        // independent: both derived from the same assumption
+  prove(x ∈ B) →
+  prove(x ∈ B ∩ A) →
   ...
+}
+```
+
+## Inter-Block Connective Validation
+
+Between top-level blocks, the connective must reflect whether the following block's proof calls `apply()` on the current block.
+
+**`∧` (independent)**: the next proof does not call `apply(CurrentName)`. Most blocks in a library file are independent and should use `∧`.
+
+**`→` (dependent)**: the next proof calls `apply(CurrentName)`. Only valid when there is a direct apply dependency.
+
+**`↔`**: always used between a theorem/lemma and its proof.
+
+A wrong connective causes the file to return `FAILED`.
+
+### Example
+
+```fl
+// A and B are independent — use ∧
+lemma ModusPonens() {
+  assume(P ∧ (P → Q)) →
+  declareToProve(Q)
+} ↔
+proof ModusPonens() {
+  conclude(Q)
+} ∧
+
+// ModusTollens does not apply ModusPonens — still ∧
+lemma ModusTollens() {
+  assume((P → Q) ∧ ¬Q) →
+  declareToProve(¬P)
+} ↔
+proof ModusTollens() {
+  assume(P) →
+  prove(Q) →
+  contradiction() →
+  conclude(¬P)
+} ∧
+
+// HypSyl applies neither above lemma — ∧
+lemma HypSyl() {
+  assume((P → Q) ∧ (Q → R)) →
+  declareToProve(P → R)
+} ↔
+proof HypSyl() {
+  assume(P) →
+  prove(Q) →
+  conclude(R)
+} →
+
+// UsesHypSyl calls apply(HypSyl) — the ∧ above becomes → here
+theorem UsesHypSyl() {
+  assume((P → Q) ∧ (Q → R)) →
+  declareToProve(P → R)
+} ↔
+proof UsesHypSyl() {
+  apply(HypSyl) →
+  conclude(P → R)
 }
 ```
 

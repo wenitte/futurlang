@@ -11,7 +11,16 @@
 - `struct Name() { ... }`
 - `type Name = | Variant(...) ...`
 
-Top-level blocks are connected by visible connectives such as `→`, `∧`, and `↔`.
+Top-level blocks are connected by explicit logical connectives. The checker enforces their semantics:
+
+| Connective | Meaning | Rule |
+|-----------|---------|------|
+| `↔` | pairing | always between a theorem/lemma and its proof |
+| `∧` | independent | the next proof does not `apply()` the current block |
+| `→` | dependent | the next proof calls `apply(CurrentName)` |
+| `∨` | disjunctive | either block suffices (not currently validated) |
+
+Using the wrong connective between blocks causes `FAILED`. `fn`-desugared blocks are exempt from inter-block connective validation.
 
 `fn` is one surface construct with two runtime paths:
 
@@ -20,15 +29,24 @@ Top-level blocks are connected by visible connectives such as `→`, `∧`, and 
 
 ## Statements
 
-- `given(...)`
-- `assume(...)`
-- `assert(...)`
-- `conclude(...)`
-- `apply(...)`
-- `setVar(...)`
-- `contradiction()`
-- `let name = expr`
-- `match value { case ... => ... }`
+Theorem/lemma declaration body:
+
+- `assume(P)` — declare a hypothesis
+- `declareToProve(P)` — declare the goal (required, exactly once, last)
+
+Proof body:
+
+- `assume(P)` — introduce a local hypothesis
+- `prove(P)` — derive an intermediate result
+- `conclude(P)` — close the proof (required)
+- `apply(Name)` — backward-chain through a proved lemma
+- `setVar(x: T)` — introduce a bound variable
+- `contradiction()` — derive `⊥` from conflicting assumptions
+- `obtain(x, ∃ y ∈ S, P)` — destructure an existential
+- `intro(h)` — strip an implication antecedent
+- `rewrite(a = b)` — substitute equals
+- `let name = expr` — bind a value
+- `match value { case ... => ... }` — case split
 
 ## Executable Expressions
 

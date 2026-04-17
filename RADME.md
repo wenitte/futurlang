@@ -58,16 +58,15 @@ theorem Name() {
 
 proof Name() {
   assume(hypothesis) →
-  assert(intermediate step) →
+  prove(intermediate step) →
   conclude(conclusion)
 }
 ```
 
 ### Proof Statements
 
-- `given(P)` — import a previously proved claim
 - `assume(P)` — introduce a hypothesis
-- `assert(P)` — derive an intermediate result
+- `prove(P)` — derive an intermediate result
 - `conclude(P)` — close the proof
 - `apply(LemmaName)` — backward-chain through a lemma
 - `setVar(x: T)` — introduce a bound variable
@@ -81,7 +80,34 @@ Inside a proof, adjacent derivation steps must be connected by:
 - `→` when the current step depends on the previous one
 - `∧` when the two steps are logically independent
 
-The checker validates these connectives. Using `→` when steps are independent (or `∧` when a step genuinely depends on the previous) is a type error.
+The checker validates these connectives against the kernel's dependency graph. Using `→` when steps are independent (or `∧` when a step genuinely depends on the previous) is a type error.
+
+### Connectives Between Top-Level Blocks
+
+Between top-level blocks the connective must reflect the actual logical relationship:
+
+- `↔` — pairs a `theorem`/`lemma` with its `proof` (always)
+- `∧` — the two blocks are independent; the right block does not `apply()` the left
+- `→` — the right block depends on the left; the right proof calls `apply(LeftName)`
+- `∨` — either block suffices (uncommon at top level)
+
+The checker enforces this: using `→` when the next proof does not call `apply()` on the current block, or using `∧` when it does, is an error.
+
+```fl
+// Independent lemmas — joined with ∧
+lemma A() { declareToProve(...) } ↔
+proof A() { ... } ∧
+
+lemma B() { declareToProve(...) } ↔
+proof B() { ... } ∧
+
+// C depends on B — joined with →
+lemma C() { assume(...) → declareToProve(...) } ↔
+proof C() {
+  apply(B) →
+  conclude(...)
+}
+```
 
 ### Notation
 

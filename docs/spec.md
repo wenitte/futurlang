@@ -8,6 +8,15 @@ Every FuturLang file is one visible truth chain.
 - proof statements inside blocks are also connected explicitly
 - missing connectives between adjacent top-level blocks are syntax errors
 
+Inter-block connectives are validated by the checker:
+
+- `↔` — pairs a theorem/lemma declaration with its proof (required)
+- `∧` — the following block is independent; its proof does not call `apply()` on the current block
+- `→` — the following block depends on the current one; its proof calls `apply(CurrentName)`
+- `∨` — disjunctive relationship (uncommon; not validated by the checker)
+
+Using `→` when the next proof does not call `apply()` on the current block, or using `∧` when it does, causes `FAILED`.
+
 ## Surface Blocks
 
 - `import`
@@ -21,14 +30,16 @@ Every FuturLang file is one visible truth chain.
 
 ## Proof Statements
 
-- `given(...)`
-- `assert(...)`
 - `assume(...)`
+- `prove(...)`
 - `conclude(...)`
 - `apply(...)`
 - `setVar(...)`
 - `let ...`
 - `contradiction()`
+- `obtain(...)`
+- `intro(...)`
+- `rewrite(...)`
 
 Adjacent proof statements inside a proof body are connected by explicit connectives:
 
