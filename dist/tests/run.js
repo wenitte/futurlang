@@ -1104,6 +1104,53 @@ runTest('default fl command executes the full demo corpus with only intentional 
         }
     }
 });
+// ── deriveConclusions tests ────────────────────────────────────────────────
+runTest('deriveConclusions: basic subset chain x∈A,A⊆B,B⊆C → x∈B, x∈C, A⊆C', () => {
+    const ctx = (0, checker_1.createMutableContext)(['x ∈ A', 'A ⊆ B', 'B ⊆ C'], null);
+    const conclusions = (0, checker_1.deriveConclusions)(ctx);
+    assert_1.strict.ok(conclusions.includes('x ∈ B'), `expected x ∈ B in ${conclusions}`);
+    assert_1.strict.ok(conclusions.includes('x ∈ C'), `expected x ∈ C in ${conclusions}`);
+    assert_1.strict.ok(conclusions.includes('A ⊆ C'), `expected A ⊆ C in ${conclusions}`);
+});
+runTest('deriveConclusions: no blowup — pool stays bounded for 4-element chain', () => {
+    const ctx = (0, checker_1.createMutableContext)(['x ∈ A', 'A ⊆ B', 'B ⊆ C', 'C ⊆ D'], null);
+    const t0 = Date.now();
+    const conclusions = (0, checker_1.deriveConclusions)(ctx);
+    const elapsed = Date.now() - t0;
+    assert_1.strict.ok(elapsed < 2000, `deriveConclusions took ${elapsed}ms (>2000ms suggests blowup)`);
+    assert_1.strict.ok(conclusions.includes('x ∈ D'), `expected x ∈ D in ${conclusions}`);
+    assert_1.strict.ok(conclusions.length < 200, `pool exploded: ${conclusions.length} conclusions`);
+});
+runTest('deriveConclusions: implication chain P→Q, Q→R, P ⊢ R', () => {
+    const ctx = (0, checker_1.createMutableContext)(['P → Q', 'Q → R', 'P'], null);
+    const conclusions = (0, checker_1.deriveConclusions)(ctx);
+    assert_1.strict.ok(conclusions.includes('Q'), `expected Q in ${conclusions}`);
+    assert_1.strict.ok(conclusions.includes('R'), `expected R in ${conclusions}`);
+});
+runTest('deriveConclusions: empty premises → no conclusions', () => {
+    const ctx = (0, checker_1.createMutableContext)([], null);
+    const conclusions = (0, checker_1.deriveConclusions)(ctx);
+    assert_1.strict.equal(conclusions.length, 0);
+});
+runTest('derive() proof step emits info diagnostic inside proof body', () => {
+    const src = `
+theorem DeriveTest {
+  assume(A ⊆ B ∧ B ⊆ C) →
+  declareToProve(A ⊆ C)
+} ↔
+proof DeriveTest {
+  derive()
+  conclude(A ⊆ C)
+}
+`.trim();
+    const ast = parseProgram(src);
+    const report = (0, checker_1.checkFile)(ast, { strict: false });
+    // derive() diagnostics are on the per-proof report's diagnostics
+    const allDiagnostics = report.reports.flatMap(r => r.diagnostics);
+    const infos = allDiagnostics.filter(d => d.severity === 'info' && d.message.startsWith('derive()'));
+    assert_1.strict.ok(infos.length > 0, `expected at least one derive() info diagnostic, got: ${JSON.stringify(allDiagnostics)}`);
+    assert_1.strict.ok(infos[0].message.includes('A ⊆ C'), `expected A ⊆ C in derive() output: ${infos[0].message}`);
+});
 function collectDemoFiles(dir) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     const files = [];

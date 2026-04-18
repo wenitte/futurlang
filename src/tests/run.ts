@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
 import { spawnSync } from 'child_process';
-import { checkFile } from '../checker/checker';
+import { checkFile, deriveConclusions, createMutableContext } from '../checker/checker';
 import { parseLinesToAST } from '../parser/parser';
 import { lexFL } from '../parser/lexer';
 import { parseExpr } from '../parser/expr';
@@ -1181,6 +1181,59 @@ runTest('default fl command executes the full demo corpus with only intentional 
       assert.match(result.stdout + result.stderr, /FAILED|non-exhaustive/i);
     }
   }
+});
+
+// ── deriveConclusions tests ────────────────────────────────────────────────
+
+runTest('deriveConclusions: basic subset chain x∈A,A⊆B,B⊆C → x∈B, x∈C, A⊆C', () => {
+  const ctx = createMutableContext(['x ∈ A', 'A ⊆ B', 'B ⊆ C'], null);
+  const conclusions = deriveConclusions(ctx);
+  assert.ok(conclusions.includes('x ∈ B'), `expected x ∈ B in ${conclusions}`);
+  assert.ok(conclusions.includes('x ∈ C'), `expected x ∈ C in ${conclusions}`);
+  assert.ok(conclusions.includes('A ⊆ C'), `expected A ⊆ C in ${conclusions}`);
+});
+
+runTest('deriveConclusions: no blowup — pool stays bounded for 4-element chain', () => {
+  const ctx = createMutableContext(['x ∈ A', 'A ⊆ B', 'B ⊆ C', 'C ⊆ D'], null);
+  const t0 = Date.now();
+  const conclusions = deriveConclusions(ctx);
+  const elapsed = Date.now() - t0;
+  assert.ok(elapsed < 2000, `deriveConclusions took ${elapsed}ms (>2000ms suggests blowup)`);
+  assert.ok(conclusions.includes('x ∈ D'), `expected x ∈ D in ${conclusions}`);
+  assert.ok(conclusions.length < 200, `pool exploded: ${conclusions.length} conclusions`);
+});
+
+runTest('deriveConclusions: implication chain P→Q, Q→R, P ⊢ R', () => {
+  const ctx = createMutableContext(['P → Q', 'Q → R', 'P'], null);
+  const conclusions = deriveConclusions(ctx);
+  assert.ok(conclusions.includes('Q'), `expected Q in ${conclusions}`);
+  assert.ok(conclusions.includes('R'), `expected R in ${conclusions}`);
+});
+
+runTest('deriveConclusions: empty premises → no conclusions', () => {
+  const ctx = createMutableContext([], null);
+  const conclusions = deriveConclusions(ctx);
+  assert.equal(conclusions.length, 0);
+});
+
+runTest('derive() proof step emits info diagnostic inside proof body', () => {
+  const src = `
+theorem DeriveTest {
+  assume(A ⊆ B ∧ B ⊆ C) →
+  declareToProve(A ⊆ C)
+} ↔
+proof DeriveTest {
+  derive()
+  conclude(A ⊆ C)
+}
+`.trim();
+  const ast = parseProgram(src);
+  const report = checkFile(ast, { strict: false });
+  // derive() diagnostics are on the per-proof report's diagnostics
+  const allDiagnostics = report.reports.flatMap(r => r.diagnostics);
+  const infos = allDiagnostics.filter(d => d.severity === 'info' && d.message.startsWith('derive()'));
+  assert.ok(infos.length > 0, `expected at least one derive() info diagnostic, got: ${JSON.stringify(allDiagnostics)}`);
+  assert.ok(infos[0].message.includes('A ⊆ C'), `expected A ⊆ C in derive() output: ${infos[0].message}`);
 });
 
 function collectDemoFiles(dir: string): string[] {

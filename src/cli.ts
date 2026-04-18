@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 import { parseFL, parseFLFile, expandFLFile } from './parser/formal';
 import { lexFL } from './parser/lexer';
 import { parseLinesToAST } from './parser/parser';
-import { checkFile, createMutableContext, evaluateIncrementalStep } from './checker/checker';
+import { checkFile, createMutableContext, evaluateIncrementalStep, deriveConclusions } from './checker/checker';
 import { createReactApp } from './react/transpiler';
 
 const rawArgs = process.argv.slice(2);
@@ -24,6 +24,12 @@ async function main() {
     const file = args[1];
     if (!file) { console.error('Usage: fl check <file.fl>'); process.exit(1); }
     runCheck(file); return;
+  }
+
+  if (command === 'derive') {
+    const file = args[1];
+    if (!file) { console.error('Usage: fl derive <file.fl>'); process.exit(1); }
+    runDerive(file); return;
   }
 
   if (command === 'web') {
@@ -116,6 +122,45 @@ function runCheck(file: string) {
   const source = expandFLFile(file);
   const report = checkFile(parseLinesToAST(lexFL(source), { desugarFns: true }), { strict });
   printCheckReport(file, report);
+}
+
+function runDerive(file: string) {
+  if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
+
+  const source = expandFLFile(file);
+  const nodes = parseLinesToAST(lexFL(source), { desugarFns: true });
+
+  console.log(`\nForward-chaining derivation: ${path.basename(file)}\n`);
+
+  // Run checkFile to get premises in string form (already resolved by the kernel)
+  const report = checkFile(nodes, { strict });
+
+  let anyPrinted = false;
+  for (const r of report.reports) {
+    if (r.premises.length === 0) continue;
+    anyPrinted = true;
+    console.log(`  ${r.name}:`);
+    console.log(`    premises: ${r.premises.join(' ; ')}`);
+
+    const ctx = createMutableContext(r.premises, null);
+    const t0 = Date.now();
+    const conclusions = deriveConclusions(ctx);
+    const elapsed = Date.now() - t0;
+
+    if (conclusions.length === 0) {
+      console.log(`    → no new conclusions reachable`);
+    } else {
+      console.log(`    → ${conclusions.length} conclusion(s) in ${elapsed}ms:`);
+      for (const c of conclusions) {
+        console.log(`       ${c}`);
+      }
+    }
+    console.log('');
+  }
+
+  if (!anyPrinted) {
+    console.log('  No theorem/lemma premises found in this file.');
+  }
 }
 
 function runRepl(jsonMode: boolean) {
@@ -418,6 +463,7 @@ FuturLang — formal proof language
 Usage:
   fl [--strict] <file.fl>           Execute a file; proof-shaped files also show checker output
   fl check [--strict] <file.fl>     Check proof structure with the categorical kernel
+  fl derive <file.fl>               Forward-chain all derivable conclusions from premises
   fl server <file.fl>               Run a server-style FL file
 
 App workflow (recommended):

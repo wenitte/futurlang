@@ -10,7 +10,7 @@ import { normalizeSurfaceSyntax, parseExpr } from './expr';
 import {
   ASTNode, BlockConnective,
   TheoremNode, DefinitionNode, StructField, StructNode, TypeDeclNode, TypeVariant, PatternNode, MatchCaseNode, MatchNode, ProofNode, LemmaNode, FnDeclNode, FnParam,
-  AssertNode, DeclareToProveNode, ProveNode, AndIntroStepNode, OrIntroStepNode,
+  AssertNode, DeclareToProveNode, ProveNode, DeriveNode, AndIntroStepNode, OrIntroStepNode,
   GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode, InductionNode, FoldNode,
   IntroNode, RewriteNode, ExactNode, ObtainNode,
 } from './ast';
@@ -125,6 +125,10 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
       case 'prove': {
         const expr = parseCallExpr(line.content, 'prove');
         const node: ProveNode = { type: 'Prove', expr, connective: line.connective };
+        pushOrTop(stack, ast, node); break;
+      }
+      case 'derive': {
+        const node: DeriveNode = { type: 'Derive', connective: line.connective };
         pushOrTop(stack, ast, node); break;
       }
       case 'andIntroStep': {

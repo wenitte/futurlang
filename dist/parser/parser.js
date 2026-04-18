@@ -121,6 +121,11 @@ function parseLinesToAST(lines, options = {}) {
                 pushOrTop(stack, ast, node);
                 break;
             }
+            case 'derive': {
+                const node = { type: 'Derive', connective: line.connective };
+                pushOrTop(stack, ast, node);
+                break;
+            }
             case 'andIntroStep': {
                 // AndIntro(P, Q) — parse two comma-separated claims
                 const inner = line.content.replace(/^AndIntro\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();

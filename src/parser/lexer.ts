@@ -6,7 +6,7 @@ export interface ParsedLine {
   type:
     | 'theorem' | 'definition' | 'struct' | 'typeDecl' | 'proof' | 'lemma' | 'fn'
     | 'assert'  | 'given'      | 'assume' | 'conclude' | 'apply'
-    | 'declareToProve' | 'prove' | 'andIntroStep' | 'orIntroStep'
+    | 'declareToProve' | 'prove' | 'derive' | 'andIntroStep' | 'orIntroStep'
     | 'requires' | 'ensures'
     | 'setVar'  | 'blockEnd'   | 'level'  | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw'
     | 'intro' | 'rewrite' | 'exact' | 'obtain';
@@ -148,6 +148,13 @@ export function lexFL(text: string): ParsedLine[] {
       }
       const [cleaned, conn] = extractConnective(combined);
       parsed.push({ type: 'prove', content: cleaned, connective: conn });
+      continue;
+    }
+
+    // ── derive() — forward-chaining: emit all reachable conclusions ──────────
+    if (/^derive\s*\(\s*\)/.test(line)) {
+      const [, conn] = extractConnective(line);
+      parsed.push({ type: 'derive', content: '', connective: conn });
       continue;
     }
 

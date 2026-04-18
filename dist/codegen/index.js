@@ -109,6 +109,8 @@ function nodeToExpr(node, symbolicMode, ctx) {
                 : `concludeExpr(atom(() => !!(${generateRuntimeExpr(node.expr)}), ${JSON.stringify(renderExprSource(node.expr))}))`;
         case 'Obtain':
             return `atom(true, ${JSON.stringify(`obtain(${node.varName})`)})`;
+        case 'Derive':
+            return `atom(true, 'derive()')`;
         default: {
             const _ = node;
             throw new Error('Unhandled node type');

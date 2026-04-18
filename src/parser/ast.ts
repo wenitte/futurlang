@@ -222,6 +222,12 @@ export interface ProveNode {
   connective: BlockConnective;
 }
 
+// Forward-chaining derivation: emits all reachable conclusions as diagnostics
+export interface DeriveNode {
+  type: 'Derive';
+  connective: BlockConnective;
+}
+
 // Explicit AND introduction: constructs P ∧ Q from P and Q in context
 export interface AndIntroStepNode {
   type: 'AndIntroStep';
@@ -329,6 +335,7 @@ export type ASTNode =
   | AssertNode
   | DeclareToProveNode
   | ProveNode
+  | DeriveNode
   | AndIntroStepNode
   | OrIntroStepNode
   | GivenNode

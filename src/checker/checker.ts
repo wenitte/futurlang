@@ -5,6 +5,7 @@ import {
   ConcludeNode,
   DeclareToProveNode,
   ProveNode,
+  DeriveNode,
   AndIntroStepNode,
   OrIntroStepNode,
   FnParam,
@@ -73,6 +74,7 @@ import {
   parseImplicationCanonical,
   parseIndexedUnionCanonical,
   parseMembershipCanonical,
+  parseNonMembershipCanonical,
   parseMorphismDeclarationCanonical,
   parseMorphismExprCanonical,
   parseSetBuilderCanonical,
@@ -490,6 +492,9 @@ function handleNode(ctx: Context, node: ASTNode, step: number): void {
     case 'Prove':
       handleProveStep(ctx, node, step);
       return;
+    case 'Derive':
+      handleDerive(ctx, node, step);
+      return;
     case 'AndIntroStep':
       handleAndIntroStep(ctx, node, step);
       return;
@@ -531,6 +536,18 @@ function handleNode(ctx: Context, node: ASTNode, step: number): void {
 // prove() — intermediate derivation step (same kernel as assert/conclude)
 function handleProveStep(ctx: Context, node: ProveNode, step: number): void {
   handleClaimStep(ctx, { type: 'Assert', expr: node.expr, connective: node.connective }, step, 'prove');
+}
+
+// derive() — forward-chaining: run deriveConclusions and emit results as info diagnostics
+function handleDerive(ctx: Context, node: DeriveNode, step: number): void {
+  const conclusions = deriveConclusions(ctx);
+  if (conclusions.length === 0) {
+    ctx.diagnostics.push({ severity: 'info', message: 'derive(): no new conclusions reachable from current context' });
+  } else {
+    const lines = conclusions.map(c => `  ${c}`).join('\n');
+    ctx.diagnostics.push({ severity: 'info', message: `derive(): ${conclusions.length} reachable conclusion(s):\n${lines}` });
+  }
+  // derive() produces no proof object — it doesn't update the dependency tracker.
 }
 
 // AndIntro(P, Q) — explicitly constructs P ∧ Q from P and Q in context
@@ -7326,37 +7343,143 @@ function deriveTopoExtClaim(ctx: Context, claim: string, step: number) {
 // Returns the set of new claim strings derivable from the pool that are not
 // already present in the pool.  Does NOT mutate ctx.
 
-export function deriveConclusions(ctx: Context): string[] {
+function makeSyntheticObject(claim: string): ProofObject {
+  return {
+    id: `synth:${claim}`,
+    claim,
+    domain: TOP,
+    codomain: TOP,
+    domainRestriction: '1',
+    tau: '1' as WenittainValue,
+    rule: 'STRUCTURAL',
+    inputs: [],
+    pending: false,
+    suspended: false,
+    step: -1,
+  };
+}
+
+export function deriveConclusions(ctx: Context, maxPasses = 4): string[] {
   // Deduplicate: premises and ctx.objects both contain seeded premises
-  const seen = new Set<string>();
-  const pool = allContextObjects(ctx).filter(o => {
-    if (seen.has(o.claim)) return false;
-    seen.add(o.claim);
+  const seenInit = new Set<string>();
+  let pool: ProofObject[] = allContextObjects(ctx).filter(o => {
+    if (seenInit.has(o.claim)) return false;
+    seenInit.add(o.claim);
     return true;
   });
   const knownClaims = new Set(pool.map(o => o.claim));
-  const derived = new Set<string>();
+  const allDerived = new Set<string>();
 
-  const add = (claim: string) => {
-    const norm = claim.trim();
-    if (norm && !knownClaims.has(norm)) derived.add(norm);
-  };
+  // Capture original pool before fixpoint expansion — generative/intro rules
+  // that combine pairs should not use synthetic objects as inputs, otherwise
+  // rules like UNION_INTRO and PRODUCT_INTRO generate unbounded nested terms.
+  const originalPool = pool.slice();
+
+  // Pre-compute originalPool-derived indexes once — these never change across passes.
+  const origSubsetsConst = originalPool.filter(o => parseSubsetCanonical(o.claim) !== null);
+  const origImplicationsConst = originalPool.filter(o => parseImplicationCanonical(o.claim) !== null);
+  const origEqualityClaimsConst = originalPool.filter(o => parseEqualityCanonical(o.claim) !== null);
+  const origOrderClaimsConst = (originalPool.map(o => ({ obj: o, ord: parseOrder(o.claim) }))
+    .filter(x => x.ord !== null)) as { obj: ProofObject; ord: NonNullable<ReturnType<typeof parseOrder>> }[];
+  const origMembershipSetsConst = new Set(
+    originalPool.flatMap(o => { const m = parseMembershipCanonical(o.claim); return m ? [m.set] : []; })
+  );
+  const setsInPoolConst = new Set<string>();
+  for (const obj of originalPool) {
+    const mem = parseMembershipCanonical(obj.claim);
+    if (mem) setsInPoolConst.add(mem.set);
+    const sub = parseSubsetCanonical(obj.claim);
+    if (sub) { setsInPoolConst.add(sub.left); setsInPoolConst.add(sub.right); }
+  }
+  const origMembershipsConst = new Map<string, string[]>();
+  for (const obj of originalPool) {
+    const mem = parseMembershipCanonical(obj.claim);
+    if (!mem) continue;
+    const s = origMembershipsConst.get(mem.element) ?? [];
+    s.push(mem.set);
+    origMembershipsConst.set(mem.element, s);
+  }
+  const atomicClaimsConst = originalPool.filter(o => {
+    const c = o.claim;
+    return !parseConjunctionCanonical(c)
+      && !parseDisjunctionCanonical(c)
+      && !parseImplicationCanonical(c)
+      && !parseIffCanonical(c)
+      && !c.startsWith('¬')
+      && !c.startsWith('∀')
+      && !c.startsWith('∃');
+  });
+  const forallsByDomainConst = new Map<string, { variable: string; body: string }[]>();
+  for (const obj of originalPool) {
+    const forall = asForallExpr(parseCanonicalExpr(obj.claim));
+    if (!forall) continue;
+    const bucket = forallsByDomainConst.get(forall.domain) ?? [];
+    bucket.push({ variable: forall.variable, body: forall.body });
+    forallsByDomainConst.set(forall.domain, bucket);
+  }
+  const orderTermsConst = new Set<string>();
+  for (const { ord } of origOrderClaimsConst) {
+    orderTermsConst.add(ord.left);
+    orderTermsConst.add(ord.right);
+  }
+  const nonNegTermsConst = origOrderClaimsConst
+    .filter(({ ord }) => (ord.op === '≤' || ord.op === '<') && (ord.left === '0' || ord.left === 'zero'))
+    .map(({ ord }) => ord.right);
+
+  // Fixpoint loop: each pass may unlock new rules for the next
+  let prevPoolSize = 0;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    // If pool hasn't changed since last pass, we've converged — skip the expensive scan.
+    if (pool.length === prevPoolSize) break;
+    prevPoolSize = pool.length;
+    const newThisPass = new Set<string>();
+
+    const add = (claim: string) => {
+      const norm = claim.trim();
+      if (norm && !knownClaims.has(norm)) newThisPass.add(norm);
+    };
+
+  // Pre-filter pool into typed buckets — avoids repeated parser calls across rules.
+  type SubsetPair = { obj: ProofObject; sub: { left: string; right: string } };
+  type MembershipPair = { obj: ProofObject; mem: { element: string; set: string } };
+  type ImplicationPair = { obj: ProofObject; impl: [string, string] };
+  type EqualityPair = { obj: ProofObject; eq: { left: string; right: string } };
+  const poolSubsets: SubsetPair[] = [];
+  const poolMemberships: MembershipPair[] = [];
+  const poolImplications: ImplicationPair[] = [];
+  const poolConjunctions: { obj: ProofObject; conj: [string, string] }[] = [];
+  const poolDisjunctions: { obj: ProofObject; disj: [string, string] }[] = [];
+  const poolEqualities: EqualityPair[] = [];
+  const poolNegations: ProofObject[] = [];
+  const poolForalls: ProofObject[] = [];
+  const claimSet = new Set(pool.map(o => o.claim));
+  for (const obj of pool) {
+    const c = obj.claim;
+    const sub = parseSubsetCanonical(c);
+    if (sub) { poolSubsets.push({ obj, sub }); continue; }
+    const mem = parseMembershipCanonical(c);
+    if (mem) { poolMemberships.push({ obj, mem }); }
+    const impl = parseImplicationCanonical(c);
+    if (impl) poolImplications.push({ obj, impl });
+    const conj = parseConjunctionCanonical(c);
+    if (conj) poolConjunctions.push({ obj, conj });
+    const disj = parseDisjunctionCanonical(c);
+    if (disj) poolDisjunctions.push({ obj, disj });
+    const eq = parseEqualityCanonical(c);
+    if (eq) poolEqualities.push({ obj, eq });
+    if (c.startsWith('¬')) poolNegations.push(obj);
+    if (c.startsWith('∀')) poolForalls.push(obj);
+  }
 
   // ── AND_ELIM: P ∧ Q  →  P, Q ───────────────────────────────────────────
-  for (const obj of pool) {
-    const conj = parseConjunctionCanonical(obj.claim);
-    if (conj) {
-      add(conj[0]);
-      add(conj[1]);
-    }
+  for (const { conj } of poolConjunctions) {
+    add(conj[0]);
+    add(conj[1]);
   }
 
   // ── IMPLIES_ELIM (modus ponens): P → Q, P  →  Q ─────────────────────────
-  for (const obj of pool) {
-    const impl = parseImplicationCanonical(obj.claim);
-    if (!impl) continue;
-    const antecedentKnown = pool.some(o => sameProp(o.claim, impl[0]));
-    if (antecedentKnown) add(impl[1]);
+  for (const { impl } of poolImplications) {
+    if (claimSet.has(impl[0]) || pool.some(o => sameProp(o.claim, impl[0]))) add(impl[1]);
   }
 
   // ── IFF_ELIM: P ↔ Q  →  P → Q, Q → P; and forward modus ponens ─────────
@@ -7365,45 +7488,37 @@ export function deriveConclusions(ctx: Context): string[] {
     if (!iff) continue;
     add(`${iff[0]} → ${iff[1]}`);
     add(`${iff[1]} → ${iff[0]}`);
-    if (pool.some(o => sameProp(o.claim, iff[0]))) add(iff[1]);
-    if (pool.some(o => sameProp(o.claim, iff[1]))) add(iff[0]);
+    if (claimSet.has(iff[0]) || pool.some(o => sameProp(o.claim, iff[0]))) add(iff[1]);
+    if (claimSet.has(iff[1]) || pool.some(o => sameProp(o.claim, iff[1]))) add(iff[0]);
   }
 
   // ── SUBSET_ELIM: x ∈ A, A ⊆ B  →  x ∈ B ────────────────────────────────
-  for (const subObj of pool) {
-    const subset = parseSubsetCanonical(subObj.claim);
-    if (!subset) continue;
-    for (const memObj of pool) {
-      const mem = parseMembershipCanonical(memObj.claim);
-      if (!mem) continue;
-      if (sameProp(mem.set, subset.left)) {
-        add(`${mem.element} ∈ ${subset.right}`);
+  for (const { sub } of poolSubsets) {
+    for (const { mem } of poolMemberships) {
+      if (sameProp(mem.set, sub.left)) {
+        add(`${mem.element} ∈ ${sub.right}`);
       }
     }
   }
 
   // ── SUBSET_TRANSITIVITY: A ⊆ B, B ⊆ C  →  A ⊆ C ────────────────────────
-  for (const obj1 of pool) {
-    const s1 = parseSubsetCanonical(obj1.claim);
-    if (!s1) continue;
+  // One side must be from originalPool to prevent derived-subset chains exploding.
+  const origSubsets = origSubsetsConst;
+  for (const obj1 of origSubsets) {
+    const s1 = parseSubsetCanonical(obj1.claim)!;
     for (const obj2 of pool) {
       if (obj1 === obj2) continue;
       const s2 = parseSubsetCanonical(obj2.claim);
       if (!s2) continue;
-      if (sameProp(s1.right, s2.left)) {
-        add(`${s1.left} ⊆ ${s2.right}`);
-      }
+      if (sameProp(s1.right, s2.left)) add(`${s1.left} ⊆ ${s2.right}`);
+      if (sameProp(s2.right, s1.left)) add(`${s2.left} ⊆ ${s1.right}`);
     }
   }
 
   // ── SUBSET_ANTISYMMETRY: A ⊆ B, B ⊆ A  →  A = B ────────────────────────
-  for (const obj1 of pool) {
-    const s1 = parseSubsetCanonical(obj1.claim);
-    if (!s1) continue;
-    for (const obj2 of pool) {
-      if (obj1 === obj2) continue;
-      const s2 = parseSubsetCanonical(obj2.claim);
-      if (!s2) continue;
+  // One side from origSubsets to prevent derived-subset loops.
+  for (const { obj: obj1, sub: s1 } of origSubsets.map(o => ({ obj: o, sub: parseSubsetCanonical(o.claim)! }))) {
+    for (const { sub: s2 } of poolSubsets) {
       if (sameProp(s1.left, s2.right) && sameProp(s1.right, s2.left)) {
         add(`${s1.left} = ${s1.right}`);
       }
@@ -7411,9 +7526,7 @@ export function deriveConclusions(ctx: Context): string[] {
   }
 
   // ── INTERSECTION_ELIM: x ∈ A ∩ B  →  x ∈ A, x ∈ B ─────────────────────
-  for (const obj of pool) {
-    const mem = parseMembershipCanonical(obj.claim);
-    if (!mem) continue;
+  for (const { mem } of poolMemberships) {
     const inter = parseBinarySetCanonical(mem.set, '∩');
     if (inter) {
       add(`${mem.element} ∈ ${inter[0]}`);
@@ -7422,10 +7535,12 @@ export function deriveConclusions(ctx: Context): string[] {
   }
 
   // ── INTERSECTION_INTRO: x ∈ A, x ∈ B  →  x ∈ A ∩ B ────────────────────
+  // Build from full pool (captures derived memberships like x ∈ B from SUBSET_ELIM)
+  // but pair only sets where at least one is from the original pool, preventing
+  // exponential growth of nested intersections across passes.
   const membershipsByElement = new Map<string, string[]>();
-  for (const obj of pool) {
-    const mem = parseMembershipCanonical(obj.claim);
-    if (!mem) continue;
+  const origMembershipSets = origMembershipSetsConst;
+  for (const { mem } of poolMemberships) {
     const sets = membershipsByElement.get(mem.element) ?? [];
     sets.push(mem.set);
     membershipsByElement.set(mem.element, sets);
@@ -7433,16 +7548,21 @@ export function deriveConclusions(ctx: Context): string[] {
   for (const [elem, sets] of membershipsByElement) {
     for (let i = 0; i < sets.length; i++) {
       for (let j = i + 1; j < sets.length; j++) {
-        add(`${elem} ∈ ${sets[i]} ∩ ${sets[j]}`);
+        // Only generate intersection when both sets are from the original pool
+        if (origMembershipSets.has(sets[i]) && origMembershipSets.has(sets[j])) {
+          add(`${elem} ∈ ${sets[i]} ∩ ${sets[j]}`);
+        }
       }
     }
   }
 
   // ── IFF_INTRO: P → Q, Q → P  →  P ↔ Q ──────────────────────────────────
-  const implications = pool.filter(o => parseImplicationCanonical(o.claim) !== null);
-  for (const obj1 of implications) {
+  // Use origImplicationsConst — to prevent infinite negation chains.
+  const implications = poolImplications.map(x => x.impl);
+  const origImplications = origImplicationsConst;
+  for (const obj1 of origImplications) {
     const impl1 = parseImplicationCanonical(obj1.claim)!;
-    for (const obj2 of implications) {
+    for (const obj2 of origImplications) {
       if (obj1 === obj2) continue;
       const impl2 = parseImplicationCanonical(obj2.claim)!;
       if (sameProp(impl1[0], impl2[1]) && sameProp(impl1[1], impl2[0])) {
@@ -7452,39 +7572,27 @@ export function deriveConclusions(ctx: Context): string[] {
   }
 
   // ── OR_ELIM: P ∨ Q, P → R, Q → R  →  R ─────────────────────────────────
-  for (const obj of pool) {
-    const disj = parseDisjunctionCanonical(obj.claim);
-    if (!disj) continue;
-    const [p, q] = disj;
-    // For each P → R in pool, check if Q → R is also in pool
-    for (const imp of implications) {
-      const impl = parseImplicationCanonical(imp.claim)!;
-      if (!sameProp(impl[0], p)) continue;
-      const r = impl[1];
-      const hasQtoR = implications.some(o => {
-        const i2 = parseImplicationCanonical(o.claim)!;
-        return sameProp(i2[0], q) && sameProp(i2[1], r);
-      });
+  for (const { disj: [p, q] } of poolDisjunctions) {
+    for (const [ant, cons] of implications) {
+      if (!sameProp(ant, p)) continue;
+      const r = cons;
+      const hasQtoR = implications.some(([a, c]) => sameProp(a, q) && sameProp(c, r));
       if (hasQtoR) add(r);
     }
   }
 
   // ── DISJUNCTIVE SYLLOGISM: P ∨ Q, ¬P  →  Q  (and symmetric) ────────────
-  for (const obj of pool) {
-    const disj = parseDisjunctionCanonical(obj.claim);
-    if (!disj) continue;
-    const [p, q] = disj;
-    if (pool.some(o => sameProp(o.claim, `¬${p}`) || sameProp(o.claim, `¬(${p})`))) add(q);
-    if (pool.some(o => sameProp(o.claim, `¬${q}`) || sameProp(o.claim, `¬(${q})`))) add(p);
+  for (const { disj: [p, q] } of poolDisjunctions) {
+    if (claimSet.has(`¬${p}`) || claimSet.has(`¬(${p})`)) add(q);
+    if (claimSet.has(`¬${q}`) || claimSet.has(`¬(${q})`)) add(p);
   }
 
   // ── EQUALITY_SUBST: A = B, x ∈ A  →  x ∈ B  (and symmetric) ───────────
-  for (const obj of pool) {
-    const eq = parseEqualityCanonical(obj.claim);
-    if (!eq) continue;
-    for (const memObj of pool) {
-      const mem = parseMembershipCanonical(memObj.claim);
-      if (!mem) continue;
+  // Use origEqualityClaimsConst — derived equalities on full pool would cross
+  // with all derived memberships, producing quadratic blowup.
+  for (const obj of origEqualityClaimsConst) {
+    const eq = parseEqualityCanonical(obj.claim)!;
+    for (const { mem } of poolMemberships) {
       if (sameProp(mem.set, eq.left))  add(`${mem.element} ∈ ${eq.right}`);
       if (sameProp(mem.set, eq.right)) add(`${mem.element} ∈ ${eq.left}`);
       if (sameProp(mem.element, eq.left))  add(`${eq.right} ∈ ${mem.set}`);
@@ -7493,15 +7601,11 @@ export function deriveConclusions(ctx: Context): string[] {
   }
 
   // ── UNION_INTRO: x ∈ A  →  x ∈ A ∪ B for each set B appearing in pool ──
-  // Bounded: only generate unions over sets already mentioned in the pool.
-  const setsInPool = new Set<string>();
-  for (const obj of pool) {
-    const mem = parseMembershipCanonical(obj.claim);
-    if (mem) setsInPool.add(mem.set);
-    const sub = parseSubsetCanonical(obj.claim);
-    if (sub) { setsInPool.add(sub.left); setsInPool.add(sub.right); }
-  }
-  for (const obj of pool) {
+  // Use originalPool for both membership and set enumeration: derived memberships
+  // like `x ∈ A ∪ B` fed back would generate `x ∈ A ∪ B ∪ C`, then 4-element
+  // unions, etc. — exponential blowup. Original sets only is sufficient.
+  const setsInPool = setsInPoolConst;
+  for (const obj of originalPool) {
     const mem = parseMembershipCanonical(obj.claim);
     if (!mem) continue;
     for (const s of setsInPool) {
@@ -7513,11 +7617,553 @@ export function deriveConclusions(ctx: Context): string[] {
   }
 
   // ── DOUBLE_NEG_ELIM: ¬¬P  →  P ──────────────────────────────────────────
-  for (const obj of pool) {
+  for (const obj of poolNegations) {
     if (obj.claim.startsWith('¬¬')) {
       add(obj.claim.slice(2).trim());
     }
   }
 
-  return Array.from(derived);
+  // ── CONTRADICTION: P, ¬P  →  ⊥ ──────────────────────────────────────────
+  for (const obj of pool) {
+    if (claimSet.has(`¬${obj.claim}`) || claimSet.has(`¬(${obj.claim})`)) {
+      add('⊥');
+      break;
+    }
+  }
+
+  // ── FORALL_ELIM: ∀ x ∈ D, P(x), a ∈ D  →  P(a) ─────────────────────────
+  for (const obj of poolForalls) {
+    const parsed = parseCanonicalExpr(obj.claim);
+    const forall = asForallExpr(parsed);
+    if (!forall) continue;
+    const { variable, domain, body } = forall;
+    const witnesses = collectInstances(ctx, domain);
+    for (const w of witnesses) {
+      // substituteInBody wraps each substitution in parens; remove them when
+      // the substituted term is a single token (no spaces/operators inside).
+      const safeW = /^[\w.]+$/.test(w) ? w : `(${w})`;
+      const instantiated = body.replace(new RegExp(`\\b${variable}\\b`, 'g'), safeW);
+      add(instantiated);
+      // Also fire P → Q pattern: if body is P(x) → Q(x), and P(a) is in pool, add Q(a)
+      const impl = parseImplicationCanonical(instantiated);
+      if (impl) {
+        const [ant, cons] = impl;
+        if (pool.some(o => claimsMatch(o.claim, ant))) add(cons);
+      }
+    }
+  }
+
+  // ── EXISTS_INTRO: P(a), a ∈ D  →  ∃ x ∈ D, P(x) ────────────────────────
+  // Use originalPool for memberships — derived `a ∈ X` claims would generate
+  // an existential for every compound set, causing quadratic blowup.
+  for (const memObj of originalPool) {
+    const mem = parseMembershipCanonical(memObj.claim);
+    if (!mem) continue;
+    const { element: witness, set: domain } = mem;
+    for (const bodyObj of originalPool) {
+      if (bodyObj === memObj) continue;
+      if (!bodyObj.claim.includes(witness)) continue;
+      // Replace witness with a fresh variable name `x` to form the body
+      const bodyWithVar = bodyObj.claim.replace(
+        new RegExp(`\\b${witness.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'),
+        'x',
+      );
+      if (bodyWithVar === bodyObj.claim) continue; // no substitution occurred
+      add(`∃ x ∈ ${domain}, ${bodyWithVar}`);
+    }
+  }
+
+  // ── CONTRAPOSITIVE: P → Q  →  ¬Q → ¬P  (originalPool only — no ¬¬ chains) ──
+  for (const obj of origImplications) {
+    const impl = parseImplicationCanonical(obj.claim)!;
+    add(`¬${impl[1]} → ¬${impl[0]}`);
+  }
+
+  // ── DE MORGAN: ¬(P ∧ Q)  →  ¬P ∨ ¬Q;  ¬(P ∨ Q)  →  ¬P ∧ ¬Q ────────────
+  for (const obj of poolNegations) {
+    const inner = obj.claim.slice(1).trim().replace(/^\(|\)$/g, '');
+    const conj = parseConjunctionCanonical(inner);
+    if (conj) { add(`¬${conj[0]} ∨ ¬${conj[1]}`); continue; }
+    const disj = parseDisjunctionCanonical(inner);
+    if (disj) { add(`¬${disj[0]} ∧ ¬${disj[1]}`); }
+  }
+
+  // ── FUNCTION APPLICATION: f: A → B, x ∈ A  →  f(x) ∈ B ─────────────────
+  for (const obj of pool) {
+    const morph = parseMorphismDeclarationCanonical(obj.claim);
+    if (!morph) continue;
+    for (const { mem } of poolMemberships) {
+      if (!sameProp(mem.set, morph.domain)) continue;
+      add(`${morph.label}(${mem.element}) ∈ ${morph.codomain}`);
+    }
+  }
+
+  // ── EQUALITY SYMMETRY: A = B  →  B = A ──────────────────────────────────
+  for (const { eq } of poolEqualities) {
+    add(`${eq.right} = ${eq.left}`);
+  }
+
+  // ── EQUALITY TRANSITIVITY: A = B, B = C  →  A = C ────────────────────────
+  // One side from origEqualityClaims to prevent derived-equality chains exploding.
+  const origEqualityClaims = origEqualityClaimsConst;
+  for (const obj1 of origEqualityClaims) {
+    const eq1 = parseEqualityCanonical(obj1.claim)!;
+    for (const { eq: eq2 } of poolEqualities) {
+      if (sameProp(eq1.right, eq2.left)) add(`${eq1.left} = ${eq2.right}`);
+      if (sameProp(eq1.left, eq2.right)) add(`${eq2.left} = ${eq1.right}`);
+    }
+  }
+
+  // ── EQUALITY → SUBSET: A = B  →  A ⊆ B, B ⊆ A ───────────────────────────
+  for (const { eq } of poolEqualities) {
+    add(`${eq.left} ⊆ ${eq.right}`);
+    add(`${eq.right} ⊆ ${eq.left}`);
+  }
+
+  // ── IMAGE: f: A → B, x ∈ A  →  f(x) ∈ image(f, A) ───────────────────────
+  for (const obj of pool) {
+    const morph = parseMorphismDeclarationCanonical(obj.claim);
+    if (!morph) continue;
+    for (const { mem } of poolMemberships) {
+      if (!sameProp(mem.set, morph.domain)) continue;
+      add(`${morph.label}(${mem.element}) ∈ image(${morph.label}, ${morph.domain})`);
+    }
+  }
+
+  // ── SET_BUILDER_ELIM: x ∈ {y ∈ S | P(y)}  →  x ∈ S, P(x) ──────────────
+  for (const { mem } of poolMemberships) {
+    const builder = parseSetBuilderCanonical(mem.set);
+    if (!builder) continue;
+    const { variable, domain, elementTemplate } = builder;
+    // x ∈ S (the bounding domain)
+    add(`${mem.element} ∈ ${domain}`);
+    // P(x): substitute variable → element in the template
+    const safeElem = /^[\w.]+$/.test(mem.element) ? mem.element : `(${mem.element})`;
+    const predicate = elementTemplate.replace(
+      new RegExp(`\\b${variable}\\b`, 'g'),
+      safeElem,
+    );
+    if (predicate !== elementTemplate) add(predicate);
+  }
+
+  // ── AND_INTRO (bounded): P, Q already in pool  →  P ∧ Q ─────────────────
+  // Use originalPool to prevent exponential growth across passes.
+  const atomicClaims = atomicClaimsConst;
+  for (let i = 0; i < atomicClaims.length; i++) {
+    for (let j = i + 1; j < atomicClaims.length; j++) {
+      add(`${atomicClaims[i].claim} ∧ ${atomicClaims[j].claim}`);
+    }
+  }
+
+  // ── MODUS TOLLENS: P → Q, ¬Q  →  ¬P ─────────────────────────────────────
+  for (const { impl } of poolImplications) {
+    const negQ = `¬${impl[1]}`;
+    const negQParen = `¬(${impl[1]})`;
+    if (claimSet.has(negQ) || claimSet.has(negQParen)) add(`¬${impl[0]}`);
+  }
+
+  // ── SUBSET_REFLEXIVITY: A mentioned in pool  →  A ⊆ A ───────────────────
+  for (const s of setsInPool) {
+    add(`${s} ⊆ ${s}`);
+  }
+
+  // ── INTERSECTION ⊆ COMPONENTS: A ∩ B ⊆ A, A ∩ B ⊆ B ────────────────────
+  for (const s of setsInPool) {
+    const inter = parseBinarySetCanonical(s, '∩');
+    if (inter) {
+      add(`${s} ⊆ ${inter[0]}`);
+      add(`${s} ⊆ ${inter[1]}`);
+    }
+  }
+
+  // ── UNION_SUBSET: A ⊆ C, B ⊆ C  →  A ∪ B ⊆ C ───────────────────────────
+  // Both sides from origSubsets to prevent nested union blowup across passes.
+  const origSubsetPairs = origSubsets.map(o => parseSubsetCanonical(o.claim)!);
+  for (let i = 0; i < origSubsetPairs.length; i++) {
+    for (let j = 0; j < origSubsetPairs.length; j++) {
+      if (i === j) continue;
+      if (sameProp(origSubsetPairs[i].right, origSubsetPairs[j].right)) {
+        add(`${origSubsetPairs[i].left} ∪ ${origSubsetPairs[j].left} ⊆ ${origSubsetPairs[i].right}`);
+      }
+    }
+  }
+
+  // ── FORALL ↔ SUBSET: A ⊆ B  →  ∀ x ∈ A, x ∈ B ──────────────────────────
+  for (const s of origSubsetPairs) {
+    add(`∀ x ∈ ${s.left}, x ∈ ${s.right}`);
+  }
+  // Also cover one-hop derived subsets (e.g. A⊆C from A⊆B,B⊆C)
+  for (const c of allDerived) {
+    const sub = parseSubsetCanonical(c);
+    if (sub && !sub.left.includes('∪') && !sub.left.includes('∩')) {
+      add(`∀ x ∈ ${sub.left}, x ∈ ${sub.right}`);
+    }
+  }
+
+  // ── PREIMAGE: y ∈ image(f, A)  →  ∃ x ∈ A, f(x) = y ────────────────────
+  for (const { mem } of poolMemberships) {
+    const m = mem.set.match(/^image\s*\(\s*([^,]+?)\s*,\s*(.+?)\s*\)$/);
+    if (!m) continue;
+    const [, fn, domain] = m;
+    add(`∃ x ∈ ${domain}, ${fn}(x) = ${mem.element}`);
+  }
+
+  // ── IMPLICATION TRANSITIVITY: P → Q, Q → R  →  P → R ───────────────────
+  // At least one side from origImplications to avoid infinite derived chains.
+  for (const obj1 of origImplications) {
+    const impl1 = parseImplicationCanonical(obj1.claim)!;
+    for (const [ant, cons] of implications) {
+      if (sameProp(impl1[1], ant)) add(`${impl1[0]} → ${cons}`);
+    }
+    for (const obj2 of origImplications) {
+      if (obj1 === obj2) continue;
+      const impl2 = parseImplicationCanonical(obj2.claim)!;
+      if (sameProp(impl1[1], impl2[0])) add(`${impl1[0]} → ${impl2[1]}`);
+    }
+  }
+
+  // ── FORALL_SUBSET (reverse): ∀ x ∈ A, x ∈ B  →  A ⊆ B ──────────────────
+  for (const obj of poolForalls) {
+    const parsed = parseCanonicalExpr(obj.claim);
+    const forall = asForallExpr(parsed);
+    if (!forall) continue;
+    const mem = parseMembershipCanonical(forall.body);
+    if (mem && forall.variable === mem.element) {
+      add(`${forall.domain} ⊆ ${mem.set}`);
+    }
+  }
+
+  // ── FORALL CONJUNCTION: ∀ x ∈ A, P(x) and ∀ x ∈ A, Q(x)  →  ∀ x ∈ A, P(x) ∧ Q(x) ──
+  // Use originalPool to prevent re-conjoining derived conjunctions indefinitely.
+  const forallsByDomain = forallsByDomainConst;
+  for (const [domain, entries] of forallsByDomain) {
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        // Normalise to a shared variable name 'x'
+        const bodyI = entries[i].body.replace(new RegExp(`\\b${entries[i].variable}\\b`, 'g'), 'x');
+        const bodyJ = entries[j].body.replace(new RegExp(`\\b${entries[j].variable}\\b`, 'g'), 'x');
+        add(`∀ x ∈ ${domain}, ${bodyI} ∧ ${bodyJ}`);
+      }
+    }
+  }
+
+  // ── QUANTIFIER NEGATION DUALITY ───────────────────────────────────────────
+  // ¬(∀ x ∈ D, P(x))  →  ∃ x ∈ D, ¬P(x)
+  // ¬(∃ x ∈ D, P(x))  →  ∀ x ∈ D, ¬P(x)
+  for (const obj of poolNegations) {
+    const inner = obj.claim.slice(1).trim().replace(/^\(|\)$/g, '');
+    const parsedInner = parseCanonicalExpr(inner);
+    const fa = asForallExpr(parsedInner);
+    if (fa) { add(`∃ ${fa.variable} ∈ ${fa.domain}, ¬(${fa.body})`); continue; }
+    const ex = asExistsExpr(parsedInner);
+    if (ex) { add(`∀ ${ex.variable} ∈ ${ex.domain}, ¬(${ex.body})`); }
+  }
+
+  // ── FUNCTION COMPOSITION: f: A → B, g: B → C  →  g∘f: A → C ────────────
+  for (const obj1 of pool) {
+    const m1 = parseMorphismDeclarationCanonical(obj1.claim);
+    if (!m1) continue;
+    for (const obj2 of pool) {
+      if (obj1 === obj2) continue;
+      const m2 = parseMorphismDeclarationCanonical(obj2.claim);
+      if (!m2) continue;
+      if (sameProp(m1.codomain, m2.domain)) {
+        add(`${m2.label}∘${m1.label}: ${m1.domain} → ${m2.codomain}`);
+      }
+    }
+  }
+
+  // ── ORDER TRANSITIVITY: a ≤ b, b ≤ c  →  a ≤ c  (also <, >, ≥) ──────────
+  // Use originalPool for both sides to prevent derived-order chains exploding.
+  const origOrderClaims = origOrderClaimsConst;
+  const orderClaims = pool.map(o => ({ obj: o, ord: parseOrder(o.claim) }))
+                          .filter(x => x.ord !== null) as { obj: ProofObject; ord: NonNullable<ReturnType<typeof parseOrder>> }[];
+  for (const { ord: o1 } of origOrderClaims) {
+    for (const { ord: o2 } of orderClaims) {
+      if (o1 === o2) continue;
+      if (!sameProp(o1.right, o2.left)) continue;
+      // Determine resulting op: < + < = <, ≤ + ≤ = ≤, < + ≤ or ≤ + < = <
+      const strict1 = o1.op === '<' || o1.op === '>';
+      const strict2 = o2.op === '<' || o2.op === '>';
+      const fwd1 = o1.op === '<' || o1.op === '≤';
+      const fwd2 = o2.op === '<' || o2.op === '≤';
+      if (fwd1 && fwd2) {
+        const op = (strict1 || strict2) ? '<' : '≤';
+        add(`${o1.left} ${op} ${o2.right}`);
+      } else if (!fwd1 && !fwd2) {
+        const op = (strict1 || strict2) ? '>' : '≥';
+        add(`${o1.left} ${op} ${o2.right}`);
+      }
+    }
+  }
+
+  // ── ORDER ANTISYMMETRY: a ≤ b, b ≤ a  →  a = b ───────────────────────────
+  for (const { ord: o1 } of origOrderClaims) {
+    for (const { ord: o2 } of origOrderClaims) {
+      if (o1 === o2) continue;
+      const both_leq = (o1.op === '≤' || o1.op === '<=') && (o2.op === '≤' || o2.op === '<=');
+      const both_geq = (o1.op === '≥' || o1.op === '>=') && (o2.op === '≥' || o2.op === '>=');
+      if ((both_leq || both_geq) && sameProp(o1.left, o2.right) && sameProp(o1.right, o2.left)) {
+        add(`${o1.left} = ${o1.right}`);
+      }
+    }
+  }
+
+  // ── STRICT → NON-STRICT: a < b  →  a ≤ b ────────────────────────────────
+  for (const { ord } of origOrderClaims) {
+    if (ord.op === '<') add(`${ord.left} ≤ ${ord.right}`);
+    if (ord.op === '>') add(`${ord.left} ≥ ${ord.right}`);
+  }
+
+  // Helper: strip a single layer of outer parens if present
+  const stripParens = (s: string) => s.startsWith('(') && s.endsWith(')') ? s.slice(1, -1).trim() : s;
+
+  // ── DISTRIBUTION: P ∧ (Q ∨ R)  →  (P ∧ Q) ∨ (P ∧ R) ────────────────────
+  // Use originalPool — distribution on derived compound claims feeds back indefinitely.
+  for (const obj of originalPool) {
+    const conj = parseConjunctionCanonical(obj.claim);
+    if (conj) {
+      const [p, qr] = conj;
+      const disj = parseDisjunctionCanonical(stripParens(qr));
+      if (disj) add(`(${p} ∧ ${disj[0]}) ∨ (${p} ∧ ${disj[1]})`);
+    }
+    // P ∨ (Q ∧ R)  →  (P ∨ Q) ∧ (P ∨ R)
+    const disj = parseDisjunctionCanonical(obj.claim);
+    if (disj) {
+      const conjInner = parseConjunctionCanonical(stripParens(disj[1]));
+      if (conjInner) add(`(${disj[0]} ∨ ${conjInner[0]}) ∧ (${disj[0]} ∨ ${conjInner[1]})`);
+    }
+  }
+
+  // ── IMAGE_SUBSET: A ⊆ B, f: B → C  →  image(f, A) ⊆ image(f, B) ─────────
+  // Use origSubsets — derived subsets would generate image claims for every
+  // derived chain, causing linear-per-pass blowup on image claims.
+  for (const obj of origSubsets) {
+    const sub = parseSubsetCanonical(obj.claim)!;
+    for (const fnObj of pool) {
+      const morph = parseMorphismDeclarationCanonical(fnObj.claim);
+      if (!morph || !sameProp(morph.domain, sub.right)) continue;
+      add(`image(${morph.label}, ${sub.left}) ⊆ image(${morph.label}, ${sub.right})`);
+    }
+  }
+
+  // ── COMMUTATIVITY: P ∧ Q  →  Q ∧ P;  P ∨ Q  →  Q ∨ P ───────────────────
+  // Use originalPool — derived conjunctions/disjunctions would feed back infinitely.
+  for (const obj of originalPool) {
+    const conj = parseConjunctionCanonical(obj.claim);
+    if (conj) add(`${conj[1]} ∧ ${conj[0]}`);
+    const disj = parseDisjunctionCanonical(obj.claim);
+    if (disj) add(`${disj[1]} ∨ ${disj[0]}`);
+  }
+
+  // ── ASSOCIATIVITY: (P ∧ Q) ∧ R  →  P ∧ (Q ∧ R);  likewise ∨ ─────────────
+  // Use originalPool — same reason as COMMUTATIVITY.
+  for (const obj of originalPool) {
+    const outer = parseConjunctionCanonical(obj.claim);
+    if (outer) {
+      const inner = parseConjunctionCanonical(stripParens(outer[0]));
+      if (inner) add(`${inner[0]} ∧ (${inner[1]} ∧ ${outer[1]})`);
+    }
+    const outerD = parseDisjunctionCanonical(obj.claim);
+    if (outerD) {
+      const innerD = parseDisjunctionCanonical(stripParens(outerD[0]));
+      if (innerD) add(`${innerD[0]} ∨ (${innerD[1]} ∨ ${outerD[1]})`);
+    }
+  }
+
+  // ── ORDER REFLEXIVITY: a ≤ a for every term mentioned in an original order claim ───
+  for (const t of orderTermsConst) add(`${t} ≤ ${t}`);
+
+  // ── COMPOSITION APPLICATION: g∘f: A → C, x ∈ A  →  (g∘f)(x) ∈ C ─────────
+  for (const obj of pool) {
+    const morph = parseMorphismDeclarationCanonical(obj.claim);
+    if (!morph || !morph.label.includes('∘')) continue;
+    for (const { mem } of poolMemberships) {
+      if (!sameProp(mem.set, morph.domain)) continue;
+      add(`(${morph.label})(${mem.element}) ∈ ${morph.codomain}`);
+    }
+  }
+
+  // ── ARITHMETIC SIMPLIFICATION: evaluate concrete order/equality claims ────
+  for (const { ord } of origOrderClaims) {
+    const result = evalOrder(ord.left, ord.op, ord.right);
+    if (result === true)  add(`${ord.left} ${ord.op} ${ord.right}`); // already known; skip
+    if (result === false) add(`¬(${ord.left} ${ord.op} ${ord.right})`);
+  }
+  for (const { eq } of poolEqualities) {
+    const lv = evalArith(eq.left);
+    const rv = evalArith(eq.right);
+    if (lv !== null && rv !== null && lv !== rv) add(`¬(${eq.left} = ${eq.right})`);
+  }
+
+  // ── IDEMPOTENCY: P ∧ P  →  P;  P ∨ P  →  P ──────────────────────────────
+  for (const { conj } of poolConjunctions) {
+    if (sameProp(conj[0], conj[1])) add(conj[0]);
+  }
+  for (const { disj } of poolDisjunctions) {
+    if (sameProp(disj[0], disj[1])) add(disj[0]);
+  }
+
+  // ── IDENTITY / ABSORPTION with ⊤ and ⊥ ───────────────────────────────────
+  for (const { conj } of poolConjunctions) {
+    if (conj[0] === TOP || conj[0] === '⊤') add(conj[1]);
+    if (conj[1] === TOP || conj[1] === '⊤') add(conj[0]);
+    if (conj[0] === BOTTOM || conj[0] === '⊥') add(BOTTOM);
+    if (conj[1] === BOTTOM || conj[1] === '⊥') add(BOTTOM);
+  }
+  for (const { disj } of poolDisjunctions) {
+    if (disj[0] === BOTTOM || disj[0] === '⊥') add(disj[1]);
+    if (disj[1] === BOTTOM || disj[1] === '⊥') add(disj[0]);
+    if (disj[0] === TOP    || disj[0] === '⊤') add(TOP);
+    if (disj[1] === TOP    || disj[1] === '⊤') add(TOP);
+  }
+
+  // ── EX_FALSO: ⊥ in pool  →  ⊤, and every atomic claim's negation ─────────
+  if (claimSet.has(BOTTOM) || claimSet.has('⊥')) {
+    add(TOP);
+    for (const o of atomicClaims) add(`¬${o.claim}`);
+  }
+
+  // ── NON-MEMBERSHIP: ¬(x ∈ A) ↔ x ∉ A ────────────────────────────────────
+  for (const obj of poolNegations) {
+    const inner = obj.claim.slice(1).trim().replace(/^\(|\)$/g, '');
+    const mem = parseMembershipCanonical(inner);
+    if (mem) add(`${mem.element} ∉ ${mem.set}`);
+  }
+  for (const obj of pool) {
+    const nonMem = parseNonMembershipCanonical(obj.claim);
+    if (nonMem) add(`¬(${nonMem.element} ∈ ${nonMem.set})`);
+  }
+
+  // ── COMPLEMENT: x ∈ complement(A, U) → x ∉ A, x ∈ U ────────────────────
+  for (const { mem } of poolMemberships) {
+    const m = mem.set.match(/^complement\s*\(\s*(.+?)\s*,\s*(.+?)\s*\)$/);
+    if (!m) continue;
+    const [, a, u] = m;
+    add(`${mem.element} ∉ ${a}`);
+    add(`${mem.element} ∈ ${u}`);
+  }
+
+  // ── ORDER ADDITION: a ≤ b, c ≤ d  →  a + c ≤ b + d ──────────────────────
+  // Use origOrderClaims for both sides — arithmetic addition is deterministic.
+  for (const { ord: o1 } of origOrderClaims) {
+    for (const { ord: o2 } of origOrderClaims) {
+      if (o1 === o2) continue;
+      const fwd1 = o1.op === '<' || o1.op === '≤';
+      const fwd2 = o2.op === '<' || o2.op === '≤';
+      if (fwd1 && fwd2) {
+        const strict = o1.op === '<' || o2.op === '<';
+        const op = strict ? '<' : '≤';
+        add(`${o1.left} + ${o2.left} ${op} ${o1.right} + ${o2.right}`);
+      }
+    }
+  }
+
+  // ── ORDER SCALING: 0 ≤ c, a ≤ b  →  a * c ≤ b * c ───────────────────────
+  for (const c of nonNegTermsConst) {
+    for (const { ord } of origOrderClaims) {
+      const fwd = ord.op === '≤' || ord.op === '<';
+      if (!fwd) continue;
+      if (ord.left === '0' || ord.left === 'zero') continue; // skip the non-neg witness itself
+      add(`${ord.left} * ${c} ${ord.op} ${ord.right} * ${c}`);
+    }
+  }
+
+  // ── NEGATION SPECIAL CASES: ¬⊥ → ⊤;  ¬⊤ → ⊥ ────────────────────────────
+  if (claimSet.has('¬⊥') || claimSet.has(`¬${BOTTOM}`)) add(TOP);
+  if (claimSet.has('¬⊤') || claimSet.has(`¬${TOP}`))    add(BOTTOM);
+
+  // ── EXCLUDED MIDDLE: P ∨ ¬P for every atomic claim P in pool ────────────
+  for (const o of atomicClaims) {
+    const neg = o.claim.includes(' ') ? `¬(${o.claim})` : `¬${o.claim}`;
+    add(`${o.claim} ∨ ${neg}`);
+  }
+
+  // ── EMPTY SET: ∅ ⊆ A for every set A mentioned in pool ──────────────────
+  for (const s of setsInPool) {
+    add(`∅ ⊆ ${s}`);
+  }
+
+  // ── COMPLEMENT_INTRO: x ∉ A, x ∈ U  →  x ∈ complement(A, U) ────────────
+  const nonMembers = new Map<string, string[]>(); // element → [sets it's not in]
+  const membersMap = new Map<string, string[]>(); // element → [sets it's in]
+  for (const obj of pool) {
+    const nm = parseNonMembershipCanonical(obj.claim);
+    if (nm) {
+      const list = nonMembers.get(nm.element) ?? [];
+      list.push(nm.set);
+      nonMembers.set(nm.element, list);
+    }
+  }
+  for (const obj of poolNegations) {
+    const inner = obj.claim.slice(1).trim().replace(/^\(|\)$/g, '');
+    const mem = parseMembershipCanonical(inner);
+    if (mem) {
+      const list = nonMembers.get(mem.element) ?? [];
+      list.push(mem.set);
+      nonMembers.set(mem.element, list);
+    }
+  }
+  for (const { mem } of poolMemberships) {
+    const list = membersMap.get(mem.element) ?? [];
+    list.push(mem.set);
+    membersMap.set(mem.element, list);
+  }
+  for (const [elem, notInSets] of nonMembers) {
+    const inSets = membersMap.get(elem) ?? [];
+    for (const a of notInSets) {
+      for (const u of inSets) {
+        add(`${elem} ∈ complement(${a}, ${u})`);
+      }
+    }
+  }
+
+  // ── FORALL_SPLIT: ∀ x ∈ A, P(x) ∧ Q(x)  →  ∀ x ∈ A, P(x) and ∀ x ∈ A, Q(x) ──
+  for (const obj of poolForalls) {
+    const fa = asForallExpr(parseCanonicalExpr(obj.claim));
+    if (!fa) continue;
+    const conj = parseConjunctionCanonical(stripParens(fa.body));
+    if (conj) {
+      add(`∀ ${fa.variable} ∈ ${fa.domain}, ${conj[0]}`);
+      add(`∀ ${fa.variable} ∈ ${fa.domain}, ${conj[1]}`);
+    }
+  }
+
+  // ── CARTESIAN PRODUCT ELIM: (x, y) ∈ A × B  →  x ∈ A, y ∈ B ────────────
+  // ── CARTESIAN PRODUCT INTRO: x ∈ A, y ∈ B  →  (x, y) ∈ A × B ───────────
+  for (const { mem } of poolMemberships) {
+    const prodParts = mem.set.includes('×') ? mem.set.split('×').map(s => s.trim()) : null;
+    const prod = prodParts && prodParts.length === 2 ? prodParts as [string, string] : null;
+    if (prod) {
+      // Elim: (a, b) ∈ A × B  →  a ∈ A, b ∈ B
+      const tuple = mem.element.match(/^\(\s*(.+?)\s*,\s*(.+?)\s*\)$/);
+      if (tuple) {
+        add(`${tuple[1]} ∈ ${prod[0]}`);
+        add(`${tuple[2]} ∈ ${prod[1]}`);
+      }
+    }
+  }
+  // Intro: pair up members of different sets (originalPool only — no nesting)
+  const origMemberships = origMembershipsConst;
+  for (const [elemA, setsA] of origMemberships) {
+    for (const [elemB, setsB] of origMemberships) {
+      if (elemA === elemB) continue;
+      for (const setA of setsA) {
+        for (const setB of setsB) {
+          add(`(${elemA}, ${elemB}) ∈ ${setA} × ${setB}`);
+        }
+      }
+    }
+  }
+
+    // ── End of pass ─────────────────────────────────────────────────────────
+    if (newThisPass.size === 0) break;
+    for (const c of newThisPass) {
+      allDerived.add(c);
+      knownClaims.add(c);
+      pool.push(makeSyntheticObject(c));
+    }
+  } // end fixpoint loop
+
+  return Array.from(allDerived);
 }

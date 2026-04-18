@@ -141,6 +141,12 @@ function lexFL(text) {
             parsed.push({ type: 'prove', content: cleaned, connective: conn });
             continue;
         }
+        // ── derive() — forward-chaining: emit all reachable conclusions ──────────
+        if (/^derive\s*\(\s*\)/.test(line)) {
+            const [, conn] = extractConnective(line);
+            parsed.push({ type: 'derive', content: '', connective: conn });
+            continue;
+        }
         // ── AndIntro(P, Q) — explicit AND introduction step ──────────────────────
         if (/^AndIntro\s*\(/.test(line)) {
             let combined = line;

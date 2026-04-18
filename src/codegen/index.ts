@@ -132,6 +132,8 @@ function nodeToExpr(node: ASTNode, symbolicMode: boolean, ctx: CodegenContext): 
         : `concludeExpr(atom(() => !!(${generateRuntimeExpr(node.expr)}), ${JSON.stringify(renderExprSource(node.expr))}))`;
     case 'Obtain':
       return `atom(true, ${JSON.stringify(`obtain(${node.varName})`)})`;
+    case 'Derive':
+      return `atom(true, 'derive()')`;
     default: {
       const _: never = node;
       throw new Error('Unhandled node type');

@@ -168,8 +168,8 @@ lemma PreimageIntersectionEquality() {
 proof PreimageIntersectionEquality() {
   setVar(x: Element) →
   assume(x ∈ preimage(f, B ∩ C)) →
-  apply(PreimageIntersectionLeft) →
-  apply(PreimageIntersectionRight) →
+  apply(PreimageIntersectionLeft) ∧
+  apply(PreimageIntersectionRight) ∧
   prove(x ∈ preimage(f, B) ∩ preimage(f, C)) →
   prove(preimage(f, B ∩ C) ⊂ preimage(f, B) ∩ preimage(f, C)) →
   setVar(y: Element) →
