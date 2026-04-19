@@ -904,6 +904,8 @@ function deriveClaim(ctx, claim, step) {
         deriveSubsetElim,
         deriveSubsetTransitivity,
         deriveSubsetAntisymmetry,
+        deriveEqualityReflexivity,
+        deriveEqualitySymmetry,
         deriveEqualitySubstitution,
         deriveUnionRule,
         deriveIntersectionRule,
@@ -1862,16 +1864,23 @@ function deriveNotIntro(ctx, claim, step) {
     if (!claim.startsWith('¬'))
         return null;
     const positive = claim.slice(1).trim();
-    const positiveObject = requireClassical(ctx, positive, 'NOT_INTRO');
-    if (!positiveObject)
+    // NOT_INTRO (proof by contradiction): φ must have been introduced via assume(),
+    // and ⊥ must be in context (the assumption led to a contradiction).
+    // Finding φ in premises or derived objects is NOT sufficient — that would allow
+    // deriving ¬φ from φ, collapsing soundness via contradiction + ex falso.
+    const assumption = findExact(ctx.assumptions, positive, false);
+    if (!assumption)
+        return null;
+    const bottom = findExact(ctx.objects, BOTTOM, false);
+    if (!bottom)
         return null;
     ctx.category.complementOf(positive);
-    createKernelObject(ctx, claim, 'NOT_INTRO', step, [positiveObject.id]);
+    createKernelObject(ctx, claim, 'NOT_INTRO', step, [assumption.id, bottom.id]);
     return {
         rule: 'NOT_INTRO',
         state: 'PROVED',
-        uses: [positiveObject.claim],
-        message: 'Used the primitive Boolean complement associated with the proposition',
+        uses: [positive, BOTTOM],
+        message: 'Proof by contradiction: assuming φ led to ⊥, therefore ¬φ holds',
     };
 }
 function deriveImpliesElim(ctx, claim, step) {
@@ -1919,9 +1928,9 @@ function deriveIffIntro(ctx, claim, step) {
     const right = requireClassical(ctx, `${iff[1]} → ${iff[0]}`, 'IMPLIES_ELIM');
     if (!left || !right)
         return null;
-    createKernelObject(ctx, claim, 'OR_ELIM', step, [left.id, right.id]);
+    createKernelObject(ctx, claim, 'IFF_INTRO', step, [left.id, right.id]);
     return {
-        rule: 'OR_ELIM',
+        rule: 'IFF_INTRO',
         state: 'PROVED',
         uses: [left.claim, right.claim],
         message: 'Built the biconditional from both directional morphisms',
@@ -1935,18 +1944,18 @@ function deriveIffElim(ctx, claim, step) {
         const left = findExact(ctx.objects, iff[0], false);
         const right = findExact(ctx.objects, iff[1], false);
         if (left && (0, propositions_1.sameProp)(iff[1], claim)) {
-            createKernelObject(ctx, claim, 'IMPLIES_ELIM', step, [object.id, left.id]);
+            createKernelObject(ctx, claim, 'IFF_ELIM_L', step, [object.id, left.id]);
             return {
-                rule: 'IMPLIES_ELIM',
+                rule: 'IFF_ELIM_L',
                 state: 'PROVED',
                 uses: [object.claim, left.claim],
                 message: 'Used the biconditional and the left side to derive the right side',
             };
         }
         if (right && (0, propositions_1.sameProp)(iff[0], claim)) {
-            createKernelObject(ctx, claim, 'IMPLIES_ELIM', step, [object.id, right.id]);
+            createKernelObject(ctx, claim, 'IFF_ELIM_R', step, [object.id, right.id]);
             return {
-                rule: 'IMPLIES_ELIM',
+                rule: 'IFF_ELIM_R',
                 state: 'PROVED',
                 uses: [object.claim, right.claim],
                 message: 'Used the biconditional and the right side to derive the left side',
@@ -2081,6 +2090,33 @@ function deriveSubsetAntisymmetry(ctx, claim, step) {
         state: 'PROVED',
         uses: [forward.claim, backward.claim],
         message: 'Collapsed mutual subset morphisms into equality',
+    };
+}
+function deriveEqualityReflexivity(ctx, claim, step) {
+    const eq = (0, propositions_1.parseEqualityCanonical)(claim);
+    if (!eq || !(0, propositions_1.sameProp)(eq.left, eq.right))
+        return null;
+    createKernelObject(ctx, claim, 'EQ_REFL', step, []);
+    return {
+        rule: 'EQ_REFL',
+        state: 'PROVED',
+        uses: [],
+        message: 'Reflexivity of equality: t = t holds for any term',
+    };
+}
+function deriveEqualitySymmetry(ctx, claim, step) {
+    const eq = (0, propositions_1.parseEqualityCanonical)(claim);
+    if (!eq)
+        return null;
+    const flipped = requireClassical(ctx, `${eq.right} = ${eq.left}`, 'EQ_SYMM');
+    if (!flipped)
+        return null;
+    createKernelObject(ctx, claim, 'EQ_SYMM', step, [flipped.id]);
+    return {
+        rule: 'EQ_SYMM',
+        state: 'PROVED',
+        uses: [flipped.claim],
+        message: 'Symmetry of equality: s = t implies t = s',
     };
 }
 function deriveEqualitySubstitution(ctx, claim, step) {

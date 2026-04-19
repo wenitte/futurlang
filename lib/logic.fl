@@ -211,8 +211,8 @@ lemma Contrapositive() {
 proof Contrapositive() {
   assume(¬ Q) →
   assume(P) →
-  prove(Q) ∧
-  contradiction() ∧
+  prove(Q) →
+  contradiction() →
   prove(¬ P) →
   conclude(¬ Q → ¬ P)
 } ∧
@@ -239,8 +239,8 @@ lemma ExcludedMiddle() {
 proof ExcludedMiddle() {
   assume(¬ (P ∨ ¬ P)) →
   assume(P) →
-  prove(P ∨ ¬ P) ∧
-  contradiction() ∧
+  prove(P ∨ ¬ P) →
+  contradiction() →
   prove(¬ P) →
   prove(P ∨ ¬ P) →
   contradiction() →
