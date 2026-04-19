@@ -503,17 +503,6 @@ If ZFC is inconsistent (which would invalidate essentially all of modern mathema
 
 ---
 
-## §9  What Would Strengthen This Further
-
-For a fully mechanically verified kernel, the next steps are:
-
-1. **Formalize this proof in Lean or Coq.** The soundness argument above is written in mathematical English. It could be formalized in ~1000 lines of Lean, producing a machine-checked proof that the kernel rules are sound.
-
-2. **Write the kernel in a dependently typed language.** If the kernel itself were written in Lean (as a shallow embedding), then the correspondence between §2 and the implementation would be definitional, not audited by hand.
-
-3. **Enumerate all domain axioms.** Refactor every `derive*Claim` function into an explicit `.fl` axiom file, so `fl axioms <file>` can print the complete axiom set for any proof.
-
-Until step 1 is done, this document should be read as a *mathematical argument* — rigorous but not machine-checked. The level of assurance is comparable to a published proof in a mathematics journal: convincing to experts, but not immune to human error.
 
 ---
 
