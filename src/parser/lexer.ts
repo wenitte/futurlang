@@ -9,7 +9,9 @@ export interface ParsedLine {
     | 'declareToProve' | 'prove' | 'derive' | 'andIntroStep' | 'orIntroStep'
     | 'requires' | 'ensures'
     | 'setVar'  | 'blockEnd'   | 'level'  | 'return' | 'induction' | 'base' | 'step' | 'match' | 'case' | 'raw'
-    | 'intro' | 'rewrite' | 'exact' | 'obtain';
+    | 'intro' | 'rewrite' | 'exact' | 'obtain'
+    // Solana/blockchain
+    | 'program' | 'account' | 'instruction' | 'errorDecl' | 'require';
   content: string;
   name?: string;
   // Connective trailing the line/block-end: → ∧ ∨ ↔ or null
@@ -112,6 +114,46 @@ export function lexFL(text: string): ParsedLine[] {
       const [cleaned, conn] = extractConnective(line);
       parsed.push({ type: 'lemma', content: cleaned,
         name: cleaned.match(/^lemma\s+(\w+)/)?.[1] ?? 'unnamed', connective: conn });
+      continue;
+    }
+
+    // ── Solana/blockchain block openers ──────────────────────────────────────
+    if (/^program\s+\w/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'program', content: cleaned,
+        name: cleaned.match(/^program\s+(\w+)/)?.[1] ?? 'unnamed', connective: conn });
+      continue;
+    }
+    if (/^account\s+\w/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'account', content: cleaned,
+        name: cleaned.match(/^account\s+(\w+)/)?.[1] ?? 'unnamed', connective: conn });
+      continue;
+    }
+    if (/^instruction\s+\w/.test(line)) {
+      // Join lines until the opening { is found (handles multi-line param lists)
+      let combined = line;
+      while (!combined.trimEnd().endsWith('{') && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'instruction', content: cleaned,
+        name: cleaned.match(/^instruction\s+(\w+)/)?.[1] ?? 'unnamed', connective: conn });
+      continue;
+    }
+    if (/^error\s+\w/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      parsed.push({ type: 'errorDecl', content: cleaned,
+        name: cleaned.match(/^error\s+(\w+)/)?.[1] ?? 'unnamed', connective: conn });
+      continue;
+    }
+    if (/^require\s*\(/.test(line)) {
+      let combined = line;
+      while (parenDepth(combined) !== 0 && i < raw.length) {
+        combined += ' ' + raw[i]; i++;
+      }
+      const [cleaned, conn] = extractConnective(combined);
+      parsed.push({ type: 'require', content: cleaned, connective: conn });
       continue;
     }
 

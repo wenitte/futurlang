@@ -111,6 +111,17 @@ function nodeToExpr(node, symbolicMode, ctx) {
             return `atom(true, ${JSON.stringify(`obtain(${node.varName})`)})`;
         case 'Derive':
             return `atom(true, 'derive()')`;
+        // Blockchain/Solana nodes — not executable in JS mode, emit as atoms
+        case 'Program':
+            return `atom(true, ${JSON.stringify(`program(${node.name})`)})`;
+        case 'Account':
+            return `atom(true, ${JSON.stringify(`account(${node.name})`)})`;
+        case 'Instruction':
+            return `atom(true, ${JSON.stringify(`instruction(${node.name})`)})`;
+        case 'ErrorDecl':
+            return `atom(true, ${JSON.stringify(`error(${node.name})`)})`;
+        case 'Require':
+            return `atom(true, ${JSON.stringify(`require(${node.error})`)})`;
         default: {
             const _ = node;
             throw new Error('Unhandled node type');

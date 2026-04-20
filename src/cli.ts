@@ -9,6 +9,7 @@ import { lexFL } from './parser/lexer';
 import { parseLinesToAST } from './parser/parser';
 import { checkFile, createMutableContext, evaluateIncrementalStep, deriveConclusions } from './checker/checker';
 import { createReactApp } from './react/transpiler';
+import { generateRustFromAST, generateCargoToml } from './codegen/rust';
 
 const rawArgs = process.argv.slice(2);
 const strict = rawArgs.includes('--strict');
@@ -66,6 +67,21 @@ async function main() {
     runServer(file); return;
   }
 
+  if (command === 'build') {
+    const file = args[1];
+    if (!file) { console.error('Usage: fl build <file.fl> [-o output]'); process.exit(1); }
+    const outFlag = args.indexOf('-o');
+    const outName = outFlag >= 0 ? args[outFlag + 1] : null;
+    await runBuild(file, outName); return;
+  }
+
+  if (command === 'rust') {
+    const file = args[1];
+    if (!file) { console.error('Usage: fl rust <file.fl> [out.rs]'); process.exit(1); }
+    const outFile = args[2] ?? null;
+    runRust(file, outFile); return;
+  }
+
   if (command === 'repl') {
     runRepl(rawArgs.includes('--json')); return;
   }
@@ -114,6 +130,79 @@ function runStart(file: string, outDir: string) {
     return;
   }
   launchFrontend(outDir);
+}
+
+async function runBuild(file: string, outName: string | null) {
+  if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
+
+  const source = expandFLFile(file);
+  const nodes = parseLinesToAST(lexFL(source), { desugarFns: false });
+  const rustSrc = generateRustFromAST(nodes, path.basename(file));
+
+  const isAnchor = nodes.some(n => n.type === 'Program');
+  const programName = outName ?? path.basename(file, '.fl');
+  const cargoToml = generateCargoToml(programName, isAnchor);
+
+  // Write to a hidden temp directory — Rust source is never exposed to the user
+  const tmpDir = path.join(require('os').tmpdir(), `fl-build-${Date.now()}`);
+  const srcDir = path.join(tmpDir, 'src');
+  fs.mkdirSync(srcDir, { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, 'Cargo.toml'), cargoToml, 'utf8');
+
+  const entryFile = isAnchor ? 'lib.rs' : 'main.rs';
+  fs.writeFileSync(path.join(srcDir, entryFile), rustSrc, 'utf8');
+
+  console.log(`Building ${path.basename(file)}...`);
+
+  const buildCmd = isAnchor ? 'cargo build-sbf' : 'cargo build --release';
+  const [cmd, ...buildArgs] = buildCmd.split(' ');
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, buildArgs, {
+      cwd: tmpDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    });
+    let stderr = '';
+    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+    child.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Build failed:\n${stderr}`));
+    });
+  }).then(() => {
+    // Copy output artifact to cwd, then clean up temp dir
+    const outDir = isAnchor
+      ? path.join(tmpDir, 'target', 'deploy')
+      : path.join(tmpDir, 'target', 'release');
+    const artifactName = isAnchor ? `${programName.replace(/-/g, '_')}.so` : programName;
+    const artifactSrc = path.join(outDir, artifactName);
+    const artifactDst = path.join(process.cwd(), artifactName);
+    if (fs.existsSync(artifactSrc)) {
+      fs.copyFileSync(artifactSrc, artifactDst);
+      console.log(`\n✓ Built: ${artifactName}`);
+    } else {
+      console.log(`\n✓ Build succeeded (artifact in ${outDir})`);
+    }
+  }).catch((e: Error) => {
+    console.error(e.message);
+    process.exitCode = 1;
+  }).finally(() => {
+    // Always remove temp dir — Rust source stays hidden
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+}
+
+function runRust(file: string, outFile: string | null) {
+  if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
+  const source = expandFLFile(file);
+  const nodes = parseLinesToAST(lexFL(source), { desugarFns: false });
+  const rust = generateRustFromAST(nodes, path.basename(file));
+  if (outFile) {
+    fs.writeFileSync(outFile, rust, 'utf8');
+    console.log(`Rust source written to ${outFile}`);
+  } else {
+    process.stdout.write(rust);
+  }
 }
 
 function runCheck(file: string) {
@@ -464,6 +553,7 @@ Usage:
   fl [--strict] <file.fl>           Execute a file; proof-shaped files also show checker output
   fl check [--strict] <file.fl>     Check proof structure with the categorical kernel
   fl derive <file.fl>               Forward-chain all derivable conclusions from premises
+  fl build <file.fl> [-o name]      Compile to binary via Rust (source stays hidden)
   fl server <file.fl>               Run a server-style FL file
 
 App workflow (recommended):

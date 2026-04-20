@@ -13,9 +13,11 @@ import {
   AssertNode, DeclareToProveNode, ProveNode, DeriveNode, AndIntroStepNode, OrIntroStepNode,
   GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode, InductionNode, FoldNode,
   IntroNode, RewriteNode, ExactNode, ObtainNode,
+  AccountNode, InstructionNode, InstructionParam, AccountQualifier, ErrorDeclNode, ErrorVariant, ProgramNode, RequireNode,
 } from './ast';
 
-type BlockNode = TheoremNode | DefinitionNode | StructNode | TypeDeclNode | ProofNode | LemmaNode | FnDeclNode;
+type BlockNode = TheoremNode | DefinitionNode | StructNode | TypeDeclNode | ProofNode | LemmaNode | FnDeclNode
+  | AccountNode | InstructionNode | ErrorDeclNode | ProgramNode;
 
 export interface ParserOptions {
   desugarFns?: boolean;
@@ -69,6 +71,35 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
         };
         stack.push(node); break;
       }
+      case 'program': {
+        const node: ProgramNode = {
+          type: 'Program',
+          name: line.name!,
+          programId: '11111111111111111111111111111111',
+          body: [],
+          connective: null,
+        };
+        stack.push(node); break;
+      }
+      case 'account': {
+        const node: AccountNode = { type: 'Account', name: line.name!, fields: [], connective: null };
+        stack.push(node); break;
+      }
+      case 'instruction': {
+        const sig = parseInstructionSignature(line.content);
+        const node: InstructionNode = {
+          type: 'Instruction',
+          name: sig.name,
+          params: sig.params,
+          body: [],
+          connective: null,
+        };
+        stack.push(node); break;
+      }
+      case 'errorDecl': {
+        const node: ErrorDeclNode = { type: 'ErrorDecl', name: line.name!, variants: [], connective: null };
+        stack.push(node); break;
+      }
 
       // ── Block-end: pop, attach connective, push to parent or top-level ─────
       case 'blockEnd': {
@@ -82,6 +113,12 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
         }
         if (finished.type === 'TypeDecl') {
           finished.variants = (finished.variants as unknown as string[]).map(variant => parseTypeVariant(variant));
+        }
+        if (finished.type === 'Account') {
+          finished.fields = (finished.fields as unknown as string[]).map(field => parseStructField(field));
+        }
+        if (finished.type === 'ErrorDecl') {
+          finished.variants = (finished.variants as unknown as string[]).map(raw => parseErrorVariant(raw));
         }
 
         const lowered = finished.type === 'FnDecl' && desugarFns ? desugarFnDecl(finished) : [finished];
@@ -204,6 +241,16 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
         pushOrTop(stack, ast, node);
         break;
       }
+      case 'require': {
+        const inner = line.content.replace(/^require\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+        // Split on last comma to separate condition from error name
+        const lastComma = inner.lastIndexOf(',');
+        const condStr = lastComma >= 0 ? inner.slice(0, lastComma).trim() : inner;
+        const errName = lastComma >= 0 ? inner.slice(lastComma + 1).trim() : '';
+        const condition = parseCallExprFromStr(condStr);
+        const node: RequireNode = { type: 'Require', condition, error: errName, connective: line.connective };
+        pushOrTop(stack, ast, node); break;
+      }
       case 'obtain': {
         // obtain(varName, ∃ x ∈ S, P(x))
         const inner = line.content.replace(/^obtain\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
@@ -238,11 +285,12 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
       case 'level':
       case 'raw': {
         const node: RawNode = { type: 'Raw', content: line.content, connective: line.connective };
-        // Struct fields go into fields[], others go into body
-        if (stack.length > 0 && stack[stack.length - 1].type === 'Struct') {
-          (stack[stack.length - 1] as unknown as { fields: string[] }).fields.push(line.content);
-        } else if (stack.length > 0 && stack[stack.length - 1].type === 'TypeDecl') {
-          (stack[stack.length - 1] as unknown as { variants: string[] }).variants.push(line.content);
+        // Struct/account fields and type/error variants go into their arrays; others go into body
+        const top = stack.length > 0 ? stack[stack.length - 1] : null;
+        if (top?.type === 'Struct' || top?.type === 'Account') {
+          (top as unknown as { fields: string[] }).fields.push(line.content);
+        } else if (top?.type === 'TypeDecl' || top?.type === 'ErrorDecl') {
+          (top as unknown as { variants: string[] }).variants.push(line.content);
         } else {
           pushOrTop(stack, ast, node);
         }
@@ -267,11 +315,11 @@ function pushOrTop(stack: BlockNode[], ast: ASTNode[], node: ASTNode) {
 }
 
 function pushToBlock(block: BlockNode, node: ASTNode) {
-  if (block.type === 'Struct' || block.type === 'TypeDecl') {
-    // structs don't have a body[] for statement nodes — skip
+  if (block.type === 'Struct' || block.type === 'TypeDecl' || block.type === 'Account' || block.type === 'ErrorDecl') {
+    // field-based blocks don't have a body[] for statement nodes — skip
     return;
   }
-  (block as TheoremNode | DefinitionNode | ProofNode | LemmaNode | FnDeclNode).body.push(node);
+  (block as TheoremNode | DefinitionNode | ProofNode | LemmaNode | FnDeclNode | InstructionNode | ProgramNode).body.push(node);
 }
 
 function extractCallBody(content: string, keyword: string): string {
@@ -772,7 +820,11 @@ function isTopLevelBlock(node: ASTNode): node is BlockNode {
     node.type === 'TypeDecl' ||
     node.type === 'Proof' ||
     node.type === 'Lemma' ||
-    node.type === 'FnDecl';
+    node.type === 'FnDecl' ||
+    node.type === 'Program' ||
+    node.type === 'Account' ||
+    node.type === 'Instruction' ||
+    node.type === 'ErrorDecl';
 }
 
 function describeTopLevelNode(node: BlockNode): string {
@@ -784,6 +836,74 @@ function describeTopLevelNode(node: BlockNode): string {
     case 'Proof':
     case 'Lemma':
     case 'FnDecl':
+    case 'Account':
+    case 'Instruction':
+    case 'ErrorDecl':
       return `${node.type.toLowerCase()} '${node.name}'`;
+    case 'Program':
+      return `program '${node.name}'`;
+  }
+}
+
+// ── Instruction signature parser ──────────────────────────────────────────────
+
+function parseInstructionSignature(content: string): { name: string; params: InstructionParam[] } {
+  // instruction TransferTokens(from: mut signer ∈ TokenAccount, amount ∈ Lamport) {
+  const match = content.match(/^instruction\s+(\w+)\s*\(([\s\S]*)\)\s*\{?$/);
+  if (!match) throw new Error(`Malformed instruction signature: ${content}`);
+  const [, name, rawParams] = match;
+  const params = rawParams.trim()
+    ? splitFnParams(rawParams).map(p => parseInstructionParam(p.trim()))
+    : [];
+  return { name, params };
+}
+
+function parseInstructionParam(value: string): InstructionParam {
+  // Account param:  name: [qualifiers] ∈ Type   e.g. "from: mut signer ∈ TokenAccount"
+  // Data param:     name ∈ Type                  e.g. "amount ∈ Lamport"
+  const accountMatch = value.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*:\s*(.*?)\s*∈\s*(.+)$/);
+  if (accountMatch) {
+    const qualifiers = accountMatch[2].trim().split(/\s+/)
+      .filter(q => q.length > 0)
+      .filter((q): q is AccountQualifier => ['mut', 'signer', 'init', 'close', 'seeds'].includes(q));
+    return {
+      name: accountMatch[1],
+      qualifiers,
+      paramType: normalizeSortName(accountMatch[3]),
+      isAccount: true,
+    };
+  }
+  // Data param
+  const dataMatch = value.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*∈\s*(.+)$/);
+  if (dataMatch) {
+    return {
+      name: dataMatch[1],
+      qualifiers: [],
+      paramType: normalizeSortName(dataMatch[2]),
+      isAccount: false,
+    };
+  }
+  throw new Error(`Malformed instruction parameter: ${value}`);
+}
+
+// ── Error variant parser ──────────────────────────────────────────────────────
+
+function parseErrorVariant(raw: string): ErrorVariant {
+  // | VariantName("message")  or  | VariantName
+  const trimmed = raw.trim().replace(/^[|,]+\s*/, '').trim();
+  const withMsg = trimmed.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*\("(.*)"\)\s*$/);
+  if (withMsg) return { name: withMsg[1], message: withMsg[2] };
+  const bare = trimmed.match(/^(\w[\w₀-₉ₐ-ₙ]*)\s*$/);
+  if (bare) return { name: bare[1], message: bare[1] };
+  throw new Error(`Malformed error variant: ${raw}`);
+}
+
+// ── Expression parser from raw string (no keyword prefix) ────────────────────
+
+function parseCallExprFromStr(raw: string) {
+  try {
+    return parseExpr(raw);
+  } catch {
+    return { type: 'Atom' as const, condition: raw, atomKind: 'opaque' as const };
   }
 }

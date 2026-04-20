@@ -324,6 +324,69 @@ export interface ObtainNode {
   connective: BlockConnective;
 }
 
+// ── Solana / blockchain primitives ───────────────────────────────────────────
+
+// On-chain account state — compiles to Anchor's #[account] struct with Borsh
+export interface AccountNode {
+  type: 'Account';
+  name: string;
+  fields: StructField[];
+  connective: BlockConnective;
+}
+
+// Qualifier on an instruction account parameter: mut, signer, init, etc.
+export type AccountQualifier = 'mut' | 'signer' | 'init' | 'close' | 'seeds';
+
+// A parameter in an instruction's context:
+//   account param:  from: mut signer ∈ TokenAccount
+//   data param:     amount ∈ Lamport
+export interface InstructionParam {
+  name: string;
+  qualifiers: AccountQualifier[];
+  paramType: string;  // e.g. "TokenAccount", "Lamport"
+  isAccount: boolean; // true if account param (has qualifiers / is on-chain type)
+}
+
+// instruction Name(account_params, data_params) { body }
+export interface InstructionNode {
+  type: 'Instruction';
+  name: string;
+  params: InstructionParam[];
+  body: ASTNode[];
+  connective: BlockConnective;
+}
+
+// Custom program error variant
+export interface ErrorVariant {
+  name: string;
+  message: string;
+}
+
+// error ErrorName { | Variant("msg") ... }
+export interface ErrorDeclNode {
+  type: 'ErrorDecl';
+  name: string;
+  variants: ErrorVariant[];
+  connective: BlockConnective;
+}
+
+// Top-level Solana program container — generates a full Anchor module
+export interface ProgramNode {
+  type: 'Program';
+  name: string;
+  programId: string; // placeholder or declared ID
+  body: ASTNode[];   // AccountNode | InstructionNode | ErrorDeclNode | FnDeclNode | StructNode
+  connective: BlockConnective;
+}
+
+// require(condition, ErrorVariant) — guard that returns program error on failure
+export interface RequireNode {
+  type: 'Require';
+  condition: ExprNode;
+  error: string;    // error variant name e.g. "InsufficientFunds"
+  connective: BlockConnective;
+}
+
 export type ASTNode =
   | TheoremNode
   | DefinitionNode
@@ -349,6 +412,12 @@ export type ASTNode =
   | IntroNode
   | RewriteNode
   | ExactNode
-  | ObtainNode;
+  | ObtainNode
+  // Solana/blockchain
+  | AccountNode
+  | InstructionNode
+  | ErrorDeclNode
+  | ProgramNode
+  | RequireNode;
 
 // The top-level program is a single chained expression built from these nodes.
