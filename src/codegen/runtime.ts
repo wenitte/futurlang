@@ -190,8 +190,10 @@ function router(routes, fallback) {
   return (req) => {
     for (const entry of routes) {
       if (!entry) continue;
-      if (String(req.method).toUpperCase() !== entry.method) continue;
-      if (req.path !== entry.path) continue;
+      const method = String(entry.method).toUpperCase();
+      if (method !== String(req.method).toUpperCase() && method !== '*') continue;
+      const routePath = String(entry.path);
+      if (routePath !== '*' && req.path !== routePath) continue;
       return dispatch(entry.handler, req);
     }
     if (fallback) return dispatch(fallback, req);
@@ -303,4 +305,8 @@ function struct_(name, fields) {
   console.log('\\nStruct ' + name);
   return atom(true, 'struct(' + name + ')');
 }
+
+// Firebase primitives — no-ops at eval time; the React transpiler handles real Firebase wiring
+function initFirebase(config) { return config; }
+function notesApp(firebase) { return atom(true, 'notesApp'); }
 `;

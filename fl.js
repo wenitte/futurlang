@@ -2717,8 +2717,10 @@ function router(routes, fallback) {
   return (req) => {
     for (const entry of routes) {
       if (!entry) continue;
-      if (String(req.method).toUpperCase() !== entry.method) continue;
-      if (req.path !== entry.path) continue;
+      const method = String(entry.method).toUpperCase();
+      if (method !== String(req.method).toUpperCase() && method !== '*') continue;
+      const routePath = String(entry.path);
+      if (routePath !== '*' && req.path !== routePath) continue;
       return dispatch(entry.handler, req);
     }
     if (fallback) return dispatch(fallback, req);
@@ -2830,6 +2832,10 @@ function struct_(name, fields) {
   console.log('\\nStruct ' + name);
   return atom(true, 'struct(' + name + ')');
 }
+
+// Firebase primitives \u2014 no-ops at eval time; the React transpiler handles real Firebase wiring
+function initFirebase(config) { return config; }
+function notesApp(firebase) { return atom(true, 'notesApp'); }
 `;
 
 // src/parser/formal.ts
@@ -11366,7 +11372,41 @@ var fs2 = __toESM(require("fs"));
 var path2 = __toESM(require("path"));
 var MATH_CHARS = /[∀∃⇒≥≤≠∈∉⊆⊇∪∩∧∨¬→↔λΣ∑∏√∞·]/;
 var MATH_NOTATION = /\|[^|]|\bmod\b|divides|\{.*\|/;
+function stripQuotes(s) {
+  return s.trim().replace(/^["']|["']$/g, "");
+}
+function detectFirebaseConfig(nodes) {
+  const vars = {};
+  for (const node of nodes) {
+    if (node.type === "SetVar" && node.varName.startsWith("FIREBASE_") && node.value) {
+      vars[node.varName] = stripQuotes(node.value);
+    }
+  }
+  if (!vars["FIREBASE_API_KEY"]) return null;
+  return {
+    apiKey: vars["FIREBASE_API_KEY"] ?? "",
+    authDomain: vars["FIREBASE_AUTH_DOMAIN"] ?? "",
+    projectId: vars["FIREBASE_PROJECT_ID"] ?? "",
+    storageBucket: vars["FIREBASE_STORAGE_BUCKET"] ?? "",
+    messagingSenderId: vars["FIREBASE_MESSAGING_SENDER_ID"] ?? "",
+    appId: vars["FIREBASE_APP_ID"] ?? ""
+  };
+}
+function extractNoteFields(nodes) {
+  for (const node of nodes) {
+    if (node.type === "Struct" && node.name === "Note") {
+      return node.fields.filter((f) => f.name !== "id");
+    }
+  }
+  return [{ name: "title", type: "String" }, { name: "body", type: "String" }];
+}
 function createReactApp(nodes, outDir) {
+  const fbConfig = detectFirebaseConfig(nodes);
+  if (fbConfig) {
+    const noteFields = extractNoteFields(nodes);
+    createFirebaseNotesApp(fbConfig, noteFields, outDir);
+    return;
+  }
   fs2.mkdirSync(outDir, { recursive: true });
   fs2.mkdirSync(path2.join(outDir, "src"), { recursive: true });
   const program = serializeNodes(nodes);
@@ -11378,6 +11418,411 @@ function createReactApp(nodes, outDir) {
   fs2.writeFileSync(path2.join(outDir, "src", "App.tsx"), renderReactApp(program), "utf8");
   fs2.writeFileSync(path2.join(outDir, "src", "styles.css"), reactStylesCss, "utf8");
 }
+function createFirebaseNotesApp(config, noteFields, outDir) {
+  const srcDir = path2.join(outDir, "src");
+  const componentsDir = path2.join(srcDir, "components");
+  fs2.mkdirSync(componentsDir, { recursive: true });
+  fs2.writeFileSync(path2.join(outDir, "package.json"), firebasePackageJson, "utf8");
+  fs2.writeFileSync(path2.join(outDir, "tsconfig.json"), reactTsconfig, "utf8");
+  fs2.writeFileSync(path2.join(outDir, "vite.config.ts"), reactViteConfig, "utf8");
+  fs2.writeFileSync(path2.join(outDir, "index.html"), firebaseIndexHtml, "utf8");
+  fs2.writeFileSync(path2.join(outDir, ".env"), buildEnvFile(config), "utf8");
+  fs2.writeFileSync(path2.join(srcDir, "main.tsx"), reactMainTsx, "utf8");
+  fs2.writeFileSync(path2.join(srcDir, "firebase.ts"), buildFirebaseTs(config), "utf8");
+  fs2.writeFileSync(path2.join(srcDir, "App.tsx"), buildAppTsx(), "utf8");
+  fs2.writeFileSync(path2.join(srcDir, "styles.css"), firebaseStylesCss, "utf8");
+  fs2.writeFileSync(path2.join(componentsDir, "Auth.tsx"), buildAuthTsx(), "utf8");
+  fs2.writeFileSync(path2.join(componentsDir, "Notes.tsx"), buildNotesTsx(noteFields), "utf8");
+}
+function buildEnvFile(config) {
+  return [
+    `VITE_FIREBASE_API_KEY=${config.apiKey}`,
+    `VITE_FIREBASE_AUTH_DOMAIN=${config.authDomain}`,
+    `VITE_FIREBASE_PROJECT_ID=${config.projectId}`,
+    `VITE_FIREBASE_STORAGE_BUCKET=${config.storageBucket}`,
+    `VITE_FIREBASE_MESSAGING_SENDER_ID=${config.messagingSenderId}`,
+    `VITE_FIREBASE_APP_ID=${config.appId}`
+  ].join("\n") + "\n";
+}
+function buildFirebaseTs(config) {
+  return `import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+
+const firebaseConfig = {
+  apiKey:            ${JSON.stringify(config.apiKey)},
+  authDomain:        ${JSON.stringify(config.authDomain)},
+  projectId:         ${JSON.stringify(config.projectId)},
+  storageBucket:     ${JSON.stringify(config.storageBucket)},
+  messagingSenderId: ${JSON.stringify(config.messagingSenderId)},
+  appId:             ${JSON.stringify(config.appId)},
+};
+
+export const app      = initializeApp(firebaseConfig);
+export const auth     = getAuth(app);
+export const db       = getFirestore(app);
+export const google   = new GoogleAuthProvider();
+`;
+}
+function buildAppTsx() {
+  return `import { useEffect, useState } from 'react';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from './firebase';
+import Auth from './components/Auth';
+import Notes from './components/Notes';
+import './styles.css';
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); });
+  }, []);
+
+  if (loading) return <div className="splash"><div className="spinner" /></div>;
+
+  return user ? <Notes user={user} /> : <Auth />;
+}
+`;
+}
+function buildAuthTsx() {
+  return `import { useState } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from 'firebase/auth';
+import { auth, google } from '../firebase';
+
+export default function Auth() {
+  const [mode, setMode]       = useState<'login' | 'signup'>('login');
+  const [email, setEmail]     = useState('');
+  const [password, setPass]   = useState('');
+  const [error, setError]     = useState('');
+  const [busy, setBusy]       = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(''); setBusy(true);
+    try {
+      if (mode === 'signup') {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err: any) {
+      setError(err.message ?? 'Authentication failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleGoogle() {
+    setError(''); setBusy(true);
+    try {
+      await signInWithPopup(auth, google);
+    } catch (err: any) {
+      setError(err.message ?? 'Google sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="auth-shell">
+      <div className="auth-card">
+        <h1>Notes</h1>
+        <p className="auth-sub">Powered by FuturLang</p>
+
+        <div className="tab-row">
+          <button className={mode === 'login'  ? 'tab active' : 'tab'} onClick={() => setMode('login')}>Sign in</button>
+          <button className={mode === 'signup' ? 'tab active' : 'tab'} onClick={() => setMode('signup')}>Create account</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="auth-form">
+          <label>
+            Email
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+          </label>
+          <label>
+            Password
+            <input type="password" value={password} onChange={e => setPass(e.target.value)} required minLength={6} />
+          </label>
+          {error && <p className="error">{error}</p>}
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? '\u2026' : mode === 'login' ? 'Sign in' : 'Create account'}
+          </button>
+        </form>
+
+        <div className="divider"><span>or</span></div>
+
+        <button className="btn-google" onClick={handleGoogle} disabled={busy}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Continue with Google
+        </button>
+      </div>
+    </div>
+  );
+}
+`;
+}
+function buildNotesTsx(noteFields) {
+  const hasBody = noteFields.some((f) => f.name === "body");
+  return `import { useEffect, useState } from 'react';
+import {
+  collection, query, where, orderBy, onSnapshot,
+  addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
+} from 'firebase/firestore';
+import { signOut, User } from 'firebase/auth';
+import { auth, db } from '../firebase';
+
+interface Note {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: any;
+  userId: string;
+}
+
+export default function Notes({ user }: { user: User }) {
+  const [notes, setNotes]       = useState<Note[]>([]);
+  const [active, setActive]     = useState<Note | null>(null);
+  const [title, setTitle]       = useState('');
+  const [body, setBody]         = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [search, setSearch]     = useState('');
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'notes'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc'),
+    );
+    return onSnapshot(q, snap => {
+      setNotes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Note)));
+    });
+  }, [user.uid]);
+
+  function selectNote(note: Note) {
+    setActive(note);
+    setTitle(note.title);
+    setBody(note.body ?? '');
+  }
+
+  function newNote() {
+    setActive(null);
+    setTitle('');
+    setBody('');
+  }
+
+  async function save() {
+    if (!title.trim()) return;
+    setSaving(true);
+    try {
+      if (active) {
+        await updateDoc(doc(db, 'notes', active.id), { title: title.trim(), body });
+        setActive(prev => prev ? { ...prev, title: title.trim(), body } : null);
+      } else {
+        const ref = await addDoc(collection(db, 'notes'), {
+          title: title.trim(),
+          body,
+          userId: user.uid,
+          createdAt: serverTimestamp(),
+        });
+        setActive({ id: ref.id, title: title.trim(), body, userId: user.uid, createdAt: null });
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string) {
+    await deleteDoc(doc(db, 'notes', id));
+    if (active?.id === id) newNote();
+  }
+
+  const filtered = notes.filter(n =>
+    n.title.toLowerCase().includes(search.toLowerCase()) ||
+    (n.body ?? '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="notes-shell">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-top">
+          <span className="brand">Notes</span>
+          <button className="btn-icon" title="New note" onClick={newNote}>+</button>
+        </div>
+        <input
+          className="search"
+          placeholder="Search\u2026"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <ul className="note-list">
+          {filtered.map(n => (
+            <li
+              key={n.id}
+              className={active?.id === n.id ? 'note-item active' : 'note-item'}
+              onClick={() => selectNote(n)}
+            >
+              <span className="note-title">{n.title}</span>
+              <button
+                className="btn-delete"
+                onClick={e => { e.stopPropagation(); remove(n.id); }}
+                title="Delete"
+              >\xD7</button>
+            </li>
+          ))}
+          {filtered.length === 0 && (
+            <li className="empty">{search ? 'No matches' : 'No notes yet'}</li>
+          )}
+        </ul>
+        <div className="sidebar-bottom">
+          <span className="user-email">{user.email}</span>
+          <button className="btn-signout" onClick={() => signOut(auth)}>Sign out</button>
+        </div>
+      </aside>
+
+      {/* Editor */}
+      <main className="editor">
+        <div className="editor-header">
+          <input
+            className="title-input"
+            placeholder="Note title\u2026"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+          />
+          <button className="btn-save" onClick={save} disabled={saving || !title.trim()}>
+            {saving ? 'Saving\u2026' : active ? 'Save' : 'Create'}
+          </button>
+        </div>
+        ${hasBody ? `<textarea
+          className="body-input"
+          placeholder="Start writing\u2026"
+          value={body}
+          onChange={e => setBody(e.target.value)}
+        />` : `<p className="no-body">Body field not defined in Note struct.</p>`}
+      </main>
+    </div>
+  );
+}
+`;
+}
+var firebasePackageJson = `{
+  "name": "fl-notes-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "firebase": "^10.14.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8"
+  }
+}
+`;
+var firebaseIndexHtml = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notes \u2014 FuturLang</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+`;
+var firebaseStylesCss = `/* \u2500\u2500 Reset \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #1a1a1a; }
+button { cursor: pointer; font-family: inherit; }
+input, textarea { font-family: inherit; }
+
+/* \u2500\u2500 Splash \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.splash { display: flex; align-items: center; justify-content: center; height: 100vh; }
+.spinner { width: 32px; height: 32px; border: 3px solid #ddd; border-top-color: #333; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* \u2500\u2500 Auth \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.auth-shell { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+.auth-card { background: white; border-radius: 12px; padding: 2rem; width: min(400px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+.auth-card h1 { font-size: 2rem; font-weight: 700; margin-bottom: .25rem; }
+.auth-sub { color: #888; font-size: .9rem; margin-bottom: 1.5rem; }
+.tab-row { display: flex; border-bottom: 2px solid #eee; margin-bottom: 1.5rem; }
+.tab { background: none; border: none; padding: .5rem 1rem; font-size: .95rem; color: #888; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; }
+.tab.active { color: #333; border-bottom-color: #333; font-weight: 600; }
+.auth-form { display: flex; flex-direction: column; gap: .75rem; }
+.auth-form label { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; font-weight: 500; color: #444; }
+.auth-form input { border: 1.5px solid #ddd; border-radius: 8px; padding: .6rem .75rem; font-size: .95rem; transition: border-color .15s; }
+.auth-form input:focus { outline: none; border-color: #667eea; }
+.error { color: #c0392b; font-size: .85rem; padding: .5rem; background: #fde8e8; border-radius: 6px; }
+.btn-primary { background: #333; color: white; border: none; border-radius: 8px; padding: .75rem; font-size: 1rem; font-weight: 600; transition: background .15s; }
+.btn-primary:hover:not(:disabled) { background: #555; }
+.btn-primary:disabled { opacity: .6; }
+.divider { text-align: center; position: relative; margin: 1rem 0; color: #bbb; font-size: .85rem; }
+.divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 43%; height: 1px; background: #eee; }
+.divider::before { left: 0; } .divider::after { right: 0; }
+.btn-google { display: flex; align-items: center; justify-content: center; gap: .6rem; width: 100%; background: white; border: 1.5px solid #ddd; border-radius: 8px; padding: .7rem; font-size: .95rem; font-weight: 500; transition: background .15s; }
+.btn-google:hover:not(:disabled) { background: #f8f8f8; }
+
+/* \u2500\u2500 Notes shell \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.notes-shell { display: grid; grid-template-columns: 260px 1fr; height: 100vh; }
+
+/* \u2500\u2500 Sidebar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.sidebar { display: flex; flex-direction: column; background: #1e1e1e; color: white; border-right: 1px solid #2a2a2a; }
+.sidebar-top { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid #2a2a2a; }
+.brand { font-size: 1.1rem; font-weight: 700; letter-spacing: -.01em; }
+.btn-icon { background: #333; color: white; border: none; width: 28px; height: 28px; border-radius: 6px; font-size: 1.2rem; line-height: 1; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+.btn-icon:hover { background: #444; }
+.search { background: #2a2a2a; border: none; color: white; padding: .6rem 1rem; font-size: .9rem; outline: none; }
+.search::placeholder { color: #666; }
+.note-list { flex: 1; overflow-y: auto; list-style: none; }
+.note-item { display: flex; align-items: center; justify-content: space-between; padding: .75rem 1rem; cursor: pointer; border-bottom: 1px solid #2a2a2a; transition: background .1s; }
+.note-item:hover { background: #2a2a2a; }
+.note-item.active { background: #333; }
+.note-title { font-size: .9rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-delete { background: none; border: none; color: #666; font-size: 1.1rem; padding: 0 .25rem; transition: color .15s; flex-shrink: 0; }
+.btn-delete:hover { color: #e74c3c; }
+.empty { color: #555; font-size: .85rem; padding: 1rem; text-align: center; }
+.sidebar-bottom { padding: .75rem 1rem; border-top: 1px solid #2a2a2a; display: flex; flex-direction: column; gap: .5rem; }
+.user-email { font-size: .75rem; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-signout { background: none; border: 1px solid #333; color: #888; border-radius: 6px; padding: .4rem; font-size: .8rem; transition: all .15s; }
+.btn-signout:hover { border-color: #555; color: #ccc; }
+
+/* \u2500\u2500 Editor \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.editor { display: flex; flex-direction: column; background: white; }
+.editor-header { display: flex; gap: .75rem; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #eee; }
+.title-input { flex: 1; border: none; font-size: 1.25rem; font-weight: 600; outline: none; color: #1a1a1a; }
+.title-input::placeholder { color: #ccc; }
+.btn-save { background: #1a1a1a; color: white; border: none; border-radius: 8px; padding: .5rem 1.25rem; font-size: .9rem; font-weight: 600; transition: background .15s; }
+.btn-save:hover:not(:disabled) { background: #333; }
+.btn-save:disabled { opacity: .4; }
+.body-input { flex: 1; border: none; padding: 1.5rem; font-size: 1rem; line-height: 1.7; resize: none; outline: none; color: #333; }
+.body-input::placeholder { color: #ccc; }
+.no-body { color: #999; padding: 2rem; font-style: italic; }
+
+@media (max-width: 600px) {
+  .notes-shell { grid-template-columns: 1fr; }
+  .sidebar { height: 40vh; }
+  .editor { height: 60vh; }
+}
+`;
 function serializeNodes(nodes) {
   return nodes.map(serializeNode);
 }
@@ -12027,11 +12472,12 @@ var reactTsconfig = `{
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "types": ["vite/client"]
   },
   "include": ["src"],
   "references": []
