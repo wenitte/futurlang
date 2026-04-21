@@ -11,6 +11,7 @@ import { checkFile, createMutableContext, evaluateIncrementalStep, deriveConclus
 import { createReactApp } from './react/transpiler';
 import { generateRustFromAST, generateCargoToml } from './codegen/rust';
 import { startLspServer } from './lsp-server';
+import { CHAIN_CARGO_TOML, CHAIN_SRC, CHAIN_SOURCE_HASH } from './codegen/chain-runtime';
 
 const rawArgs = process.argv.slice(2);
 const strict = rawArgs.includes('--strict');
@@ -616,39 +617,42 @@ async function runProjectStart() {
 }
 
 async function runChain(extraArgs: string[]) {
-  // Locate the futurchain binary: prefer release build, fall back to cargo run
-  const candidates = [
-    path.resolve(__dirname, '../../futurchain/target/release/futurchain'),
-    path.resolve(__dirname, '../../../futurchain/target/release/futurchain'),
-    'futurchain', // in PATH
-  ];
-  let binary = candidates.find(b => {
-    try { return b === 'futurchain' || require('fs').existsSync(b); } catch { return false; }
-  }) ?? null;
+  const os = require('os') as typeof import('os');
+  const cacheDir = path.join(os.homedir(), '.futurlang', 'chain');
+  const srcDir   = path.join(cacheDir, 'src');
+  const binary   = path.join(cacheDir, 'target', 'release', 'futurchain');
+  const hashFile = path.join(cacheDir, '.source-hash');
 
-  if (!binary) {
-    // Fall back to cargo run inside the futurchain directory
-    const chainDir = candidates
-      .map(b => path.dirname(path.dirname(path.dirname(b))))
-      .find(d => require('fs').existsSync(path.join(d, 'Cargo.toml')));
-    if (!chainDir) {
-      console.error('futurchain binary not found. Build it first:\n  cd /path/to/futurchain && cargo build --release');
-      process.exit(1);
+  // Check if a rebuild is needed
+  const needsBuild = (() => {
+    if (!fs.existsSync(binary)) return true;
+    try { return fs.readFileSync(hashFile, 'utf8').trim() !== CHAIN_SOURCE_HASH; }
+    catch { return true; }
+  })();
+
+  if (needsBuild) {
+    console.log('Building FuturChain from FL source...');
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'Cargo.toml'), CHAIN_CARGO_TOML, 'utf8');
+    for (const [name, content] of Object.entries(CHAIN_SRC)) {
+      fs.writeFileSync(path.join(srcDir, name), content, 'utf8');
     }
-    console.log('Binary not found — running via cargo (slower cold start)...');
-    const { spawnSync } = require('child_process');
-    const result = spawnSync('cargo', ['run', '--release', '--', ...extraArgs], {
-      cwd: chainDir, stdio: 'inherit', shell: false,
+
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('cargo', ['build', '--release'], {
+        cwd: cacheDir,
+        stdio: ['ignore', 'inherit', 'inherit'],
+        shell: process.platform === 'win32',
+      });
+      child.on('exit', code => code === 0 ? resolve() : reject(new Error(`Build failed (exit ${code})`)));
     });
-    process.exit(result.status ?? 1);
-    return;
+
+    fs.writeFileSync(hashFile, CHAIN_SOURCE_HASH, 'utf8');
+    console.log('Build complete.\n');
   }
 
-  const { spawn } = require('child_process');
   const child = spawn(binary, extraArgs, { stdio: 'inherit' });
   child.on('exit', (code: number | null) => process.exit(code ?? 0));
-
-  // Forward signals so Ctrl+C cleanly shuts the node down
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, () => child.kill(sig));
   }
