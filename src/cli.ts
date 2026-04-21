@@ -96,6 +96,10 @@ async function main() {
     return;
   }
 
+  if (command === 'chain') {
+    await runChain(args.slice(1)); return;
+  }
+
   // Default: evaluate
   const file = command;
   if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
@@ -555,6 +559,45 @@ async function runProjectStart() {
   launchFrontend(backendDir);
 }
 
+async function runChain(extraArgs: string[]) {
+  // Locate the futurchain binary: prefer release build, fall back to cargo run
+  const candidates = [
+    path.resolve(__dirname, '../../futurchain/target/release/futurchain'),
+    path.resolve(__dirname, '../../../futurchain/target/release/futurchain'),
+    'futurchain', // in PATH
+  ];
+  let binary = candidates.find(b => {
+    try { return b === 'futurchain' || require('fs').existsSync(b); } catch { return false; }
+  }) ?? null;
+
+  if (!binary) {
+    // Fall back to cargo run inside the futurchain directory
+    const chainDir = candidates
+      .map(b => path.dirname(path.dirname(path.dirname(b))))
+      .find(d => require('fs').existsSync(path.join(d, 'Cargo.toml')));
+    if (!chainDir) {
+      console.error('futurchain binary not found. Build it first:\n  cd /path/to/futurchain && cargo build --release');
+      process.exit(1);
+    }
+    console.log('Binary not found — running via cargo (slower cold start)...');
+    const { spawnSync } = require('child_process');
+    const result = spawnSync('cargo', ['run', '--release', '--', ...extraArgs], {
+      cwd: chainDir, stdio: 'inherit', shell: false,
+    });
+    process.exit(result.status ?? 1);
+    return;
+  }
+
+  const { spawn } = require('child_process');
+  const child = spawn(binary, extraArgs, { stdio: 'inherit' });
+  child.on('exit', (code: number | null) => process.exit(code ?? 0));
+
+  // Forward signals so Ctrl+C cleanly shuts the node down
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(sig, () => child.kill(sig));
+  }
+}
+
 function printUsage() {
   console.log(`
 FuturLang — formal proof language
@@ -565,6 +608,12 @@ Usage:
   fl derive <file.fl>               Forward-chain all derivable conclusions from premises
   fl build <file.fl> [-o name]      Compile to binary via Rust (source stays hidden)
   fl server <file.fl>               Run a server-style FL file
+
+FuturChain:
+  fl chain                          Start a FuturChain node (RPC on :8899, 400ms slots)
+  fl chain --port 9000              Custom RPC port
+  fl chain --slot-ms 1000           Custom slot duration (ms)
+  fl chain --genesis-supply 1000    Custom genesis token supply
 
 App workflow (recommended):
   fl create-app <name>              Scaffold a new FL app with a React backend

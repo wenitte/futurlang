@@ -17,6 +17,12 @@ function parseLinesToAST(lines, options = {}) {
         const line = lines[i];
         switch (line.type) {
             // ── Block openers ──────────────────────────────────────────────────────
+            case 'axiom': {
+                // Axioms are single-line — emit immediately, no body
+                const node = { type: 'Axiom', name: line.name, statement: line.content, connective: line.connective };
+                ast.push(node);
+                break;
+            }
             case 'theorem': {
                 const node = { type: 'Theorem', name: line.name, body: [], connective: null };
                 stack.push(node);
@@ -57,9 +63,16 @@ function parseLinesToAST(lines, options = {}) {
                     requires: [],
                     ensures: [],
                     body: [],
-                    connective: null,
+                    isNative: line.isNative ?? false,
+                    connective: line.connective,
                 };
-                stack.push(node);
+                if (line.isNative) {
+                    // Native fns have no body — emit immediately
+                    ast.push(node);
+                }
+                else {
+                    stack.push(node);
+                }
                 break;
             }
             case 'program': {
@@ -114,7 +127,9 @@ function parseLinesToAST(lines, options = {}) {
                 if (finished.type === 'ErrorDecl') {
                     finished.variants = finished.variants.map(raw => parseErrorVariant(raw));
                 }
-                const lowered = finished.type === 'FnDecl' && desugarFns ? desugarFnDecl(finished) : [finished];
+                const lowered = finished.type === 'FnDecl' && desugarFns && !finished.isNative
+                    ? desugarFnDecl(finished)
+                    : [finished];
                 if (stack.length === 0) {
                     ast.push(...lowered);
                 }
@@ -482,7 +497,8 @@ function parseInduction(lines, start) {
     };
 }
 function parseFnSignature(content) {
-    const match = content.match(/^fn\s+(\w+)\s*\(([\s\S]*)\)\s*->\s*([^{]+)\s*\{$/);
+    // Accept both `fn name(params) -> T {` (normal) and `fn name(params) -> T` (native, no body)
+    const match = content.match(/^fn\s+(\w+)\s*\(([\s\S]*?)\)\s*->\s*([^{]+?)\s*\{?$/);
     if (!match) {
         throw new Error(`Malformed fn signature: ${content}`);
     }

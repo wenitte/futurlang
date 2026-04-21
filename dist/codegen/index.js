@@ -130,6 +130,8 @@ function nodeToExpr(node, symbolicMode, ctx) {
             return `atom(true, ${JSON.stringify(`cpi(${node.program}, ${node.instruction})`)})`;
         case 'Transfer':
             return `atom(true, ${JSON.stringify(`transfer(${node.from}, ${node.to}, ${node.amount})`)})`;
+        case 'Axiom':
+            return `atom(true, ${JSON.stringify(node.statement)})`;
         default: {
             const _ = node;
             throw new Error('Unhandled node type');

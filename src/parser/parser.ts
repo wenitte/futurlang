@@ -9,7 +9,7 @@ import { ParsedLine } from './lexer';
 import { normalizeSurfaceSyntax, parseExpr } from './expr';
 import {
   ASTNode, BlockConnective,
-  TheoremNode, DefinitionNode, StructField, StructNode, TypeDeclNode, TypeVariant, PatternNode, MatchCaseNode, MatchNode, ProofNode, LemmaNode, FnDeclNode, FnParam,
+  AxiomNode, TheoremNode, DefinitionNode, StructField, StructNode, TypeDeclNode, TypeVariant, PatternNode, MatchCaseNode, MatchNode, ProofNode, LemmaNode, FnDeclNode, FnParam,
   AssertNode, DeclareToProveNode, ProveNode, DeriveNode, AndIntroStepNode, OrIntroStepNode,
   GivenNode, AssumeNode, ConcludeNode, ApplyNode, SetVarNode, RawNode, InductionNode, FoldNode,
   IntroNode, RewriteNode, ExactNode, ObtainNode,
@@ -34,6 +34,12 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
     switch (line.type) {
 
       // ── Block openers ──────────────────────────────────────────────────────
+      case 'axiom': {
+        // Axioms are single-line — emit immediately, no body
+        const node: AxiomNode = { type: 'Axiom', name: line.name!, statement: line.content, connective: line.connective };
+        ast.push(node);
+        break;
+      }
       case 'theorem': {
         const node: TheoremNode = { type: 'Theorem', name: line.name!, body: [], connective: null };
         stack.push(node); break;
@@ -68,9 +74,16 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
           requires: [],
           ensures: [],
           body: [],
-          connective: null,
+          isNative: line.isNative ?? false,
+          connective: line.connective,
         };
-        stack.push(node); break;
+        if (line.isNative) {
+          // Native fns have no body — emit immediately
+          ast.push(node);
+        } else {
+          stack.push(node);
+        }
+        break;
       }
       case 'program': {
         const node: ProgramNode = {
@@ -122,7 +135,9 @@ export function parseLinesToAST(lines: ParsedLine[], options: ParserOptions = {}
           finished.variants = (finished.variants as unknown as string[]).map(raw => parseErrorVariant(raw));
         }
 
-        const lowered = finished.type === 'FnDecl' && desugarFns ? desugarFnDecl(finished) : [finished];
+        const lowered = finished.type === 'FnDecl' && desugarFns && !finished.isNative
+          ? desugarFnDecl(finished)
+          : [finished];
 
         if (stack.length === 0) {
           ast.push(...lowered);
@@ -480,7 +495,8 @@ function parseInduction(lines: ParsedLine[], start: number): { node: InductionNo
 }
 
 function parseFnSignature(content: string): { name: string; params: FnParam[]; returnType: string } {
-  const match = content.match(/^fn\s+(\w+)\s*\(([\s\S]*)\)\s*->\s*([^{]+)\s*\{$/);
+  // Accept both `fn name(params) -> T {` (normal) and `fn name(params) -> T` (native, no body)
+  const match = content.match(/^fn\s+(\w+)\s*\(([\s\S]*?)\)\s*->\s*([^{]+?)\s*\{?$/);
   if (!match) {
     throw new Error(`Malformed fn signature: ${content}`);
   }

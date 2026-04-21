@@ -154,6 +154,14 @@ export interface MatchCaseNode {
   body: ASTNode[];
 }
 
+// native theorem / axiom — kernel accepts as PROVED without derivation
+export interface AxiomNode {
+  type: 'Axiom';
+  name: string;
+  statement: string;  // free-text statement of the axiom
+  connective: BlockConnective;
+}
+
 export interface StructNode {
   type: 'Struct';
   name: string;
@@ -199,6 +207,7 @@ export interface FnDeclNode {
   requires: ExprNode[];
   ensures: ExprNode[];
   body: ASTNode[];
+  isNative?: boolean;   // native fn — axiom; kernel accepts without proof
   connective: BlockConnective;
 }
 
@@ -422,6 +431,7 @@ export interface TransferNode {
 }
 
 export type ASTNode =
+  | AxiomNode
   | TheoremNode
   | DefinitionNode
   | StructNode

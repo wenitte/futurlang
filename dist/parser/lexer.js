@@ -85,6 +85,18 @@ function lexFL(text) {
             parsed.push({ type: 'proof', content: cleaned, name, connective: conn });
             continue;
         }
+        if (/^native\s+theorem\b/.test(line) || /^native\s+lemma\b/.test(line) || /^axiom\b/.test(line)) {
+            const [cleaned, conn] = extractConnective(line);
+            const name = cleaned.match(/(?:native\s+(?:theorem|lemma)|axiom)\s+(\w+)/)?.[1] ?? 'unnamed';
+            parsed.push({ type: 'axiom', content: cleaned, name, connective: conn });
+            continue;
+        }
+        if (/^native\s+fn\b/.test(line)) {
+            const [cleaned, conn] = extractConnective(line);
+            const name = cleaned.match(/^native\s+fn\s+(\w+)/)?.[1] ?? 'unnamed';
+            parsed.push({ type: 'fn', content: cleaned.replace(/^native\s+/, ''), name, isNative: true, connective: conn });
+            continue;
+        }
         if (/^fn\b/.test(line)) {
             const [cleaned, conn] = extractConnective(line);
             const name = cleaned.match(/^fn\s+(\w+)/)?.[1] ?? 'unnamed';

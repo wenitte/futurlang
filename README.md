@@ -41,6 +41,21 @@ The important boundary is intentional:
 
 ## Installation
 
+**npm (recommended)**
+```bash
+npm install -g futurlang
+```
+
+**Homebrew**
+```bash
+brew tap wenitte/futurlang-
+brew install futurlang
+```
+
+**VS Code Extension** (syntax highlighting, hover docs, completions)
+Search `FuturLang` in the VS Code Extensions panel, or install from the [marketplace](https://marketplace.visualstudio.com/items?itemName=WenitteApiou.futurlang).
+
+**From source**
 ```bash
 git clone https://github.com/wenitte/futurlang
 cd futurlang

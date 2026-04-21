@@ -4,7 +4,7 @@ import { BlockConnective } from './ast';
 
 export interface ParsedLine {
   type:
-    | 'theorem' | 'definition' | 'struct' | 'typeDecl' | 'proof' | 'lemma' | 'fn'
+    | 'theorem' | 'definition' | 'struct' | 'typeDecl' | 'proof' | 'lemma' | 'fn' | 'axiom'
     | 'assert'  | 'given'      | 'assume' | 'conclude' | 'apply'
     | 'declareToProve' | 'prove' | 'derive' | 'andIntroStep' | 'orIntroStep'
     | 'requires' | 'ensures'
@@ -15,6 +15,7 @@ export interface ParsedLine {
     | 'emit' | 'pda' | 'cpi' | 'transfer';
   content: string;
   name?: string;
+  isNative?: boolean;
   // Connective trailing the line/block-end: → ∧ ∨ ↔ or null
   connective: BlockConnective;
 }
@@ -93,6 +94,18 @@ export function lexFL(text: string): ParsedLine[] {
       const [cleaned, conn] = extractConnective(line);
       const name = cleaned.match(/^proof\s+(\w+)/)?.[1] ?? 'unnamed';
       parsed.push({ type: 'proof', content: cleaned, name, connective: conn });
+      continue;
+    }
+    if (/^native\s+theorem\b/.test(line) || /^native\s+lemma\b/.test(line) || /^axiom\b/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      const name = cleaned.match(/(?:native\s+(?:theorem|lemma)|axiom)\s+(\w+)/)?.[1] ?? 'unnamed';
+      parsed.push({ type: 'axiom', content: cleaned, name, connective: conn });
+      continue;
+    }
+    if (/^native\s+fn\b/.test(line)) {
+      const [cleaned, conn] = extractConnective(line);
+      const name = cleaned.match(/^native\s+fn\s+(\w+)/)?.[1] ?? 'unnamed';
+      parsed.push({ type: 'fn', content: cleaned.replace(/^native\s+/, ''), name, isNative: true, connective: conn });
       continue;
     }
     if (/^fn\b/.test(line)) {

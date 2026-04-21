@@ -13,7 +13,11 @@ const category_1 = require("../kernel/category");
 const category_diagrams_1 = require("../kernel/category-diagrams");
 const TOP = '⊤';
 const BOTTOM = '⊥';
-const BUILTIN_SORTS = new Set(['ℕ', 'ℤ', 'ℚ', 'ℝ', 'String', 'Set', 'Element']);
+const BUILTIN_SORTS = new Set([
+    'ℕ', 'ℤ', 'ℚ', 'ℝ', 'String', 'Set', 'Element',
+    // FuturChain blockchain primitive types
+    'Address', 'Hash', 'Signature', 'Slot', 'Epoch', 'TokenAmount', 'Bool', 'Nat', 'Int',
+]);
 function checkFile(nodes, options = {}) {
     const diagnostics = [];
     const reports = [];
@@ -25,6 +29,40 @@ function checkFile(nodes, options = {}) {
     const eliminators = generateEliminators(types);
     for (const [name, claimSet] of eliminators) {
         lemmas.set(name, claimSet);
+    }
+    // Register native fns and axioms — the kernel accepts them without proof
+    for (const node of nodes) {
+        if (node.type === 'FnDecl' && node.isNative) {
+            lemmas.set(normalizeName(node.name), {
+                name: node.name,
+                premises: node.params.map(p => `${p.name} ∈ ${p.type}`),
+                conclusion: `${node.name}(${node.params.map(p => p.name).join(', ')}) ∈ ${node.returnType}`,
+                state: 'PROVED',
+            });
+        }
+        if (node.type === 'Axiom') {
+            lemmas.set(normalizeName(node.name), {
+                name: node.name,
+                premises: [],
+                conclusion: node.statement,
+                state: 'PROVED',
+            });
+            reports.push({
+                name: node.name,
+                state: 'PROVED',
+                valid: true,
+                stepCount: 0,
+                goal: node.statement,
+                premises: [],
+                derivedConclusion: node.statement,
+                proofSteps: [],
+                proofObjects: [],
+                derivations: [],
+                diagnostics: [{ severity: 'info', message: `Axiom '${node.name}' accepted without proof` }],
+                provedCount: 1,
+                pendingCount: 0,
+            });
+        }
     }
     let theoremCount = 0;
     let proofCount = 0;
@@ -105,7 +143,10 @@ function checkFile(nodes, options = {}) {
         }
     }
     const hasInterBlockErrors = diagnostics.some(d => d.severity === 'error');
-    const pairState = combineStates(reports.map(report => report.state), pairedCount === 0 ? 'FAILED' : 'PROVED');
+    const axiomCount = nodes.filter(n => n.type === 'Axiom' || (n.type === 'FnDecl' && n.isNative)).length;
+    const declCount = nodes.filter(n => n.type === 'Struct' || n.type === 'TypeDecl' || n.type === 'Definition').length;
+    const hasContent = pairedCount > 0 || axiomCount > 0 || declCount > 0;
+    const pairState = combineStates(reports.map(report => report.state), hasContent ? 'PROVED' : 'FAILED');
     const state = hasInterBlockErrors ? 'FAILED' : pairState;
     return {
         state,
