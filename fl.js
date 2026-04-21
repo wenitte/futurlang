@@ -13065,7 +13065,7 @@ async function main() {
     console.error(`File not found: ${file2}`);
     process.exit(1);
   }
-  await runExecute(file2);
+  runEval(file2);
 }
 async function runExecute(file2) {
   const source2 = expandFLFile(file2);

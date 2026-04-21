@@ -100,10 +100,10 @@ async function main() {
     await runChain(args.slice(1)); return;
   }
 
-  // Default: compile FL → Rust → run (Rust source stays hidden)
+  // Default: evaluate FL via TypeScript runtime
   const file = command;
   if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
-  await runExecute(file);
+  runEval(file);
 }
 
 async function runExecute(file: string) {
