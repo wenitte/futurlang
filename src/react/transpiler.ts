@@ -229,9 +229,9 @@ export default function Auth() {
 
 function buildNotesTsx(noteFields: NoteField[]): string {
   const hasBody = noteFields.some(f => f.name === 'body');
-  return `import { useEffect, useState } from 'react';
+  return `import { useEffect, useState, useCallback } from 'react';
 import {
-  collection, query, where, orderBy, onSnapshot,
+  collection, query, where, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import { signOut, User } from 'firebase/auth';
@@ -245,24 +245,54 @@ interface Note {
   userId: string;
 }
 
+type Mode = 'sdk' | 'api';
+const API_BASE = 'http://localhost:3001';
+
 export default function Notes({ user }: { user: User }) {
-  const [notes, setNotes]       = useState<Note[]>([]);
-  const [active, setActive]     = useState<Note | null>(null);
-  const [title, setTitle]       = useState('');
-  const [body, setBody]         = useState('');
-  const [saving, setSaving]     = useState(false);
-  const [search, setSearch]     = useState('');
+  const [notes, setNotes]   = useState<Note[]>([]);
+  const [active, setActive] = useState<Note | null>(null);
+  const [title, setTitle]   = useState('');
+  const [body, setBody]     = useState('');
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [mode, setMode]     = useState<Mode>('sdk');
+
+  // ── SDK mode: real-time Firestore listener ──────────────────────────────────
+  useEffect(() => {
+    if (mode !== 'sdk') return;
+    const q = query(collection(db, 'notes'), where('userId', '==', user.uid));
+    return onSnapshot(q, snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Note));
+      // Sort client-side — avoids needing a composite Firestore index
+      docs.sort((a, b) => {
+        const ta = (a.createdAt as any)?.toMillis?.() ?? 0;
+        const tb = (b.createdAt as any)?.toMillis?.() ?? 0;
+        return tb - ta;
+      });
+      setNotes(docs);
+    });
+  }, [user.uid, mode]);
+
+  // ── API mode: fetch from FL backend ────────────────────────────────────────
+  const fetchApiNotes = useCallback(async () => {
+    const token = await user.getIdToken();
+    const res = await fetch(API_BASE + '/api/notes', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!res.ok) return;
+    const data: Note[] = await res.json();
+    data.sort((a: any, b: any) => {
+      const ta = new Date(a.createdAt || 0).getTime();
+      const tb = new Date(b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+    setNotes(data);
+  }, [user]);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'notes'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-    );
-    return onSnapshot(q, snap => {
-      setNotes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Note)));
-    });
-  }, [user.uid]);
+    if (mode !== 'api') return;
+    fetchApiNotes();
+  }, [mode, fetchApiNotes]);
 
   function selectNote(note: Note) {
     setActive(note);
@@ -270,35 +300,61 @@ export default function Notes({ user }: { user: User }) {
     setBody(note.body ?? '');
   }
 
-  function newNote() {
-    setActive(null);
-    setTitle('');
-    setBody('');
-  }
+  function newNote() { setActive(null); setTitle(''); setBody(''); }
 
+  // ── Save (create or update) ─────────────────────────────────────────────────
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
     try {
-      if (active) {
-        await updateDoc(doc(db, 'notes', active.id), { title: title.trim(), body });
-        setActive(prev => prev ? { ...prev, title: title.trim(), body } : null);
+      if (mode === 'sdk') {
+        if (active) {
+          await updateDoc(doc(db, 'notes', active.id), { title: title.trim(), body });
+          setActive(prev => prev ? { ...prev, title: title.trim(), body } : null);
+        } else {
+          const ref = await addDoc(collection(db, 'notes'), {
+            title: title.trim(), body, userId: user.uid, createdAt: serverTimestamp(),
+          });
+          setActive({ id: ref.id, title: title.trim(), body, userId: user.uid, createdAt: null });
+        }
       } else {
-        const ref = await addDoc(collection(db, 'notes'), {
-          title: title.trim(),
-          body,
-          userId: user.uid,
-          createdAt: serverTimestamp(),
-        });
-        setActive({ id: ref.id, title: title.trim(), body, userId: user.uid, createdAt: null });
+        const token = await user.getIdToken();
+        if (active) {
+          await fetch(API_BASE + '/api/notes/' + active.id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ title: title.trim(), body }),
+          });
+        } else {
+          await fetch(API_BASE + '/api/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({
+              title: title.trim(), body,
+              userId: user.uid,
+              createdAt: new Date().toISOString(),
+            }),
+          });
+        }
+        await fetchApiNotes();
       }
     } finally {
       setSaving(false);
     }
   }
 
+  // ── Delete ──────────────────────────────────────────────────────────────────
   async function remove(id: string) {
-    await deleteDoc(doc(db, 'notes', id));
+    if (mode === 'sdk') {
+      await deleteDoc(doc(db, 'notes', id));
+    } else {
+      const token = await user.getIdToken();
+      await fetch(API_BASE + '/api/notes/' + id, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      setNotes(prev => prev.filter(n => n.id !== id));
+    }
     if (active?.id === id) newNote();
   }
 
@@ -365,6 +421,19 @@ export default function Notes({ user }: { user: User }) {
           value={body}
           onChange={e => setBody(e.target.value)}
         />` : `<p className="no-body">Body field not defined in Note struct.</p>`}
+        {/* Mode toggle */}
+        <div className="mode-bar">
+          <span className="mode-label">
+            {mode === 'sdk' ? 'Firebase SDK (direct)' : 'FL Backend API (via server)'}
+          </span>
+          <button
+            className={\`mode-toggle \${mode === 'api' ? 'active' : ''}\`}
+            onClick={() => { newNote(); setMode(m => m === 'sdk' ? 'api' : 'sdk'); }}
+            title="Toggle between Firebase SDK and FL backend"
+          >
+            {mode === 'sdk' ? 'Switch to FL Backend' : 'Switch to Firebase SDK'}
+          </button>
+        </div>
       </main>
     </div>
   );
@@ -479,6 +548,13 @@ input, textarea { font-family: inherit; }
 .body-input { flex: 1; border: none; padding: 1.5rem; font-size: 1rem; line-height: 1.7; resize: none; outline: none; color: #333; }
 .body-input::placeholder { color: #ccc; }
 .no-body { color: #999; padding: 2rem; font-style: italic; }
+
+/* ── Mode toggle bar ────────────────────────────────────────────────────── */
+.mode-bar { display: flex; align-items: center; justify-content: space-between; padding: .6rem 1.5rem; border-top: 1px solid #eee; background: #fafafa; flex-shrink: 0; }
+.mode-label { font-size: .8rem; color: #888; font-family: "SFMono-Regular", Consolas, monospace; }
+.mode-toggle { background: #eee; border: none; border-radius: 6px; padding: .35rem .9rem; font-size: .8rem; font-weight: 600; color: #555; transition: all .15s; }
+.mode-toggle:hover { background: #ddd; }
+.mode-toggle.active { background: #1a1a1a; color: white; }
 
 @media (max-width: 600px) {
   .notes-shell { grid-template-columns: 1fr; }

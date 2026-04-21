@@ -7,11 +7,14 @@ import { spawn } from 'child_process';
 import { parseFL, parseFLFile, expandFLFile } from './parser/formal';
 import { lexFL } from './parser/lexer';
 import { parseLinesToAST } from './parser/parser';
+import { generateJSFromAST } from './codegen';
+import { runtimePreamble } from './codegen/runtime';
 import { checkFile, createMutableContext, evaluateIncrementalStep, deriveConclusions } from './checker/checker';
 import { createReactApp } from './react/transpiler';
 import { generateRustFromAST, generateCargoToml } from './codegen/rust';
 import { startLspServer } from './lsp-server';
 import { CHAIN_CARGO_TOML, CHAIN_SRC, CHAIN_SOURCE_HASH } from './codegen/chain-runtime';
+import { buildFirebaseServerRuntime } from './codegen/firebase-server-runtime';
 
 const rawArgs = process.argv.slice(2);
 const strict = rawArgs.includes('--strict');
@@ -46,6 +49,12 @@ async function main() {
     const name = args[1];
     if (!name) { console.error('Usage: fl create-app <name>'); process.exit(1); }
     runCreateApp(name); return;
+  }
+
+  if (command === 'create-server') {
+    const name = args[1];
+    if (!name) { console.error('Usage: fl create-server <name>'); process.exit(1); }
+    runCreateServer(name); return;
   }
 
   if (command === 'install') {
@@ -181,9 +190,12 @@ function runEval(file: string) {
   catch (e: any) { console.error(e.message); process.exit(1); }
 }
 
-function runServer(file: string) {
+function runServer(file: string, extraRuntime = '') {
   if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
-  const js = parseFLFile(file);
+  // Compile FL to JS in-memory — no file ever written to disk (same as fl <file.fl>)
+  const source = expandFLFile(file);
+  const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
+  const js = generateJSFromAST(ast, runtimePreamble + (extraRuntime ? '\n' + extraRuntime : ''));
   try { eval(js); }
   catch (e: any) { console.error(e.message); process.exit(1); }
 }
@@ -493,27 +505,30 @@ function isServerProgram(source: string): boolean {
 
 interface FlManifest {
   name: string;
+  type: 'web' | 'server';
   main: string;
-  backend: string;
+  /** Web: path to generated React output (default: generated/frontend) */
+  generated?: string;
+  /** Server: optional Firebase config for injecting Firestore helpers */
+  firebase?: { projectId: string };
 }
 
 function readManifest(): FlManifest {
-  const manifestPath = path.join(process.cwd(), 'fl.json');
-  if (!fs.existsSync(manifestPath)) {
-    console.error('No fl.json found. Run fl create-app <name> to scaffold a new app, or run fl start <file.fl> to use a specific file.');
-    process.exit(1);
+  // Support both package.flson (preferred) and fl.json (legacy)
+  const candidates = ['package.flson', 'fl.json'];
+  for (const name of candidates) {
+    const p = path.join(process.cwd(), name);
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8')) as FlManifest;
   }
-  return JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as FlManifest;
+  console.error('No package.flson found. Run fl create-app <name> or fl create-server <name> to scaffold a project.');
+  process.exit(1);
 }
 
 function runCreateApp(name: string) {
   const appDir = path.resolve(name);
-  if (fs.existsSync(appDir)) {
-    console.error(`Directory already exists: ${appDir}`);
-    process.exit(1);
-  }
+  if (fs.existsSync(appDir)) { console.error(`Directory already exists: ${appDir}`); process.exit(1); }
 
-  const backendDir = path.join(appDir, '_react');
+  const generatedDir = 'generated/frontend';
   const mainFile = 'app.fl';
 
   const starterFl = `fn double(n ∈ Nat) -> Nat {
@@ -538,82 +553,138 @@ proof DoubleIsPositive() {
 }
 `;
 
-  const manifest: FlManifest = { name, main: mainFile, backend: '_react' };
+  const manifest: FlManifest = { name, type: 'web', main: mainFile, generated: generatedDir };
 
   fs.mkdirSync(appDir, { recursive: true });
   fs.writeFileSync(path.join(appDir, mainFile), starterFl, 'utf8');
-  fs.writeFileSync(path.join(appDir, 'fl.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-  fs.writeFileSync(path.join(appDir, '.gitignore'), '_react/node_modules\n', 'utf8');
+  fs.writeFileSync(path.join(appDir, 'package.flson'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(path.join(appDir, '.gitignore'), 'generated/\n', 'utf8');
 
-  const source = fs.readFileSync(path.join(appDir, mainFile), 'utf8');
-  const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
-  createReactApp(ast, backendDir);
+  const outDir = path.join(appDir, generatedDir);
+  const ast = parseLinesToAST(lexFL(starterFl), { desugarFns: false });
+  createReactApp(ast, outDir);
 
-  console.log(`Created app: ${name}/`);
-  console.log(`  ${name}/${mainFile}   ← your FL source`);
-  console.log(`  ${name}/fl.json       ← project manifest`);
-  console.log(`  ${name}/_react/       ← generated React backend`);
+  console.log(`\nCreated FL web app: ${name}/`);
+  console.log(`  ${name}/${mainFile}            ← your FL source (edit this)`);
+  console.log(`  ${name}/package.flson          ← project manifest`);
+  console.log(`  ${name}/generated/frontend/    ← generated React (hidden, gitignored)`);
   console.log(`\nNext steps:`);
-  console.log(`  cd ${name}`);
-  console.log(`  fl install`);
-  console.log(`  fl start`);
+  console.log(`  cd ${name} && fl install && fl start`);
+}
+
+function runCreateServer(name: string) {
+  const serverDir = path.resolve(name);
+  if (fs.existsSync(serverDir)) { console.error(`Directory already exists: ${serverDir}`); process.exit(1); }
+
+  const mainFile = 'server.fl';
+
+  const starterFl = `// ${name} — FL server
+// fl start  ←  compiles and runs in memory (no generated files)
+
+fn cors(req ∈ Request) -> Response {
+  conclude(json({ ok: true }, 200, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+  }))
+} →
+
+fn health(req ∈ Request) -> Response {
+  conclude(json({ status: "ok", service: "${name}", version: "1.0.0" }, 200, {
+    "Access-Control-Allow-Origin": "*"
+  }))
+} →
+
+fn notFound(req ∈ Request) -> Response {
+  conclude(json({ error: "not found" }, 404, {
+    "Access-Control-Allow-Origin": "*"
+  }))
+} →
+
+let app = router([
+  route("OPTIONS", "*", cors),
+  route("GET", "/api/health", health)
+], notFound) →
+
+let server = serve(3001, app)
+`;
+
+  const manifest: FlManifest = { name, type: 'server', main: mainFile };
+
+  fs.mkdirSync(serverDir, { recursive: true });
+  fs.writeFileSync(path.join(serverDir, mainFile), starterFl, 'utf8');
+  fs.writeFileSync(path.join(serverDir, 'package.flson'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(path.join(serverDir, '.gitignore'), '.env\n', 'utf8');
+
+  console.log(`\nCreated FL server: ${name}/`);
+  console.log(`  ${name}/${mainFile}     ← your FL source (edit this)`);
+  console.log(`  ${name}/package.flson  ← project manifest`);
+  console.log(`\nNext steps:`);
+  console.log(`  cd ${name} && fl start`);
 }
 
 async function runInstall() {
   const manifest = readManifest();
-  const backendDir = path.resolve(manifest.backend);
-  if (!fs.existsSync(backendDir)) {
-    console.error(`Backend directory not found: ${backendDir}. Re-run fl create-app or fl start to regenerate it.`);
+  if (manifest.type === 'server') {
+    console.log('Server projects have no npm dependencies to install (runs in-memory).');
+    return;
+  }
+  const generatedDir = path.resolve(manifest.generated ?? 'generated/frontend');
+  if (!fs.existsSync(generatedDir)) {
+    console.error(`Generated directory not found: ${generatedDir}. Run fl start to generate it first.`);
     process.exit(1);
   }
-  console.log(`Installing dependencies in ${manifest.backend}/...`);
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn('npm', ['install'], {
-      cwd: backendDir,
-      stdio: 'inherit',
-      shell: process.platform === 'win32',
-    });
-    child.on('exit', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`npm install exited with code ${code}`));
-    });
-  });
+  console.log(`Installing dependencies in ${path.relative(process.cwd(), generatedDir)}/...`);
+  await npmInstall(generatedDir);
   console.log('\nDone. Run fl start to launch your app.');
+}
+
+async function npmInstall(dir: string) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn('npm', ['install'], {
+      cwd: dir, stdio: 'inherit', shell: process.platform === 'win32',
+    });
+    child.on('exit', code => code === 0 ? resolve() : reject(new Error(`npm install exited with code ${code}`)));
+  });
 }
 
 async function runProjectStart() {
   const manifest = readManifest();
   const mainFile = path.resolve(manifest.main);
-  const backendDir = path.resolve(manifest.backend);
 
   if (!fs.existsSync(mainFile)) {
     console.error(`Main file not found: ${manifest.main}`);
     process.exit(1);
   }
 
-  // Regenerate React app from current FL source
-  const source = fs.readFileSync(mainFile, 'utf8');
-  const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
-  createReactApp(ast, backendDir);
-  console.log(`Generated React app from ${manifest.main}`);
-
-  // Auto-install if node_modules is missing
-  if (!fs.existsSync(path.join(backendDir, 'node_modules'))) {
-    console.log('node_modules not found — running npm install...');
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('npm', ['install'], {
-        cwd: backendDir,
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-      });
-      child.on('exit', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`npm install exited with code ${code}`));
-      });
-    });
+  if (manifest.type === 'server') {
+    // ── Server: compile FL and eval in-memory — no files written ──────────────
+    console.log(`Starting FL server from ${manifest.main}...`);
+    let extraRuntime = '';
+    if (manifest.firebase?.projectId) {
+      extraRuntime = buildFirebaseServerRuntime(manifest.firebase.projectId);
+    }
+    runServer(mainFile, extraRuntime);
+    return;
   }
 
-  launchFrontend(backendDir);
+  // ── Web: generate React into generated/frontend/, install if needed, launch ──
+  const generatedDir = path.resolve(manifest.generated ?? 'generated/frontend');
+  const source = fs.readFileSync(mainFile, 'utf8');
+  const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
+  createReactApp(ast, generatedDir);
+  console.log(`Generated React app from ${manifest.main}`);
+
+  if (!fs.existsSync(path.join(generatedDir, 'node_modules'))) {
+    console.log('node_modules not found — running npm install...');
+    await npmInstall(generatedDir);
+  }
+
+  if (noLaunch) {
+    console.log('Skipping frontend launch (--no-launch)');
+    return;
+  }
+  launchFrontend(generatedDir);
 }
 
 async function runChain(extraArgs: string[]) {
@@ -676,9 +747,10 @@ FuturChain:
   fl chain --genesis-supply 1000    Custom genesis token supply
 
 App workflow (recommended):
-  fl create-app <name>              Scaffold a new FL app with a React backend
-  fl install                        Install React backend dependencies (run inside app dir)
-  fl start                          Regenerate React app and launch dev server (run inside app dir)
+  fl create-app <name>              Scaffold a new FL web app (React generated into generated/frontend/)
+  fl create-server <name>           Scaffold a new FL server (runs in-memory, no generated files)
+  fl install                        Install frontend dependencies (web apps only; run inside app dir)
+  fl start                          Start the project: web apps launch Vite, servers run in-memory
 
 Legacy / single-file:
   fl start <file.fl> [out-dir]      Generate and launch a React app from a single FL file

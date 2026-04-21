@@ -2713,14 +2713,31 @@ function route(method, path, handler) {
   };
 }
 
+function _matchPath(routePath, reqPath) {
+  if (routePath === '*') return {};
+  const rParts = routePath.split('/');
+  const qParts = reqPath.split('/');
+  if (rParts.length !== qParts.length) return null;
+  const params = {};
+  for (let i = 0; i < rParts.length; i++) {
+    if (rParts[i].startsWith(':')) {
+      params[rParts[i].slice(1)] = qParts[i];
+    } else if (rParts[i] !== qParts[i]) {
+      return null;
+    }
+  }
+  return params;
+}
+
 function router(routes, fallback) {
   return (req) => {
     for (const entry of routes) {
       if (!entry) continue;
       const method = String(entry.method).toUpperCase();
       if (method !== String(req.method).toUpperCase() && method !== '*') continue;
-      const routePath = String(entry.path);
-      if (routePath !== '*' && req.path !== routePath) continue;
+      const params = _matchPath(String(entry.path), req.path);
+      if (params === null) continue;
+      req.params = params;
       return dispatch(entry.handler, req);
     }
     if (fallback) return dispatch(fallback, req);
@@ -2729,7 +2746,8 @@ function router(routes, fallback) {
 }
 
 function dispatch(handler, req) {
-  return _normalizeResponse(handler(req));
+  // Return raw \u2014 serve() handles normalization after resolving any async sentinels
+  return handler(req);
 }
 
 function serve(port, handler, host = '127.0.0.1') {
@@ -2737,15 +2755,30 @@ function serve(port, handler, host = '127.0.0.1') {
   const server = _nodeHttp.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
-    req.on('end', () => {
+    req.on('end', async () => {
       const body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : null;
       const incoming = request(req.method ?? 'GET', req.url ?? '/', body, req.headers ?? {});
-      const result = dispatch(handler, incoming);
-      res.statusCode = result.status;
-      for (const [name, value] of Object.entries(result.headers)) {
-        res.setHeader(name, value);
+      try {
+        let result = dispatch(handler, incoming);
+        // Handle asyncJson sentinel: { __asyncResponse: true, promise, status, headers }
+        if (result && result.__asyncResponse) {
+          const data = await result.promise;
+          result = json(data, result.status, result.headers);
+        } else if (result && typeof result.then === 'function') {
+          result = _normalizeResponse(await result);
+        }
+        result = _normalizeResponse(result);
+        res.statusCode = result.status;
+        for (const [name, value] of Object.entries(result.headers)) {
+          res.setHeader(name, value);
+        }
+        res.end(result.body);
+      } catch (e) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.end(JSON.stringify({ error: String(e && e.message ? e.message : e) }));
       }
-      res.end(result.body);
     });
   });
   console.log('  server \u2026 starting on http://' + host + ':' + port);
@@ -2836,6 +2869,44 @@ function struct_(name, fields) {
 // Firebase primitives \u2014 no-ops at eval time; the React transpiler handles real Firebase wiring
 function initFirebase(config) { return config; }
 function notesApp(firebase) { return atom(true, 'notesApp'); }
+
+// \u2500\u2500 Generic HTTP server helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+// Extract Bearer token from Authorization header
+function getBearer(req) {
+  const authHeader = (req.headers && req.headers['authorization']) || '';
+  const match = String(authHeader).match(/^Bearer\\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+// Decode JWT payload (no signature verification \u2014 server passes token to Firebase which verifies)
+function getBearerUserId(req) {
+  const token = getBearer(req);
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return payload.user_id || payload.sub || null;
+  } catch { return null; }
+}
+
+// Parse JSON request body
+function parseBody(req) {
+  if (!req.body) return {};
+  try { return JSON.parse(req.body); }
+  catch { return {}; }
+}
+
+// Extract a path parameter captured by router (e.g. :id)
+function pathParam(req, name) {
+  return (req.params && req.params[name]) || null;
+}
+
+// Wrap a Promise<data> as an async HTTP response \u2014 serve() awaits and JSON-encodes it
+function asyncJson(promise, status, headers) {
+  return { __asyncResponse: true, promise, status: status ?? 200, headers: headers ?? {} };
+}
 `;
 
 // src/parser/formal.ts
@@ -11569,9 +11640,9 @@ export default function Auth() {
 }
 function buildNotesTsx(noteFields) {
   const hasBody = noteFields.some((f) => f.name === "body");
-  return `import { useEffect, useState } from 'react';
+  return `import { useEffect, useState, useCallback } from 'react';
 import {
-  collection, query, where, orderBy, onSnapshot,
+  collection, query, where, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import { signOut, User } from 'firebase/auth';
@@ -11585,24 +11656,54 @@ interface Note {
   userId: string;
 }
 
+type Mode = 'sdk' | 'api';
+const API_BASE = 'http://localhost:3001';
+
 export default function Notes({ user }: { user: User }) {
-  const [notes, setNotes]       = useState<Note[]>([]);
-  const [active, setActive]     = useState<Note | null>(null);
-  const [title, setTitle]       = useState('');
-  const [body, setBody]         = useState('');
-  const [saving, setSaving]     = useState(false);
-  const [search, setSearch]     = useState('');
+  const [notes, setNotes]   = useState<Note[]>([]);
+  const [active, setActive] = useState<Note | null>(null);
+  const [title, setTitle]   = useState('');
+  const [body, setBody]     = useState('');
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [mode, setMode]     = useState<Mode>('sdk');
+
+  // \u2500\u2500 SDK mode: real-time Firestore listener \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  useEffect(() => {
+    if (mode !== 'sdk') return;
+    const q = query(collection(db, 'notes'), where('userId', '==', user.uid));
+    return onSnapshot(q, snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Note));
+      // Sort client-side \u2014 avoids needing a composite Firestore index
+      docs.sort((a, b) => {
+        const ta = (a.createdAt as any)?.toMillis?.() ?? 0;
+        const tb = (b.createdAt as any)?.toMillis?.() ?? 0;
+        return tb - ta;
+      });
+      setNotes(docs);
+    });
+  }, [user.uid, mode]);
+
+  // \u2500\u2500 API mode: fetch from FL backend \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  const fetchApiNotes = useCallback(async () => {
+    const token = await user.getIdToken();
+    const res = await fetch(API_BASE + '/api/notes', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!res.ok) return;
+    const data: Note[] = await res.json();
+    data.sort((a: any, b: any) => {
+      const ta = new Date(a.createdAt || 0).getTime();
+      const tb = new Date(b.createdAt || 0).getTime();
+      return tb - ta;
+    });
+    setNotes(data);
+  }, [user]);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'notes'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-    );
-    return onSnapshot(q, snap => {
-      setNotes(snap.docs.map(d => ({ id: d.id, ...d.data() } as Note)));
-    });
-  }, [user.uid]);
+    if (mode !== 'api') return;
+    fetchApiNotes();
+  }, [mode, fetchApiNotes]);
 
   function selectNote(note: Note) {
     setActive(note);
@@ -11610,35 +11711,61 @@ export default function Notes({ user }: { user: User }) {
     setBody(note.body ?? '');
   }
 
-  function newNote() {
-    setActive(null);
-    setTitle('');
-    setBody('');
-  }
+  function newNote() { setActive(null); setTitle(''); setBody(''); }
 
+  // \u2500\u2500 Save (create or update) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   async function save() {
     if (!title.trim()) return;
     setSaving(true);
     try {
-      if (active) {
-        await updateDoc(doc(db, 'notes', active.id), { title: title.trim(), body });
-        setActive(prev => prev ? { ...prev, title: title.trim(), body } : null);
+      if (mode === 'sdk') {
+        if (active) {
+          await updateDoc(doc(db, 'notes', active.id), { title: title.trim(), body });
+          setActive(prev => prev ? { ...prev, title: title.trim(), body } : null);
+        } else {
+          const ref = await addDoc(collection(db, 'notes'), {
+            title: title.trim(), body, userId: user.uid, createdAt: serverTimestamp(),
+          });
+          setActive({ id: ref.id, title: title.trim(), body, userId: user.uid, createdAt: null });
+        }
       } else {
-        const ref = await addDoc(collection(db, 'notes'), {
-          title: title.trim(),
-          body,
-          userId: user.uid,
-          createdAt: serverTimestamp(),
-        });
-        setActive({ id: ref.id, title: title.trim(), body, userId: user.uid, createdAt: null });
+        const token = await user.getIdToken();
+        if (active) {
+          await fetch(API_BASE + '/api/notes/' + active.id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ title: title.trim(), body }),
+          });
+        } else {
+          await fetch(API_BASE + '/api/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({
+              title: title.trim(), body,
+              userId: user.uid,
+              createdAt: new Date().toISOString(),
+            }),
+          });
+        }
+        await fetchApiNotes();
       }
     } finally {
       setSaving(false);
     }
   }
 
+  // \u2500\u2500 Delete \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   async function remove(id: string) {
-    await deleteDoc(doc(db, 'notes', id));
+    if (mode === 'sdk') {
+      await deleteDoc(doc(db, 'notes', id));
+    } else {
+      const token = await user.getIdToken();
+      await fetch(API_BASE + '/api/notes/' + id, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      setNotes(prev => prev.filter(n => n.id !== id));
+    }
     if (active?.id === id) newNote();
   }
 
@@ -11705,6 +11832,19 @@ export default function Notes({ user }: { user: User }) {
           value={body}
           onChange={e => setBody(e.target.value)}
         />` : `<p className="no-body">Body field not defined in Note struct.</p>`}
+        {/* Mode toggle */}
+        <div className="mode-bar">
+          <span className="mode-label">
+            {mode === 'sdk' ? 'Firebase SDK (direct)' : 'FL Backend API (via server)'}
+          </span>
+          <button
+            className={\`mode-toggle \${mode === 'api' ? 'active' : ''}\`}
+            onClick={() => { newNote(); setMode(m => m === 'sdk' ? 'api' : 'sdk'); }}
+            title="Toggle between Firebase SDK and FL backend"
+          >
+            {mode === 'sdk' ? 'Switch to FL Backend' : 'Switch to Firebase SDK'}
+          </button>
+        </div>
       </main>
     </div>
   );
@@ -11816,6 +11956,13 @@ input, textarea { font-family: inherit; }
 .body-input { flex: 1; border: none; padding: 1.5rem; font-size: 1rem; line-height: 1.7; resize: none; outline: none; color: #333; }
 .body-input::placeholder { color: #ccc; }
 .no-body { color: #999; padding: 2rem; font-style: italic; }
+
+/* \u2500\u2500 Mode toggle bar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.mode-bar { display: flex; align-items: center; justify-content: space-between; padding: .6rem 1.5rem; border-top: 1px solid #eee; background: #fafafa; flex-shrink: 0; }
+.mode-label { font-size: .8rem; color: #888; font-family: "SFMono-Regular", Consolas, monospace; }
+.mode-toggle { background: #eee; border: none; border-radius: 6px; padding: .35rem .9rem; font-size: .8rem; font-weight: 600; color: #555; transition: all .15s; }
+.mode-toggle:hover { background: #ddd; }
+.mode-toggle.active { background: #1a1a1a; color: white; }
 
 @media (max-width: 600px) {
   .notes-shell { grid-template-columns: 1fr; }
@@ -14116,6 +14263,119 @@ var CHAIN_SOURCE_HASH = (() => {
   return (h >>> 0).toString(16);
 })();
 
+// src/codegen/firebase-server-runtime.ts
+function buildFirebaseServerRuntime(projectId) {
+  return `
+// \u2500\u2500 Firestore REST helpers (injected for Firebase server projects) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+function _httpsReq(method, url, body, headers) {
+  const https = require('https');
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const bodyStr = body != null ? JSON.stringify(body) : null;
+    const opts = {
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+        ...headers,
+      },
+    };
+    const req = https.request(opts, res => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+        catch { resolve({ status: res.statusCode, body: data }); }
+      });
+    });
+    req.on('error', reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+function _toFirestoreFields(obj) {
+  const fields = {};
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (typeof v === 'string') fields[k] = { stringValue: v };
+    else if (typeof v === 'number' && Number.isInteger(v)) fields[k] = { integerValue: String(v) };
+    else if (typeof v === 'number') fields[k] = { doubleValue: v };
+    else if (typeof v === 'boolean') fields[k] = { booleanValue: v };
+    else if (v == null) fields[k] = { nullValue: null };
+  }
+  return fields;
+}
+
+function _fromFirestoreDoc(doc) {
+  const id = doc.name ? doc.name.split('/').pop() : null;
+  const out = { id };
+  for (const [k, v] of Object.entries(doc.fields || {})) {
+    if (v.stringValue  !== undefined) out[k] = v.stringValue;
+    else if (v.integerValue !== undefined) out[k] = Number(v.integerValue);
+    else if (v.doubleValue  !== undefined) out[k] = v.doubleValue;
+    else if (v.booleanValue !== undefined) out[k] = v.booleanValue;
+    else if (v.timestampValue !== undefined) out[k] = v.timestampValue;
+    else out[k] = null;
+  }
+  return out;
+}
+
+const _FIRESTORE_PROJECT = ${JSON.stringify(projectId)};
+const _FIRESTORE_BASE = \`https://firestore.googleapis.com/v1/projects/\${_FIRESTORE_PROJECT}/databases/(default)/documents\`;
+
+function firestoreList(collection, userId, idToken) {
+  const url = _FIRESTORE_BASE + ':runQuery';
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId: collection }],
+      where: userId ? {
+        fieldFilter: {
+          field: { fieldPath: 'userId' },
+          op: 'EQUAL',
+          value: { stringValue: userId },
+        },
+      } : undefined,
+    },
+  };
+  return _httpsReq('POST', url, body, { Authorization: 'Bearer ' + idToken })
+    .then(r => {
+      if (!Array.isArray(r.body)) return [];
+      return r.body
+        .filter(entry => entry && entry.document)
+        .map(entry => _fromFirestoreDoc(entry.document));
+    });
+}
+
+function firestoreCreate(collection, data, idToken) {
+  const url = \`\${_FIRESTORE_BASE}/\${collection}\`;
+  return _httpsReq('POST', url, { fields: _toFirestoreFields(data) }, { Authorization: 'Bearer ' + idToken })
+    .then(r => {
+      if (!r.body || !r.body.name) throw new Error('Firestore create failed: ' + JSON.stringify(r.body));
+      return _fromFirestoreDoc(r.body);
+    });
+}
+
+function firestoreUpdate(collection, docId, data, idToken) {
+  const fields = _toFirestoreFields(data);
+  const mask = Object.keys(fields)
+    .map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k))
+    .join('&');
+  const url = \`\${_FIRESTORE_BASE}/\${collection}/\${docId}?\${mask}\`;
+  return _httpsReq('PATCH', url, { fields }, { Authorization: 'Bearer ' + idToken })
+    .then(() => ({ id: docId, ...data }));
+}
+
+function firestoreDelete(collection, docId, idToken) {
+  const url = \`\${_FIRESTORE_BASE}/\${collection}/\${docId}\`;
+  return _httpsReq('DELETE', url, null, { Authorization: 'Bearer ' + idToken })
+    .then(() => ({ ok: true, id: docId }));
+}
+`;
+}
+
 // src/cli.ts
 var rawArgs = process.argv.slice(2);
 var strict = rawArgs.includes("--strict");
@@ -14162,6 +14422,15 @@ async function main() {
       process.exit(1);
     }
     runCreateApp(name);
+    return;
+  }
+  if (command === "create-server") {
+    const name = args[1];
+    if (!name) {
+      console.error("Usage: fl create-server <name>");
+      process.exit(1);
+    }
+    runCreateServer(name);
     return;
   }
   if (command === "install") {
@@ -14311,12 +14580,14 @@ Executing ${path4.basename(file)}
     process.exit(1);
   }
 }
-function runServer(file) {
+function runServer(file, extraRuntime = "") {
   if (!fs4.existsSync(file)) {
     console.error(`File not found: ${file}`);
     process.exit(1);
   }
-  const js = parseFLFile(file);
+  const source = expandFLFile(file);
+  const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
+  const js = generateJSFromAST(ast, runtimePreamble + (extraRuntime ? "\n" + extraRuntime : ""));
   try {
     eval(js);
   } catch (e) {
@@ -14611,12 +14882,13 @@ function isServerProgram(source2) {
   return /\bserve\s*\(/.test(source2);
 }
 function readManifest() {
-  const manifestPath = path4.join(process.cwd(), "fl.json");
-  if (!fs4.existsSync(manifestPath)) {
-    console.error("No fl.json found. Run fl create-app <name> to scaffold a new app, or run fl start <file.fl> to use a specific file.");
-    process.exit(1);
+  const candidates = ["package.flson", "fl.json"];
+  for (const name of candidates) {
+    const p = path4.join(process.cwd(), name);
+    if (fs4.existsSync(p)) return JSON.parse(fs4.readFileSync(p, "utf8"));
   }
-  return JSON.parse(fs4.readFileSync(manifestPath, "utf8"));
+  console.error("No package.flson found. Run fl create-app <name> or fl create-server <name> to scaffold a project.");
+  process.exit(1);
 }
 function runCreateApp(name) {
   const appDir = path4.resolve(name);
@@ -14624,7 +14896,7 @@ function runCreateApp(name) {
     console.error(`Directory already exists: ${appDir}`);
     process.exit(1);
   }
-  const backendDir = path4.join(appDir, "_react");
+  const generatedDir = "generated/frontend";
   const mainFile = "app.fl";
   const starterFl = `fn double(n \u2208 Nat) -> Nat {
   conclude(n + n)
@@ -14647,72 +14919,128 @@ proof DoubleIsPositive() {
   conclude(result > 0)
 }
 `;
-  const manifest = { name, main: mainFile, backend: "_react" };
+  const manifest = { name, type: "web", main: mainFile, generated: generatedDir };
   fs4.mkdirSync(appDir, { recursive: true });
   fs4.writeFileSync(path4.join(appDir, mainFile), starterFl, "utf8");
-  fs4.writeFileSync(path4.join(appDir, "fl.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
-  fs4.writeFileSync(path4.join(appDir, ".gitignore"), "_react/node_modules\n", "utf8");
-  const source2 = fs4.readFileSync(path4.join(appDir, mainFile), "utf8");
-  const ast2 = parseLinesToAST(lexFL(source2), { desugarFns: false });
-  createReactApp(ast2, backendDir);
-  console.log(`Created app: ${name}/`);
-  console.log(`  ${name}/${mainFile}   \u2190 your FL source`);
-  console.log(`  ${name}/fl.json       \u2190 project manifest`);
-  console.log(`  ${name}/_react/       \u2190 generated React backend`);
+  fs4.writeFileSync(path4.join(appDir, "package.flson"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  fs4.writeFileSync(path4.join(appDir, ".gitignore"), "generated/\n", "utf8");
+  const outDir = path4.join(appDir, generatedDir);
+  const ast2 = parseLinesToAST(lexFL(starterFl), { desugarFns: false });
+  createReactApp(ast2, outDir);
+  console.log(`
+Created FL web app: ${name}/`);
+  console.log(`  ${name}/${mainFile}            \u2190 your FL source (edit this)`);
+  console.log(`  ${name}/package.flson          \u2190 project manifest`);
+  console.log(`  ${name}/generated/frontend/    \u2190 generated React (hidden, gitignored)`);
   console.log(`
 Next steps:`);
-  console.log(`  cd ${name}`);
-  console.log(`  fl install`);
-  console.log(`  fl start`);
+  console.log(`  cd ${name} && fl install && fl start`);
+}
+function runCreateServer(name) {
+  const serverDir = path4.resolve(name);
+  if (fs4.existsSync(serverDir)) {
+    console.error(`Directory already exists: ${serverDir}`);
+    process.exit(1);
+  }
+  const mainFile = "server.fl";
+  const starterFl = `// ${name} \u2014 FL server
+// fl start  \u2190  compiles and runs in memory (no generated files)
+
+fn cors(req \u2208 Request) -> Response {
+  conclude(json({ ok: true }, 200, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+  }))
+} \u2192
+
+fn health(req \u2208 Request) -> Response {
+  conclude(json({ status: "ok", service: "${name}", version: "1.0.0" }, 200, {
+    "Access-Control-Allow-Origin": "*"
+  }))
+} \u2192
+
+fn notFound(req \u2208 Request) -> Response {
+  conclude(json({ error: "not found" }, 404, {
+    "Access-Control-Allow-Origin": "*"
+  }))
+} \u2192
+
+let app = router([
+  route("OPTIONS", "*", cors),
+  route("GET", "/api/health", health)
+], notFound) \u2192
+
+let server = serve(3001, app)
+`;
+  const manifest = { name, type: "server", main: mainFile };
+  fs4.mkdirSync(serverDir, { recursive: true });
+  fs4.writeFileSync(path4.join(serverDir, mainFile), starterFl, "utf8");
+  fs4.writeFileSync(path4.join(serverDir, "package.flson"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  fs4.writeFileSync(path4.join(serverDir, ".gitignore"), ".env\n", "utf8");
+  console.log(`
+Created FL server: ${name}/`);
+  console.log(`  ${name}/${mainFile}     \u2190 your FL source (edit this)`);
+  console.log(`  ${name}/package.flson  \u2190 project manifest`);
+  console.log(`
+Next steps:`);
+  console.log(`  cd ${name} && fl start`);
 }
 async function runInstall() {
   const manifest = readManifest();
-  const backendDir = path4.resolve(manifest.backend);
-  if (!fs4.existsSync(backendDir)) {
-    console.error(`Backend directory not found: ${backendDir}. Re-run fl create-app or fl start to regenerate it.`);
+  if (manifest.type === "server") {
+    console.log("Server projects have no npm dependencies to install (runs in-memory).");
+    return;
+  }
+  const generatedDir = path4.resolve(manifest.generated ?? "generated/frontend");
+  if (!fs4.existsSync(generatedDir)) {
+    console.error(`Generated directory not found: ${generatedDir}. Run fl start to generate it first.`);
     process.exit(1);
   }
-  console.log(`Installing dependencies in ${manifest.backend}/...`);
-  await new Promise((resolve3, reject) => {
+  console.log(`Installing dependencies in ${path4.relative(process.cwd(), generatedDir)}/...`);
+  await npmInstall(generatedDir);
+  console.log("\nDone. Run fl start to launch your app.");
+}
+async function npmInstall(dir) {
+  return new Promise((resolve3, reject) => {
     const child = (0, import_child_process.spawn)("npm", ["install"], {
-      cwd: backendDir,
+      cwd: dir,
       stdio: "inherit",
       shell: process.platform === "win32"
     });
-    child.on("exit", (code) => {
-      if (code === 0) resolve3();
-      else reject(new Error(`npm install exited with code ${code}`));
-    });
+    child.on("exit", (code) => code === 0 ? resolve3() : reject(new Error(`npm install exited with code ${code}`)));
   });
-  console.log("\nDone. Run fl start to launch your app.");
 }
 async function runProjectStart() {
   const manifest = readManifest();
   const mainFile = path4.resolve(manifest.main);
-  const backendDir = path4.resolve(manifest.backend);
   if (!fs4.existsSync(mainFile)) {
     console.error(`Main file not found: ${manifest.main}`);
     process.exit(1);
   }
+  if (manifest.type === "server") {
+    console.log(`Starting FL server from ${manifest.main}...`);
+    let extraRuntime2 = "";
+    if (manifest.firebase?.projectId) {
+      extraRuntime2 = buildFirebaseServerRuntime(manifest.firebase.projectId);
+    }
+    runServer(mainFile, extraRuntime2);
+    return;
+  }
+  const generatedDir = path4.resolve(manifest.generated ?? "generated/frontend");
   const source2 = fs4.readFileSync(mainFile, "utf8");
   const ast2 = parseLinesToAST(lexFL(source2), { desugarFns: false });
-  createReactApp(ast2, backendDir);
+  createReactApp(ast2, generatedDir);
   console.log(`Generated React app from ${manifest.main}`);
-  if (!fs4.existsSync(path4.join(backendDir, "node_modules"))) {
+  if (!fs4.existsSync(path4.join(generatedDir, "node_modules"))) {
     console.log("node_modules not found \u2014 running npm install...");
-    await new Promise((resolve3, reject) => {
-      const child = (0, import_child_process.spawn)("npm", ["install"], {
-        cwd: backendDir,
-        stdio: "inherit",
-        shell: process.platform === "win32"
-      });
-      child.on("exit", (code) => {
-        if (code === 0) resolve3();
-        else reject(new Error(`npm install exited with code ${code}`));
-      });
-    });
+    await npmInstall(generatedDir);
   }
-  launchFrontend(backendDir);
+  if (noLaunch) {
+    console.log("Skipping frontend launch (--no-launch)");
+    return;
+  }
+  launchFrontend(generatedDir);
 }
 async function runChain(extraArgs) {
   const os = require("os");
@@ -14770,9 +15098,10 @@ FuturChain:
   fl chain --genesis-supply 1000    Custom genesis token supply
 
 App workflow (recommended):
-  fl create-app <name>              Scaffold a new FL app with a React backend
-  fl install                        Install React backend dependencies (run inside app dir)
-  fl start                          Regenerate React app and launch dev server (run inside app dir)
+  fl create-app <name>              Scaffold a new FL web app (React generated into generated/frontend/)
+  fl create-server <name>           Scaffold a new FL server (runs in-memory, no generated files)
+  fl install                        Install frontend dependencies (web apps only; run inside app dir)
+  fl start                          Start the project: web apps launch Vite, servers run in-memory
 
 Legacy / single-file:
   fl start <file.fl> [out-dir]      Generate and launch a React app from a single FL file
