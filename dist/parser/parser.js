@@ -247,13 +247,68 @@ function parseLinesToAST(lines, options = {}) {
             }
             case 'require': {
                 const inner = line.content.replace(/^require\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
-                // Split on last comma to separate condition from error name
                 const lastComma = inner.lastIndexOf(',');
                 const condStr = lastComma >= 0 ? inner.slice(0, lastComma).trim() : inner;
                 const errName = lastComma >= 0 ? inner.slice(lastComma + 1).trim() : '';
                 const condition = parseCallExprFromStr(condStr);
                 const node = { type: 'Require', condition, error: errName, connective: line.connective };
                 pushOrTop(stack, ast, node);
+                break;
+            }
+            case 'emit': {
+                // emit(EventName, field1: value1, field2: value2)
+                const inner = line.content.replace(/^emit\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const firstComma = inner.indexOf(',');
+                const eventName = firstComma >= 0 ? inner.slice(0, firstComma).trim() : inner;
+                const fieldsRaw = firstComma >= 0 ? inner.slice(firstComma + 1).trim() : '';
+                const fields = fieldsRaw
+                    ? splitFnParams(fieldsRaw).map(f => {
+                        const colon = f.indexOf(':');
+                        return colon >= 0
+                            ? { name: f.slice(0, colon).trim(), value: f.slice(colon + 1).trim() }
+                            : { name: f.trim(), value: f.trim() };
+                    })
+                    : [];
+                const emitNode = { type: 'Emit', eventName, fields, connective: line.connective };
+                pushOrTop(stack, ast, emitNode);
+                break;
+            }
+            case 'pda': {
+                // let varName = pda([seed1, seed2, ...])  or  pda([seeds])
+                const letMatch = line.content.match(/^let\s+(\w+)\s*=\s*pda\s*\(\[([\s\S]*)\]\)/);
+                const bareMatch = line.content.match(/^pda\s*\(\[([\s\S]*)\]\)/);
+                const varName = letMatch ? letMatch[1] : '_pda';
+                const seedsRaw = letMatch ? letMatch[2] : (bareMatch ? bareMatch[1] : '');
+                const seeds = seedsRaw.split(',').map(s => s.trim()).filter(s => s.length > 0);
+                const pdaNode = { type: 'Pda', varName, seeds, connective: line.connective };
+                pushOrTop(stack, ast, pdaNode);
+                break;
+            }
+            case 'cpi': {
+                // cpi(program_id, instruction_name, [account1, account2])
+                const inner = line.content.replace(/^cpi\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const parts = splitFnParams(inner);
+                const program = parts[0]?.trim() ?? '';
+                const instruction = parts[1]?.trim() ?? '';
+                const accountsRaw = parts[2]?.trim() ?? '';
+                const accounts = accountsRaw.replace(/^\[/, '').replace(/\]$/, '')
+                    .split(',').map(s => s.trim()).filter(s => s.length > 0);
+                const cpiNode = { type: 'Cpi', program, instruction, accounts, connective: line.connective };
+                pushOrTop(stack, ast, cpiNode);
+                break;
+            }
+            case 'transfer': {
+                // transfer(from, to, amount)
+                const inner = line.content.replace(/^transfer\s*\(/, '').replace(/\)\s*;?\s*$/, '').trim();
+                const parts = splitFnParams(inner);
+                const transferNode = {
+                    type: 'Transfer',
+                    from: parts[0]?.trim() ?? '',
+                    to: parts[1]?.trim() ?? '',
+                    amount: parts[2]?.trim() ?? '',
+                    connective: line.connective,
+                };
+                pushOrTop(stack, ast, transferNode);
                 break;
             }
             case 'obtain': {

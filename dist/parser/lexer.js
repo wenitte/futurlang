@@ -148,6 +148,46 @@ function lexFL(text) {
             parsed.push({ type: 'require', content: cleaned, connective: conn });
             continue;
         }
+        if (/^emit\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'emit', content: cleaned, connective: conn });
+            continue;
+        }
+        if (/^pda\s*\(/.test(line) || /^let\s+\w+\s*=\s*pda\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'pda', content: cleaned, connective: conn });
+            continue;
+        }
+        if (/^cpi\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'cpi', content: cleaned, connective: conn });
+            continue;
+        }
+        if (/^transfer\s*\(/.test(line)) {
+            let combined = line;
+            while (parenDepth(combined) !== 0 && i < raw.length) {
+                combined += ' ' + raw[i];
+                i++;
+            }
+            const [cleaned, conn] = extractConnective(combined);
+            parsed.push({ type: 'transfer', content: cleaned, connective: conn });
+            continue;
+        }
         // ── level (metadata, but carries a connective to the next block) ─────────
         if (/^level\b/.test(line)) {
             const [cleaned, conn] = extractConnective(line);

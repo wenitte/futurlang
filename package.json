@@ -1,21 +1,54 @@
 {
   "name": "futurlang",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "1.0.2",
+  "description": "Proof-oriented programming language with a categorical kernel",
+  "main": "fl.js",
   "bin": {
     "fl": "./fl.js"
   },
+  "files": [
+    "dist",
+    "fl.js",
+    "lib",
+    "README.md",
+    "KERNEL.md",
+    "scripts/postinstall.js"
+  ],
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node dist/tests/run.js"
+    "test": "npm run build && node dist/tests/run.js",
+    "postinstall": "node scripts/postinstall.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "Proof-oriented programming language with a categorical Wenittain kernel",
+  "keywords": [
+    "futurlang",
+    "proof",
+    "formal-verification",
+    "theorem-prover",
+    "blockchain",
+    "smart-contracts",
+    "fl"
+  ],
+  "author": "Wenitte Apiou",
+  "license": "MIT",
+  "homepage": "https://github.com/wenitte/futurlang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wenitte/futurlang"
+  },
+  "bugs": {
+    "url": "https://github.com/wenitte/futurlang/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
+  },
+  "devDependencies": {
     "@types/node": "^22.8.1",
+    "esbuild": "^0.28.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
   }

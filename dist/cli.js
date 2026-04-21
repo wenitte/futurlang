@@ -44,6 +44,7 @@ const parser_1 = require("./parser/parser");
 const checker_1 = require("./checker/checker");
 const transpiler_1 = require("./react/transpiler");
 const rust_1 = require("./codegen/rust");
+const lsp_server_1 = require("./lsp-server");
 const rawArgs = process.argv.slice(2);
 const strict = rawArgs.includes('--strict');
 const noLaunch = rawArgs.includes('--no-launch');
@@ -139,6 +140,14 @@ async function main() {
     }
     if (command === 'repl') {
         runRepl(rawArgs.includes('--json'));
+        return;
+    }
+    if (command === 'lsp-server') {
+        const portArg = args.indexOf('--port');
+        const port = portArg >= 0 ? parseInt(args[portArg + 1], 10) : 3001;
+        await (0, lsp_server_1.startLspServer)(port);
+        // Keep alive — never resolves so the process stays up
+        await new Promise(() => { });
         return;
     }
     // Default: evaluate
@@ -620,11 +629,15 @@ App workflow (recommended):
 Legacy / single-file:
   fl start <file.fl> [out-dir]      Generate and launch a React app from a single FL file
   fl web <file.fl> [out-dir]        Generate a React app without launching it
+  fl lsp-server [--port 3001]       Start the Language API Server (parse/check/hover/rust endpoints)
   fl repl [--json]                  Run the interactive agent REPL (for programmatic IO)
 
 Notes:
   --strict                          Reserved for future kernel tightening
   --no-launch                       Generate frontend output without starting Vite
+
+VS Code Extension (syntax highlighting, hover docs, completions):
+  https://marketplace.visualstudio.com/items?itemName=WenitteApiou.futurlang
 `);
 }
 main().catch(e => { console.error(e.message); process.exit(1); });

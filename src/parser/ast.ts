@@ -387,6 +387,40 @@ export interface RequireNode {
   connective: BlockConnective;
 }
 
+// emit(EventName, field: value, ...) — emit a named event from an instruction
+export interface EmitNode {
+  type: 'Emit';
+  eventName: string;
+  fields: Array<{ name: string; value: string }>;
+  connective: BlockConnective;
+}
+
+// pda(seeds) ∈ Address — derive a program-derived address
+export interface PdaNode {
+  type: 'Pda';
+  varName: string;       // binding: "let addr = pda([seed, ...])"
+  seeds: string[];
+  connective: BlockConnective;
+}
+
+// cpi(program_id, instruction, accounts) — cross-program invocation
+export interface CpiNode {
+  type: 'Cpi';
+  program: string;
+  instruction: string;
+  accounts: string[];
+  connective: BlockConnective;
+}
+
+// transfer(from, to, amount) — native token transfer within an instruction
+export interface TransferNode {
+  type: 'Transfer';
+  from: string;
+  to: string;
+  amount: string;
+  connective: BlockConnective;
+}
+
 export type ASTNode =
   | TheoremNode
   | DefinitionNode
@@ -418,6 +452,10 @@ export type ASTNode =
   | InstructionNode
   | ErrorDeclNode
   | ProgramNode
-  | RequireNode;
+  | RequireNode
+  | EmitNode
+  | PdaNode
+  | CpiNode
+  | TransferNode;
 
 // The top-level program is a single chained expression built from these nodes.

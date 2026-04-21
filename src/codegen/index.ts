@@ -145,6 +145,14 @@ function nodeToExpr(node: ASTNode, symbolicMode: boolean, ctx: CodegenContext): 
       return `atom(true, ${JSON.stringify(`error(${node.name})`)})`;
     case 'Require':
       return `atom(true, ${JSON.stringify(`require(${node.error})`)})`;
+    case 'Emit':
+      return `atom(true, ${JSON.stringify(`emit(${node.eventName})`)})`;
+    case 'Pda':
+      return `atom(true, ${JSON.stringify(`pda(${node.varName})`)})`;
+    case 'Cpi':
+      return `atom(true, ${JSON.stringify(`cpi(${node.program}, ${node.instruction})`)})`;
+    case 'Transfer':
+      return `atom(true, ${JSON.stringify(`transfer(${node.from}, ${node.to}, ${node.amount})`)})`;
     default: {
       const _: never = node;
       throw new Error('Unhandled node type');

@@ -12,6 +12,7 @@ import {
   TheoremNode, LemmaNode, DefinitionNode,
   MatchNode, PatternNode,
   AccountNode, InstructionNode, InstructionParam, ErrorDeclNode, ProgramNode, RequireNode,
+  EmitNode, PdaNode, CpiNode, TransferNode,
 } from '../parser/ast';
 
 interface RustGenCtx {
@@ -318,6 +319,21 @@ function stmtToRust(node: ASTNode, ctx: RustGenCtx, depth: number): string {
     case 'Given':   return `${pad}// assume: ${renderExprSource(node.expr)}`;
     case 'Apply':   return `${pad}// apply: ${node.target}`;
     case 'Match':   return matchToRust(node, ctx, depth);
+    case 'Emit': {
+      const fields = node.fields.map(f => `("${f.name}", ${f.value})`).join(', ');
+      return `${pad}emit!(ctx, "${node.eventName}", &[${fields}]);`;
+    }
+    case 'Pda': {
+      const seeds = node.seeds.map(s => `${s}.as_bytes()`).join(', ');
+      return `${pad}let ${node.varName} = ctx.pda(&[${seeds}]);`;
+    }
+    case 'Cpi': {
+      const accounts = node.accounts.join(', ');
+      return `${pad}cpi!(ctx, ${node.program}, vec![${accounts}], vec![]);`;
+    }
+    case 'Transfer': {
+      return `${pad}ctx.transfer(${node.from}_idx, ${node.to}_idx, ${node.amount})?;`;
+    }
     case 'Raw': {
       const raw = node.content.trim();
       return `${pad}${raw.endsWith(';') || raw.endsWith('}') || raw.endsWith('{') ? raw : raw + ';'}`;
