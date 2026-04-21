@@ -7,7 +7,6 @@
     "fl": "./fl.js"
   },
   "files": [
-    "dist",
     "fl.js",
     "lib",
     "README.md",
@@ -15,8 +14,8 @@
     "scripts/postinstall.js"
   ],
   "scripts": {
-    "build": "tsc",
-    "test": "npm run build && node dist/tests/run.js",
+    "build": "npx esbuild src/cli.ts --bundle --platform=node --target=node18 --external:vscode --outfile=fl.js \"--banner:js=#!/usr/bin/env node\"",
+    "test": "tsc && node dist/tests/run.js",
     "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [

@@ -708,9 +708,9 @@ assert(miss.status == 404)
   assert.equal((runtime.miss as any).status, 404);
 });
 
-runTest('cli executes proof-shaped files and still prints checker output', () => {
+runTest('cli check proof-shaped files shows checker output', () => {
   const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-cli-proof-'));
-  const file = path.join(tempDir, 'proof-and-run.fl');
+  const file = path.join(tempDir, 'proof.fl');
   fs.writeFileSync(file, `
 theorem Identity() {
   assume(p) →
@@ -720,20 +720,15 @@ theorem Identity() {
 proof Identity() {
   assume(p) →
   conclude(p)
-} →
-
-let answer = if true then 1 else 0 →
-assert(answer == 1)
+}
 `);
-  const result = spawnSync('node', ['dist/cli.js', file], {
+  const result = spawnSync('node', ['dist/cli.js', 'check', file], {
     cwd: process.cwd(),
     encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /proof \+ runtime mode/);
   assert.match(result.stdout, /Checking/);
-  assert.match(result.stdout, /Executing/);
-  assert.match(result.stdout, /Program holds/);
+  assert.match(result.stdout, /PROVED/);
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -1156,16 +1151,17 @@ runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
   }
 });
 
-runTest('default fl command executes the full demo corpus with only intentional failures', () => {
+runTest('fl check passes the full demo corpus with only intentional failures', () => {
   const demoDir = path.resolve(__dirname, '../../examples/demo');
   const files = collectDemoFiles(demoDir);
   const expectedExit = new Map<string, number>([
     ['match-exhaustive-fail.fl', 1],
+    ['list-nonstructural-fail.fl', 1],
   ]);
 
   for (const file of files) {
     const label = path.relative(demoDir, file);
-    const result = spawnSync('node', ['dist/cli.js', file], {
+    const result = spawnSync('node', ['dist/cli.js', 'check', file], {
       cwd: process.cwd(),
       encoding: 'utf8',
     });
@@ -1176,7 +1172,7 @@ runTest('default fl command executes the full demo corpus with only intentional 
       `${label}\n${result.stdout}\n${result.stderr}`,
     );
     if (expected === 0) {
-      assert.match(result.stdout, /Program holds|server .*starting|proof \+ runtime mode|fn /);
+      assert.match(result.stdout, /PROVED|Declaration-only/);
     } else {
       assert.match(result.stdout + result.stderr, /FAILED|non-exhaustive/i);
     }

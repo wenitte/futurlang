@@ -675,9 +675,9 @@ assert(miss.status == 404)
     assert_1.strict.equal(runtime.api.status, 200);
     assert_1.strict.equal(runtime.miss.status, 404);
 });
-runTest('cli executes proof-shaped files and still prints checker output', () => {
+runTest('cli check proof-shaped files shows checker output', () => {
     const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-cli-proof-'));
-    const file = path.join(tempDir, 'proof-and-run.fl');
+    const file = path.join(tempDir, 'proof.fl');
     fs.writeFileSync(file, `
 theorem Identity() {
   assume(p) →
@@ -687,20 +687,15 @@ theorem Identity() {
 proof Identity() {
   assume(p) →
   conclude(p)
-} →
-
-let answer = if true then 1 else 0 →
-assert(answer == 1)
+}
 `);
-    const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', file], {
+    const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', 'check', file], {
         cwd: process.cwd(),
         encoding: 'utf8',
     });
     assert_1.strict.equal(result.status, 0, result.stderr || result.stdout);
-    assert_1.strict.match(result.stdout, /proof \+ runtime mode/);
     assert_1.strict.match(result.stdout, /Checking/);
-    assert_1.strict.match(result.stdout, /Executing/);
-    assert_1.strict.match(result.stdout, /Program holds/);
+    assert_1.strict.match(result.stdout, /PROVED/);
     fs.rmSync(tempDir, { recursive: true, force: true });
 });
 runTest('cli auto-detects server files as executable runtime without theorem mode', () => {
@@ -1082,22 +1077,23 @@ runTest('demo examples all reduce to PROVED with no pending morphisms', () => {
         }
     }
 });
-runTest('default fl command executes the full demo corpus with only intentional failures', () => {
+runTest('fl check passes the full demo corpus with only intentional failures', () => {
     const demoDir = path.resolve(__dirname, '../../examples/demo');
     const files = collectDemoFiles(demoDir);
     const expectedExit = new Map([
         ['match-exhaustive-fail.fl', 1],
+        ['list-nonstructural-fail.fl', 1],
     ]);
     for (const file of files) {
         const label = path.relative(demoDir, file);
-        const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', file], {
+        const result = (0, child_process_1.spawnSync)('node', ['dist/cli.js', 'check', file], {
             cwd: process.cwd(),
             encoding: 'utf8',
         });
         const expected = expectedExit.get(label) ?? 0;
         assert_1.strict.equal(result.status, expected, `${label}\n${result.stdout}\n${result.stderr}`);
         if (expected === 0) {
-            assert_1.strict.match(result.stdout, /Program holds|server .*starting|proof \+ runtime mode|fn /);
+            assert_1.strict.match(result.stdout, /PROVED|Declaration-only/);
         }
         else {
             assert_1.strict.match(result.stdout + result.stderr, /FAILED|non-exhaustive/i);

@@ -100,10 +100,66 @@ async function main() {
     await runChain(args.slice(1)); return;
   }
 
-  // Default: evaluate
+  // Default: compile FL → Rust → run (Rust source stays hidden)
   const file = command;
   if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
-  runEval(file);
+  await runExecute(file);
+}
+
+async function runExecute(file: string) {
+  const source = expandFLFile(file);
+  const nodes = parseLinesToAST(lexFL(source), { desugarFns: true });
+
+  // Always show proof check output first
+  if (isProofStyleProgram(nodes)) {
+    const report = checkFile(nodes, { strict });
+    printCheckReport(file, report, false);
+    if (report.state !== 'PROVED') { process.exitCode = 1; return; }
+  }
+
+  // Compile to Rust in a hidden temp dir, run the binary, then clean up
+  const rustNodes = parseLinesToAST(lexFL(source), { desugarFns: false });
+  const rustSrc = generateRustFromAST(rustNodes, path.basename(file));
+  const programName = path.basename(file, '.fl');
+  const isAnchor = rustNodes.some(n => n.type === 'Program');
+
+  if (isAnchor) {
+    // On-chain programs can't be run directly — just check and report
+    console.log(`\n${programName}: on-chain program (use fl build to compile for deployment)`);
+    return;
+  }
+
+  const cargoToml = generateCargoToml(programName, false);
+  const tmpDir = path.join(require('os').tmpdir(), `fl-run-${Date.now()}`);
+  const srcDir = path.join(tmpDir, 'src');
+  fs.mkdirSync(srcDir, { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, 'Cargo.toml'), cargoToml, 'utf8');
+  fs.writeFileSync(path.join(srcDir, 'main.rs'), rustSrc, 'utf8');
+
+  try {
+    // Build silently
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('cargo', ['build', '--release', '--quiet'], {
+        cwd: tmpDir, stdio: ['ignore', 'ignore', 'pipe'],
+        shell: process.platform === 'win32',
+      });
+      let stderr = '';
+      child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+      child.on('exit', code => code === 0 ? resolve() : reject(new Error(stderr)));
+    });
+
+    // Run the binary — stdio inherits so the program talks directly to the terminal
+    const binary = path.join(tmpDir, 'target', 'release', programName);
+    await new Promise<void>((resolve) => {
+      const child = spawn(binary, [], { stdio: 'inherit' });
+      child.on('exit', code => { process.exitCode = code ?? 0; resolve(); });
+    });
+  } catch (e: any) {
+    console.error(`Compile error:\n${e.message}`);
+    process.exitCode = 1;
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 function runEval(file: string) {
