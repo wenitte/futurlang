@@ -473,7 +473,7 @@ function isProofStyleProgram(ast: ReturnType<typeof parseLinesToAST>): boolean {
 
 function runWeb(file: string, outDir: string) {
   if (!fs.existsSync(file)) { console.error(`File not found: ${file}`); process.exit(1); }
-  const source = fs.readFileSync(file, 'utf8');
+  const source = expandFLFile(file);  // inlines all imports before transpiling
   const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
   createReactApp(ast, outDir);
   console.log(`Generated React app in ${outDir}`);
@@ -670,7 +670,8 @@ async function runProjectStart() {
 
   // ── Web: generate React into generated/frontend/, install if needed, launch ──
   const generatedDir = path.resolve(manifest.generated ?? 'generated/frontend');
-  const source = fs.readFileSync(mainFile, 'utf8');
+  // expandFLFile inlines all imports — the full multi-file FL program is seen by the transpiler
+  const source = expandFLFile(mainFile);
   const ast = parseLinesToAST(lexFL(source), { desugarFns: false });
   createReactApp(ast, generatedDir);
   console.log(`Generated React app from ${manifest.main}`);

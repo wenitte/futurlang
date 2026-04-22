@@ -14854,7 +14854,7 @@ function runWeb(file2, outDir) {
     console.error(`File not found: ${file2}`);
     process.exit(1);
   }
-  const source2 = fs4.readFileSync(file2, "utf8");
+  const source2 = expandFLFile(file2);
   const ast2 = parseLinesToAST(lexFL(source2), { desugarFns: false });
   createReactApp(ast2, outDir);
   console.log(`Generated React app in ${outDir}`);
@@ -15028,7 +15028,7 @@ async function runProjectStart() {
     return;
   }
   const generatedDir = path4.resolve(manifest.generated ?? "generated/frontend");
-  const source2 = fs4.readFileSync(mainFile, "utf8");
+  const source2 = expandFLFile(mainFile);
   const ast2 = parseLinesToAST(lexFL(source2), { desugarFns: false });
   createReactApp(ast2, generatedDir);
   console.log(`Generated React app from ${manifest.main}`);
