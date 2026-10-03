@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FuturLang Lexical Specification — FL-Lex 1.0</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #17202a;
+    --muted: #5f6b76;
+    --accent: #284b63;
+    --border: #d9dee3;
+    --code: #eef2f5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+  }
+  header {
+    background: var(--accent);
+    color: white;
+    padding: 56px 20px 44px;
+  }
+  header .wrap, main { max-width: 1000px; margin: 0 auto; }
+  h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.3rem); }
+  .subtitle { font-size: 1.15rem; opacity: .9; }
+  main { padding: 32px 20px 70px; }
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin: 0 0 22px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  }
+  h2 {
+    color: var(--accent);
+    margin-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  h3 { color: #263746; margin-top: 26px; }
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  code {
+    background: var(--code);
+    padding: 2px 5px;
+    border-radius: 4px;
+  }
+  pre {
+    background: #111820;
+    color: #e8eef2;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  .principle {
+    border-left: 5px solid var(--accent);
+    background: #f0f4f7;
+    padding: 16px 20px;
+    margin: 18px 0;
+    font-weight: 600;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { background: #edf1f4; }
+  .toc a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .toc a:hover { text-decoration: underline; }
+  footer {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 20px 40px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>FuturLang Lexical Specification</h1>
+    <div class="subtitle">FL-Lex 1.0 — English/French Sense-Disambiguated Lexicon</div>
+  </div>
+</header>
+
+<main>
+
+<section class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#purpose">Purpose</a></li>
+    <li><a href="#model">Fundamental Lexical Model</a></li>
+    <li><a href="#zero">Zero-Based Numbering</a></li>
+    <li><a href="#sense">Distinct Sense Rules</a></li>
+    <li><a href="#pos">Part-of-Speech Separation</a></li>
+    <li><a href="#syntax">Canonical Syntax</a></li>
+    <li><a href="#english">English Rules</a></li>
+    <li><a href="#french">French Rules</a></li>
+    <li><a href="#morphology">Morphology</a></li>
+    <li><a href="#homonymy">Homonymy vs. Polysemy</a></li>
+    <li><a href="#definition">Definition Requirement</a></li>
+    <li><a href="#examples">Context Examples</a></li>
+    <li><a href="#cross">Cross-Language Mapping</a></li>
+    <li><a href="#translation">Translation Equivalence</a></li>
+    <li><a href="#nonequiv">No Assumption of Perfect Translation</a></li>
+    <li><a href="#source">Dictionary Ordering</a></li>
+    <li><a href="#immutable">Immutable IDs</a></li>
+    <li><a href="#version">Semantic Versioning</a></li>
+    <li><a href="#record">Canonical Record</a></li>
+    <li><a href="#math">Formal Principle</a></li>
+    <li><a href="#example">Core Example</a></li>
+    <li><a href="#format">Proposed Dictionary Format</a></li>
+    <li><a href="#goal">Ultimate Goal</a></li>
+  </ol>
+</section>
+
+<section id="purpose">
+  <h2>1. Purpose</h2>
+  <p>
+    The purpose of the FuturLang Lexical Specification is to provide a standardized
+    method for converting naturally ambiguous human-language vocabulary into
+    explicit, numbered semantic lexical units.
+  </p>
+  <div class="principle">
+    One FuturLang lexical identifier SHALL correspond to one defined lexical sense.
+  </div>
+  <p>Instead of representing a polysemous word as a single token:</p>
+  <pre>bank</pre>
+  <p>FuturLang represents its distinct senses as:</p>
+  <pre>bank0
+bank1
+bank2
+...</pre>
+  <p>
+    Each identifier is associated with exactly one definition within a specified
+    lexical database.
+  </p>
+</section>
+
+<section id="model">
+  <h2>2. Fundamental Lexical Model</h2>
+  <p>A FuturLang lexical entry consists of:</p>
+  <pre>LANGUAGE : LEMMA : PART-OF-SPEECH : SENSE-ID</pre>
+  <p>A compact representation is:</p>
+  <pre>lemmaN</pre>
+  <ul>
+    <li><code>lemma</code> = the source-language dictionary lemma</li>
+    <li><code>N</code> = the zero-based sense identifier</li>
+  </ul>
+  <p>Examples:</p>
+  <pre>EN:bank:noun:0
+EN:bank:noun:1
+EN:bank:verb:0</pre>
+  <p>Abbreviated forms may be used when the language and grammatical category are already established.</p>
+</section>
+
+<section id="zero">
+  <h2>3. Zero-Based Numbering</h2>
+  <p>FuturLang SHALL use zero-based indexing:</p>
+  <pre>0 = first recognized sense
+1 = second recognized sense
+2 = third recognized sense
+3 = fourth recognized sense</pre>
+  <p>Example:</p>
+  <pre>light0
+light1
+light2
+light3</pre>
+  <p>
+    Zero-based indexing is intended to make the lexical system convenient for
+    computational implementations.
+  </p>
+</section>
+
+<section id="sense">
+  <h2>4. What Constitutes a Distinct Sense?</h2>
+  <p>
+    A new numerical identifier SHALL be created when two uses of a lemma represent
+    sufficiently different concepts that substituting one definition for the other
+    changes the semantic interpretation.
+  </p>
+  <pre>bank0 = financial institution
+bank1 = land alongside a river</pre>
+  <p>
+    Closely related contextual or grammatical uses SHOULD remain under the same
+    sense unless the selected lexical authority explicitly distinguishes them.
+  </p>
+  <p>
+    FuturLang therefore does not automatically create a new identifier for every
+    possible contextual variation.
+  </p>
+</section>
+
+<section id="pos">
+  <h2>5. Part-of-Speech Separation</h2>
+  <p>
+    Different grammatical categories SHALL normally receive separate lexical
+    identifiers.
+  </p>
+  <pre>EN:light:N:0
+EN:light:ADJ:0
+EN:light:V:0</pre>
+  <p>For example:</p>
+  <pre>light0 = illumination
+light1 = not heavy
+light2 = ignite</pre>
+  <p>
+    The fully specified representation is preferred for computational applications.
+  </p>
+</section>
+
+<section id="syntax">
+  <h2>6. Recommended Canonical Syntax</h2>
+  <p>The canonical FuturLang lexical identifier SHALL be:</p>
+  <pre>LANG-LEMMA-POS-SENSE</pre>
+  <p>English examples:</p>
+  <pre>EN-bank-N-0
+EN-bank-N-1
+EN-bank-V-0</pre>
+  <p>French examples:</p>
+  <pre>FR-banque-N-0
+FR-rive-N-0
+FR-léger-ADJ-0</pre>
+  <p>
+    This form avoids collisions between identical spellings and makes the lexical
+    metadata explicit.
+  </p>
+</section>
+
+<section id="english">
+  <h2>7. English Rules</h2>
+  <p>For English, FuturLang SHALL:</p>
+  <ol>
+    <li>Preserve the dictionary lemma.</li>
+    <li>Normalize capitalization unless capitalization carries semantic significance.</li>
+    <li>Separate parts of speech.</li>
+    <li>Separate dictionary-defined senses.</li>
+    <li>Number senses starting from <code>0</code>.</li>
+    <li>Preserve homographs as separate lexical families where appropriate.</li>
+    <li>Record the dictionary/source used to establish the senses.</li>
+  </ol>
+  <pre>EN-bank-N-0 = financial institution
+EN-bank-N-1 = land bordering a river
+EN-bank-N-2 = mass or collection of similar objects
+EN-bank-V-0 = place money in a financial institution
+EN-bank-V-1 = tilt an aircraft</pre>
+</section>
+
+<section id="french">
+  <h2>8. French Rules</h2>
+  <p>
+    French SHALL follow the same semantic numbering principle.
+  </p>
+  <pre>FR-banque-N-F-0 = financial institution
+FR-rive-N-F-0 = riverbank
+FR-feu-N-M-0 = fire
+FR-feu-N-M-1 = flame</pre>
+  <p>
+    French grammatical gender SHOULD be recorded where relevant.
+  </p>
+  <p>
+    Adjectives SHOULD use one lexical identity for their inflectional family rather
+    than creating separate semantic senses for masculine, feminine, singular, and
+    plural forms.
+  </p>
+</section>
+
+<section id="morphology">
+  <h2>9. Morphology</h2>
+  <p>
+    FuturLang SHALL distinguish lexical identity from surface form.
+  </p>
+  <pre>run0
+runs0
+running0
+ran0</pre>
+  <p>These SHOULD normally map to:</p>
+  <pre>EN-run-V-0</pre>
+  <p>with morphology represented separately:</p>
+  <pre>surface_form = ran
+lemma = run
+sense = 0
+tense = past</pre>
+</section>
+
+<section id="homonymy">
+  <h2>10. Homonymy vs. Polysemy</h2>
+  <h3>Polysemy</h3>
+  <p>One lexical item has several related meanings:</p>
+  <pre>head0 = anatomical head
+head1 = leader
+head2 = top or front portion</pre>
+
+  <h3>Homonymy</h3>
+  <p>
+    Two semantically unrelated lexical items happen to have the same surface form.
+  </p>
+  <pre>EN-bank-N-A-0
+EN-bank-N-B-0</pre>
+  <p>
+    A visible shorthand such as <code>bank0</code> may still be used when the
+    underlying ontology preserves the distinction.
+  </p>
+</section>
+
+<section id="definition">
+  <h2>11. Definition Requirement</h2>
+  <p>
+    Every FuturLang sense identifier MUST have exactly one canonical definition.
+  </p>
+  <p>Bad:</p>
+  <pre>bank0 = bank</pre>
+  <p>Preferred:</p>
+  <pre>bank0 = financial institution</pre>
+  <p>
+    A definition should identify the semantic concept rather than merely repeat
+    the ambiguous lemma.
+  </p>
+</section>
+
+<section id="examples">
+  <h2>12. Context Examples</h2>
+  <p>Each sense SHOULD have at least one example sentence.</p>
+  <pre>EN-bank-N-0
+Definition: financial institution
+Example: I deposited the money at the bank.
+
+EN-bank-N-1
+Definition: land alongside a river
+Example: They sat on the river bank.</pre>
+  <p>
+    This creates a distinction between a lexical definition and a usage example.
+  </p>
+</section>
+
+<section id="cross">
+  <h2>13. Cross-Language Mapping</h2>
+  <p>
+    English and French senses SHALL NOT be assumed to correspond one-to-one.
+  </p>
+  <pre>EN-bank-N-0 → FR-banque-N-0
+EN-bank-N-1 → FR-rive-N-0</pre>
+  <p>
+    FuturLang SHOULD maintain explicit semantic mappings instead of assuming that
+    similarly numbered words are automatically translations.
+  </p>
+</section>
+
+<section id="translation">
+  <h2>14. Translation Equivalence</h2>
+  <p>
+    Translation relationships SHALL be represented separately from lexical identity.
+  </p>
+  <pre>EN-house-N-0
+Definition: a building intended for human habitation
+
+FR-maison-N-0
+Definition: a building intended for human habitation
+
+translation_equivalent(
+    EN-house-N-0,
+    FR-maison-N-0
+)</pre>
+  <p>
+    This allows FuturLang to distinguish lexical identity, semantic equivalence,
+    and translation equivalence.
+  </p>
+</section>
+
+<section id="nonequiv">
+  <h2>15. No Assumption of Perfect Translation</h2>
+  <p>The system MUST allow:</p>
+  <pre>1 English sense → multiple French senses
+multiple English senses → 1 French lexical unit
+English sense → no exact French equivalent</pre>
+  <p>
+    Semantic categories need not partition concepts identically across languages.
+  </p>
+</section>
+
+<section id="source">
+  <h2>16. Semantic Identifier vs. Dictionary Order</h2>
+  <p>
+    The initial sense number MAY reflect the ordering of a selected authoritative
+    dictionary, but source ordering SHALL NOT be treated as the permanent semantic
+    identity.
+  </p>
+  <pre>source_sense_id = 1
+futurlang_sense_id = 0</pre>
+  <p>
+    Maintaining both identifiers protects the FuturLang system if a source
+    dictionary changes its ordering.
+  </p>
+</section>
+
+<section id="immutable">
+  <h2>17. Immutable IDs</h2>
+  <p>
+    Once a FuturLang identifier has been publicly assigned, its semantic identity
+    SHOULD remain stable within the relevant ontology.
+  </p>
+  <pre>EN-bank-N-0@1.0
+EN-bank-N-0@2.0</pre>
+  <p>
+    If a definition changes substantially, a new version SHOULD be created rather
+    than silently changing the meaning of an existing identifier.
+  </p>
+</section>
+
+<section id="version">
+  <h2>18. Semantic Versioning</h2>
+  <p>The lexical database SHOULD use:</p>
+  <pre>MAJOR.MINOR.PATCH</pre>
+  <table>
+    <thead>
+      <tr><th>Version component</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>MAJOR</td><td>Conceptual restructuring or incompatible semantic changes.</td></tr>
+      <tr><td>MINOR</td><td>Additions such as new senses or mappings.</td></tr>
+      <tr><td>PATCH</td><td>Corrections to metadata, spelling, examples, or references without changing semantic identity.</td></tr>
+    </tbody>
+  </table>
+  <pre>FuturLang Lexicon 1.0.0</pre>
+</section>
+
+<section id="record">
+  <h2>19. Canonical Record</h2>
+  <p>A complete FuturLang lexical record SHOULD contain:</p>
+  <pre>{
+    language,
+    lemma,
+    part_of_speech,
+    sense_id,
+    definition,
+    examples,
+    morphology,
+    synonyms,
+    antonyms,
+    translations,
+    semantic_domain,
+    source_dictionary,
+    source_sense_id,
+    version
+}</pre>
+
+  <p>Example:</p>
+  <pre>{
+    language: "EN",
+    lemma: "bank",
+    part_of_speech: "N",
+    sense_id: 0,
+    definition: "financial institution",
+    examples: [
+        "I deposited the money at the bank."
+    ],
+    semantic_domain: "FINANCE",
+    source_dictionary: "SOURCE-DICTIONARY",
+    source_sense_id: 1,
+    version: "1.0.0"
+}</pre>
+</section>
+
+<section id="math">
+  <h2>20. The FuturLang Principle of Lexical Disambiguation</h2>
+  <p>The core mathematical principle is:</p>
+  <pre>∀ Lᵢ, |Meaning(Lᵢ)| = 1</pre>
+  <p>Ordinary language may represent:</p>
+  <pre>word → {meaning0, meaning1, ..., meaningn}</pre>
+  <p>FuturLang transforms this into:</p>
+  <pre>word0 → meaning0
+word1 → meaning1
+...
+wordn → meaningn</pre>
+  <div class="principle">
+    FuturLang does not attempt to eliminate semantic complexity; it makes semantic
+    complexity explicit.
+  </div>
+</section>
+
+<section id="example">
+  <h2>21. Core Example</h2>
+  <p>Ordinary English:</p>
+  <pre>I went to the bank.</pre>
+  <p>can be ambiguous.</p>
+  <p>If the intended meaning is a financial institution:</p>
+  <pre>I went to the EN-bank-N-0.</pre>
+  <p>If the intended meaning is land beside a river:</p>
+  <pre>I walked toward the EN-bank-N-1.</pre>
+  <p>
+    The ambiguity is therefore moved from the lexical token into the explicit
+    selection of a semantic identifier.
+  </p>
+</section>
+
+<section id="format">
+  <h2>22. Proposed FuturLang Dictionary Format</h2>
+  <pre>EN:bank:N:0 | financial institution
+EN:bank:N:1 | land bordering a river
+EN:bank:N:2 | organized collection or group
+EN:bank:V:0 | place money in a financial institution
+EN:bank:V:1 | tilt an aircraft
+
+FR:banque:N:F:0 | financial institution
+FR:rive:N:F:0 | land bordering a river
+FR:feu:N:M:0 | fire
+FR:feu:N:M:1 | flame
+FR:feu:N:M:2 | firing of a weapon</pre>
+  <p>
+    The long-form notation is preferred for the formal specification, while
+    shorthand such as <code>bank0</code> may be used in ordinary FuturLang text.
+  </p>
+</section>
+
+<section id="goal">
+  <h2>23. Ultimate Goal</h2>
+  <p>
+    The long-term objective of FL-Lex is not merely to give ambiguous words
+    numbers. It is to create a language representation in which lexical tokens
+    have explicit, stable, machine-addressable semantic identities, allowing
+    English, French, and eventually other human languages to be mapped into a
+    common conceptual system.
+  </p>
+
+  <pre>Human Language
+       ↓
+Morphological Analysis
+       ↓
+Lemma Identification
+       ↓
+Part-of-Speech Identification
+       ↓
+Sense Identification
+       ↓
+FuturLang Semantic Identifier
+       ↓
+Universal Concept / Ontology</pre>
+
+  <div class="principle">
+    EN-bank-N-0 and FR-banque-N-0 should not merely be treated as translations;
+    they can be mapped to a shared FuturLang Concept ID when their semantics are
+    determined to be equivalent.
+  </div>
+</section>
+
+<section>
+  <h2>Normative Keywords</h2>
+  <p>
+    In this specification, <strong>SHALL</strong> indicates a mandatory rule,
+    <strong>SHOULD</strong> indicates a recommended rule, and <strong>MAY</strong>
+    indicates an optional implementation choice.
+  </p>
+</section>
+
+</main>
+
+<footer>
+  <p>FuturLang Lexical Specification — FL-Lex 1.0</p>
+  <p>A proposed framework for sense-disambiguated English/French lexical representation.</p>
+</footer>
+
+</body>
+</html>
