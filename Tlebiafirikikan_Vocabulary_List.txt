@@ -1,0 +1,88 @@
+Tlebiafirikikan (TlebiAfirikikan) – Available Vocabulary List
+================================================================
+Compiled from public sources (Conlang Fandom wiki & Academia.edu reference grammar preview)
+Note: This is NOT a complete dictionary. The language is still under development.
+Last compiled: October 2026
+
+---------------------------------------------------------------
+CORE EXAMPLES (from Fandom page)
+---------------------------------------------------------------
+mógo          person                  (Bamankan)
+jàmana        country                 (Bamankan)
+àduna         world                   (Bamankan / Arabic)
+kɛ            do / make               (Bamankan)
+foyi          nothing                 (Bamankan)
+omi           water                   (Yoruba)
+edu           education               (English)
+lamɔgɔ        teacher                 (hybrid formation)
+
+---------------------------------------------------------------
+FAMILY TERMS
+---------------------------------------------------------------
+baba          father                  (Yoruba / Hausa)
+ba            father                  (Bamankan)
+iya           mother                  (Yoruba)
+nne           mother                  (Igbo)
+uwa           mother                  (Hausa)
+ọmọ           child                   (Yoruba)
+den           child                   (Bamankan)
+nwa           child                   (Igbo)
+
+---------------------------------------------------------------
+NATURAL WORLD / WEATHER
+---------------------------------------------------------------
+omi / ruwa / ji          water        (Yoruba / Hausa / Bamankan)
+oṣupa / kalo / wata      moon         (Yoruba / Bamankan / Hausa)
+ràinà / oòrùn / tile     sun          (Hausa / Yoruba / Bamankan)
+iska / afẹfẹ / fɔɲɔ      wind         (Hausa / Yoruba / Bamankan)
+
+---------------------------------------------------------------
+PLANTS & AGRICULTURE
+---------------------------------------------------------------
+igi / itche / jiri       tree         (Yoruba / Hausa / Bamankan)
+irẹsi / malo / shinkafa  rice         (Yoruba / Bamankan / Hausa)
+igbe / foro / gona       farm / field (Igbo / Bamankan / Hausa)
+
+---------------------------------------------------------------
+MODERN / TECHNICAL TERMS
+---------------------------------------------------------------
+ordinatɛɛre / kɔmputa             computer     (French / English)
+telefɔni / wayar                  telephone    (French / Hausa)
+entɛnɛti                          internet     (French / English)
+moto / mota / mobili              car          (French / Hausa / Bamankan)
+jirgin sama / sɩlga / ọkọ òfurufú airplane     (Hausa / Moore / Yoruba)
+lekɔli / makaranta / ile-iwe / lakɔli  school  (French / Hausa / Yoruba / Bamankan)
+dɔgita / likita / onísègùn        doctor       (Hausa / Hausa / Yoruba)
+
+---------------------------------------------------------------
+SPECIALIZED CULTURAL CONCEPTS
+---------------------------------------------------------------
+ahụmahụ       experience / expertise          (Igbo)
+teranga       hospitality                     (Wolof)
+sanankunya    joking relationship             (Bamankan)
+nkabom        unity                           (Akan)
+pulaaku       Fulani code of conduct          (Pulaar)
+omoluabi      person of good character        (Yoruba)
+
+---------------------------------------------------------------
+OTHER VERBS / ITEMS
+---------------------------------------------------------------
+taga / je     go                              (Bamankan / Wolof)
+gba / karbi   receive / accept                (Igbo / Hausa)
+sùn           sleep                           (Yoruba)
+yi / kɛ       do                              (Hausa / Bamankan)
+
+---------------------------------------------------------------
+GRAMMAR PARTICLES
+---------------------------------------------------------------
+bɛ́           present / imperfective
+tún           past
+ná            future
+tɛ́           negative
+-w            plural marker
+-o            definite marker
+
+---------------------------------------------------------------
+END OF LIST
+---------------------------------------------------------------
+Source note: Vocabulary drawn from the limited public materials available for Tlebiafirikikan as of 2026. Many everyday words have not yet been published by the creator.
